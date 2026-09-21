@@ -28,27 +28,6 @@ def delete_me(payload: DeleteAccountRequest):
     return not_implemented("회원 탈퇴")()
 
 
-@router.get("/vehicles", response_model=list[VehicleOut])
-def list_vehicles():
-    return not_implemented("내 차량 목록")()
-
-
-@router.post("/vehicles", response_model=VehicleOut, status_code=201)
-def create_vehicle(payload: VehicleIn):
-    """F-12. is_default: true로 등록하면 기존 기본 차량은 자동 해제."""
-    return not_implemented("차량 등록")()
-
-
-@router.patch("/vehicles/{vehicle_id}", response_model=VehicleOut)
-def update_vehicle(vehicle_id: str, payload: VehicleIn):
-    return not_implemented("차량 수정")()
-
-
-@router.delete("/vehicles/{vehicle_id}", status_code=204)
-def delete_vehicle(vehicle_id: str):
-    return not_implemented("차량 삭제")()
-
-
 @router.get("/plans", response_model=SavedPlanPage)
 def list_plans(limit: int = 20, cursor: str | None = None):
     return not_implemented("충전 기록 목록")()

@@ -7,6 +7,7 @@ from .api.routes import (
     extensions,
     health,
     me,
+    me_vehicles,
     recommend,
     timeline,
 )
@@ -24,6 +25,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(timeline.router)
     app.include_router(recommend.router)
+    app.include_router(me_vehicles.router)
 
     # 계약만 확정된 스텁 (501). 프론트가 /docs를 보고 먼저 붙을 수 있게 한다.
     app.include_router(chargers.router)
