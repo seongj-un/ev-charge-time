@@ -14,6 +14,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
     String,
     UniqueConstraint,
     func,
@@ -98,6 +99,40 @@ class FavoriteStation(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "station_id", name="uq_favorite_user_station"),
+    )
+
+
+class Session(Base):
+    """로그인 세션. 토큰 원본이 아니라 sha256 해시만 저장한다 (infra/security.py)."""
+
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = _now()
+
+
+class LoginAttempt(Base):
+    """이메일별 로그인 실패 횟수·잠금 상태 (연속 5회 실패 시 15분 잠금)."""
+
+    __tablename__ = "login_attempts"
+
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
 

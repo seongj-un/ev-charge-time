@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     tariff_path: Path = BACKEND_ROOT / "config" / "tariff.yaml"
     holidays_path: Path = BACKEND_ROOT / "config" / "holidays.yaml"
 
+    # 인증 (infra/security.py, api/auth_deps.py)
+    cookie_secure: bool = False
+    session_days: int = 14
+    login_max_attempts: int = 5
+    login_lockout_minutes: int = 15
+
 
 def get_settings() -> Settings:
     return Settings()
