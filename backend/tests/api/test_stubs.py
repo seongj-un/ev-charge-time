@@ -27,9 +27,7 @@ STUB_ENDPOINTS = [
     ("GET", "/api/me/plans/p_01", "/api/me/plans/{plan_id}", None),
     ("POST", "/api/me/plans", "/api/me/plans", None),
     ("DELETE", "/api/me/plans/p_01", "/api/me/plans/{plan_id}", None),
-    ("GET", "/api/me/favorites", "/api/me/favorites", None),
-    ("PUT", "/api/me/favorites/ST-001", "/api/me/favorites/{station_id}", None),
-    ("DELETE", "/api/me/favorites/ST-001", "/api/me/favorites/{station_id}", None),
+    # F-14 즐겨찾는 충전소는 구현됨 (routes/me_favorites.py) — 더 이상 스텁이 아니다.
     ("GET", "/api/solar-forecast?region=전남&day=2026-10-17", "/api/solar-forecast", None),
     ("POST", "/api/chat", "/api/chat", {"message": "내일 출근 전까지 80% 채우려면?"}),
 ]

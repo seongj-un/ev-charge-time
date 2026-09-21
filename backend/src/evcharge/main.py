@@ -7,6 +7,7 @@ from .api.routes import (
     extensions,
     health,
     me,
+    me_favorites,
     recommend,
     timeline,
 )
@@ -29,6 +30,7 @@ def create_app() -> FastAPI:
     app.include_router(chargers.router)
     app.include_router(auth.router)
     app.include_router(me.router)
+    app.include_router(me_favorites.router)
     app.include_router(extensions.router)
 
     return app

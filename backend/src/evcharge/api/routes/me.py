@@ -5,7 +5,6 @@ from ..schemas import (
     PlanSummary,
     SavedPlanOut,
     SavedPlanPage,
-    StationOut,
     UserOut,
     VehicleIn,
     VehicleOut,
@@ -75,16 +74,5 @@ def delete_plan(plan_id: str):
     return not_implemented("충전 기록 삭제")()
 
 
-@router.get("/favorites", response_model=list[StationOut])
-def list_favorites():
-    return not_implemented("즐겨찾는 충전소 목록")()
-
-
-@router.put("/favorites/{station_id}", status_code=204)
-def add_favorite(station_id: str):
-    return not_implemented("즐겨찾기 추가")()
-
-
-@router.delete("/favorites/{station_id}", status_code=204)
-def remove_favorite(station_id: str):
-    return not_implemented("즐겨찾기 해제")()
+# 즐겨찾는 충전소(F-14) 3개 엔드포인트는 routes/me_favorites.py에 구현되어 있다
+# (동시에 이 파일을 수정 중인 다른 작업과의 충돌을 피하기 위해 분리).

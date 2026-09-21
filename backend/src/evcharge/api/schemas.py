@@ -133,15 +133,19 @@ class ChargerOut(BaseModel):
 
 class StationOut(BaseModel):
     station_id: str
-    name: str
-    address: str
-    lat: float
-    lng: float
-    distance_m: int
-    operator: str
-    available_hours: str
+    # F-07(주변 충전소 조회)이 채우는 캐시 파생 필드. F-14 즐겨찾기 목록은
+    # charger_cache에 아직 없는 station_id도 유효하게 보여줘야 하므로
+    # (즐겨찾기 자체는 station_id만으로 성립), 전부 선택 필드로 둔다 — 캐시가
+    # 없으면 station_id만 채우고 나머지는 비운 채 응답한다.
+    name: str | None = None
+    address: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+    distance_m: int | None = None
+    operator: str | None = None
+    available_hours: str | None = None
     is_favorite: bool | None = None
-    chargers: list[ChargerOut]
+    chargers: list[ChargerOut] = Field(default_factory=list)
 
 
 class SavedPlanOut(BaseModel):
