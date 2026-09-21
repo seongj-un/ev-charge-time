@@ -1,0 +1,101 @@
+"""Finding 2 회귀 테스트 (Critical): 로그인 잠금 카운터의 TOCTOU 경쟁.
+
+고치기 전 코드는 ``attempt.failed_count += 1``을 ORM으로 처리했다 — 파이썬이
+값을 읽고, +1 하고, 절대값으로 ``UPDATE ... SET failed_count = :new_value``를
+커밋하는 식이다. ``get_session()``은 요청마다 새 커넥션/세션을 여니, 기본
+READ COMMITTED에서 두 요청이 같은 실패 카운트를 동시에 읽으면 둘 다 같은 +1
+결과를 써서 한쪽의 증가분이 사라진다(lost update).
+
+``tests/conftest.py``의 ``db_session``/``client`` 픽스처는 테스트 하나당 커넥션
+하나를 SAVEPOINT로 감싸 공유하는 구조라, 진짜 동시 트랜잭션(서로 다른 커넥션이
+동시에 같은 행을 읽고 쓰는 상황)을 만들 수 없다. 그래서 이 파일은 그 픽스처를
+쓰지 않는다: ``get_session`` 오버라이드가 없는 실제 앱을 만들어서, 요청마다
+프로덕션과 똑같이 새 커넥션을 여는 진짜 경로를 그대로 태운다. 그 위에 여러
+OS 스레드로 동시에 로그인 실패를 보내 진짜 경합을 유도한다.
+
+(A-3) 이 패턴은 ``tests/conftest.py``의 ``concurrent`` 픽스처(``ConcurrentRequests``)로
+승격됐다. B-2(즐겨찾기 PUT 경쟁)도 같은 픽스처를 재사용한다 — 매번 스레드
+코드를 다시 짜지 않는다.
+
+동시 요청 수를 ``settings.login_max_attempts``와 똑같이 맞춘 이유: 그보다 많이
+보내면, 잠금이 걸린 *이후에* 시작되는 요청이 잠금 여부를 먼저 읽고 429로
+분기해(카운터를 증가시키지 않고) 빠지는 경로가 섞여 들어가 "최종 카운터 값"의
+기대치 자체가 흔들린다. 정확히 max_attempts개만 보내면, 그 429 분기가 전혀
+끼어들 수 없어 "최종 failed_count == 보낸 실패 횟수"라는 깔끔한 불변식으로
+원자성을 검증할 수 있다.
+"""
+
+from __future__ import annotations
+
+import uuid
+
+from evcharge.infra.models import LoginAttempt, User
+from evcharge.infra.security import hash_password
+from evcharge.settings import get_settings
+
+
+def test_concurrent_failed_logins_increment_the_counter_atomically(concurrent):
+    settings = get_settings()
+    concurrency = settings.login_max_attempts
+    email = f"lockout-race-{uuid.uuid4().hex}@example.com"
+
+    # 실제 커넥션으로 직접 커밋 — db_session(SAVEPOINT) 픽스처를 쓰지 않는다.
+    # 동시에 여는 요청들의 세션과 이 세션이 서로 다른 진짜 트랜잭션이어야
+    # 경쟁을 재현할 수 있다.
+    setup_session = concurrent.session()
+    try:
+        setup_session.add(
+            User(
+                id=str(uuid.uuid4()),
+                email=email,
+                password_hash=hash_password("correct-horse-battery"),
+                nickname="레이스",
+            )
+        )
+        # 행을 미리 만들어 둔다: 없는 상태로 동시에 INSERT를 시도하면
+        # PK(email) 충돌이라는 또 다른(그러나 이 finding과는 다른) 실패
+        # 양상이 섞여, 우리가 보이고 싶은 "읽고-쓰기 lost update"가 흐려진다.
+        setup_session.add(LoginAttempt(email=email, failed_count=0))
+        setup_session.commit()
+    finally:
+        setup_session.close()
+
+    def attempt_login(client):
+        return client.post(
+            "/api/auth/login",
+            json={"email": email, "password": "wrong-password"},
+        ).status_code
+
+    try:
+        results = concurrent.run(attempt_login, count=concurrency)
+
+        assert results == [401] * concurrency, (
+            f"동시 로그인 실패 {concurrency}건 중 일부가 401이 아니다: {results}. "
+            "max_attempts개만 보냈으니 이 시점엔 아직 아무도 잠겨 있으면 안 된다 — "
+            "429가 섞였다면 카운터가 예상보다 먼저 임계값에 도달했다는 뜻이다."
+        )
+
+        verify_session = concurrent.session()
+        try:
+            attempt = verify_session.get(LoginAttempt, email)
+        finally:
+            verify_session.close()
+
+        assert attempt is not None
+        assert attempt.failed_count == concurrency, (
+            f"동시 실패 {concurrency}건을 보냈는데 최종 failed_count="
+            f"{attempt.failed_count}. 카운터 증가가 원자적이지 않으면(lost "
+            "update) 이 값이 concurrency보다 작게 나온다 — 병렬 요청 중 일부의 "
+            "증가분이 조용히 사라졌다는 뜻이다."
+        )
+        assert attempt.locked_until is not None, (
+            "failed_count가 login_max_attempts에 도달했는데 잠기지 않았다."
+        )
+    finally:
+        cleanup_session = concurrent.session()
+        try:
+            cleanup_session.query(LoginAttempt).filter_by(email=email).delete()
+            cleanup_session.query(User).filter_by(email=email).delete()
+            cleanup_session.commit()
+        finally:
+            cleanup_session.close()

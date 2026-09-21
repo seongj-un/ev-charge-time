@@ -1,0 +1,124 @@
+[project]
+name = "evcharge"
+version = "0.1.0"
+description = "EV 충전 최적 시간 추천 백엔드"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic-settings>=2.6",
+    "pyyaml>=6.0",
+    "sqlalchemy>=2.0",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "argon2-cffi>=25.1.0",
+    "pydantic[email]>=2.13.5",
+    # F-07 수집기가 공공데이터포털을 부른다. 예전에는 TestClient 때문에 dev
+    # 그룹에만 있었는데, 이제 런타임 코드(infra/charger_api.py)가 쓰므로
+    # 프로덕션 의존성이다.
+    "httpx>=0.28",
+    "google-genai>=2.24.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    # 린트 결과를 재현 가능하게 하려고 정확히 고정한다. ruff는 마이너 버전마다
+    # 규칙이 추가/변경되므로 범위로 열어두면 "어제는 깨끗했는데" 가 생긴다.
+    "ruff==0.16.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/evcharge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+# ---------------------------------------------------------------------------
+# ruff (린트 전용. 포매터(`ruff format`)는 도입하지 않는다 — 제출 직전에 전 파일
+# 재포맷 diff를 만들 이유가 없다.)
+#
+# 설정이 없으면 ruff는 "그때 설치된 버전의 기본값"으로 돈다. 0.16.8 기준 그
+# 기본값은 413개 규칙이라 버전이 바뀌면 결과도 바뀐다. 그래서 규칙 집합을
+# 명시하고 버전까지 못박는다.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+# dev 그룹에 고정한 ruff와 어긋나는 버전(예: `uvx ruff`가 끌어오는 최신판)으로
+# 돌리면 조용히 다른 결과를 내는 대신 바로 실패하게 한다.
+required-version = ">=0.16.8,<0.17.0"
+target-version = "py313"
+# 88자는 한국어 주석/독스트링을 산문 기준으로 계속 쪼개게 만든다. 현재 코드는
+# 전부 100자 이하라, 100으로 잡으면 한 줄도 다시 쓰지 않고 그대로 기준이 된다.
+line-length = 100
+src = ["src", "tests"]
+# alembic 마이그레이션은 이미 적용된 이력 기록이라 사후 정리 대상이 아니다.
+# 제외해 두면 인자 없는 `ruff check`가 `ruff check src/ tests/`와 같은 결과를 낸다.
+extend-exclude = ["migrations"]
+
+[tool.ruff.lint]
+# 고르는 기준: (1) 진짜 버그를 잡거나 (2) 일관성을 강제하면서, (3) 지금 위반이
+# 0에 가까운 규칙군. 그래야 밀린 숙제가 아니라 앞으로의 래칫으로 동작한다.
+select = [
+    "F",     # pyflakes — 미사용/미정의 이름 등 실질 버그
+    "E",     # pycodestyle error
+    "W",     # pycodestyle warning
+    "I",     # isort — import 순서
+    "UP",    # pyupgrade — py313 기준 낡은 문법
+    "B",     # flake8-bugbear — 흔한 함정
+    "C4",    # flake8-comprehensions
+    "SIM",   # flake8-simplify
+    "RET",   # flake8-return
+    "RUF",   # ruff 고유 규칙
+    "S",     # flake8-bandit — 보안 (src는 현재 0건, 이 상태를 지킨다)
+    "BLE",   # flake8-blind-except — 광범위 except는 의도를 적게 한다
+    "ASYNC", # flake8-async — async 핸들러에서 블로킹 호출 금지 (FastAPI라 중요)
+    "T20",   # flake8-print — 남은 print/pprint 금지
+    "PIE",   # flake8-pie
+    "ICN",   # flake8-import-conventions
+    "PTH",   # flake8-use-pathlib
+    "N",     # pep8-naming
+]
+# 일부러 켜지 않은 것들 (이 저장소 기준 실측 위반 수):
+#   D(306) ANN(518)  — 독스트링/타입 애너테이션 전면 강제. 대회 제출물에 과함.
+#   ARG(43)          — FastAPI 의존성·pytest 픽스처는 안 쓰는 인자가 정상.
+#   PLR2004(139)     — 테스트의 `== 200` 같은 상태코드 비교가 전부 걸린다.
+#   TID252(89)       — 이 코드베이스는 패키지 내부에서 상대 import를 쓴다.
+#   TRY(17) EM(16)   — 예외 문구 스타일 취향. 지금 코드와 충돌만 낸다.
+ignore = [
+    # 한국어 산문에서 –(en dash), ×(곱셈 기호), ·(가운뎃점)는 오타가 아니라
+    # 의도한 조판이다. RUF002/003은 이걸 전부 "헷갈리는 유니코드"로 잡는다.
+    # 식별자를 검사하는 RUF001은 그대로 켜 둔다 (진짜 동형이의어 방지).
+    "RUF002", # 독스트링의 모호한 유니코드
+    "RUF003", # 주석의 모호한 유니코드
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI에서 `def f(x = Depends(g))`는 안티패턴이 아니라 의존성 주입 그 자체다.
+# 라우터를 B008에 맞춰 고치면 더 나쁜 코드가 되므로 호출 자체를 면제한다.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+    "fastapi.Security",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 테스트에서 assert는 도구 그 자체이고, 고정 비밀번호는 픽스처 데이터다.
+"tests/**" = [
+    "S101", # assert 사용 — pytest의 기본 동작
+    "S105", # 하드코딩된 비밀번호 문자열 — 테스트 픽스처
+    "S106", # 하드코딩된 비밀번호 인자 — 테스트 픽스처
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["evcharge"]
