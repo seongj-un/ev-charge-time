@@ -1,7 +1,15 @@
 from fastapi import FastAPI
 
 from .api.errors import register_error_handlers
-from .api.routes import health, recommend, timeline
+from .api.routes import (
+    auth,
+    chargers,
+    extensions,
+    health,
+    me,
+    recommend,
+    timeline,
+)
 
 
 def create_app() -> FastAPI:
@@ -16,6 +24,12 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(timeline.router)
     app.include_router(recommend.router)
+
+    # 계약만 확정된 스텁 (501). 프론트가 /docs를 보고 먼저 붙을 수 있게 한다.
+    app.include_router(chargers.router)
+    app.include_router(auth.router)
+    app.include_router(me.router)
+    app.include_router(extensions.router)
 
     return app
 

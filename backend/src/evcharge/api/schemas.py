@@ -84,3 +84,103 @@ class RecommendResponse(BaseModel):
     candidates_checked: int
     assumptions: list[str]
     unverified_tariff_items: list[str]
+
+
+# ── 아래는 아직 구현하지 않은 엔드포인트의 계약 (스텁) ────────────────────
+
+
+class SignupRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=8)
+    nickname: str | None = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str
+
+
+class UserOut(BaseModel):
+    id: str
+    email: str
+    nickname: str | None = None
+    created_at: datetime | None = None
+
+
+class VehicleIn(BaseModel):
+    name: str
+    battery_kwh: float = Field(gt=0)
+    charger_kw: float = Field(gt=0)
+    mode: Mode = "self_low"
+    is_default: bool = False
+
+
+class VehicleOut(VehicleIn):
+    id: str
+
+
+class ChargerOut(BaseModel):
+    charger_id: str
+    type: str
+    capacity_kw: float
+    status: str
+    status_updated_at: datetime | None = None
+
+
+class StationOut(BaseModel):
+    station_id: str
+    name: str
+    address: str
+    lat: float
+    lng: float
+    distance_m: int
+    operator: str
+    available_hours: str
+    is_favorite: bool | None = None
+    chargers: list[ChargerOut]
+
+
+class SavedPlanOut(BaseModel):
+    id: str
+    created_at: datetime
+    request: RecommendRequest
+    result: RecommendResponse
+    tariff_version: str
+
+
+class SavedPlanPage(BaseModel):
+    items: list[SavedPlanOut]
+    next_cursor: str | None = None
+
+
+class PlanSummary(BaseModel):
+    month: str
+    count: int
+    total_savings_won: int
+
+
+class SolarHour(BaseModel):
+    hour: int
+    predicted_mwh: float
+
+
+class SolarForecast(BaseModel):
+    region: str
+    day: date
+    model_version: str
+    hours: list[SolarHour]
+
+
+class ChatRequest(BaseModel):
+    message: str
+    history: list[dict] | None = None
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    recommendation: RecommendResponse | None = None
+    missing_fields: list[str] = []
