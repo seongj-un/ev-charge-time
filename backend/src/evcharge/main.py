@@ -19,7 +19,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="EV 충전 최적 시간 추천 API",
         version="0.1.0",
-        description="2026년 개편 전기요금 기준 최저 비용 충전 시간 추천",
+        description="한전 현행 전기요금 기준 최저 비용 충전 시간 추천",
     )
 
     register_error_handlers(app)
