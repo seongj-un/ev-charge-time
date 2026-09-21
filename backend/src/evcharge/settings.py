@@ -80,7 +80,31 @@ class Settings(BaseSettings):
     chat_rate_limit_count: int = 20
     chat_rate_limit_window_minutes: int = 60
 
-    @field_validator("charger_api_key")
+    # F-09 태양광 발전 예측 — 공공데이터포털 "기상청_단기예보 조회서비스"
+    # (https://www.data.go.kr/data/15084084/openapi.do)
+    #
+    # 포털은 계정당 인증키를 하나만 발급하므로 CHARGER_API_KEY와 **같은
+    # 문자열**이 되는 것이 정상이다. 그래도 설정을 따로 두는 이유는 두 기능이
+    # 서로 다른 활용신청에 딸려 있어 한쪽만 승인된 상태가 실제로 존재하기
+    # 때문이다 — 하나로 합치면 "충전소는 되는데 예보는 안 된다"를 표현할 수 없다.
+    #
+    # 비어 있으면 GET /api/solar-forecast 는 501을 반환한다
+    # (charger_api_key·gemini_api_key와 같은 규칙).
+    kma_api_key: str = ""
+
+    # 지역별 태양광 설비용량(MW). "전남:1234.5,광주:210" 형식.
+    #
+    # 기본값이 비어 있는 것은 실수가 아니다. 이 값 없이는 일사량(W/m²)을
+    # 발전량(MWh)으로 바꿀 수 없고, 그래서 predicted_mwh가 null로 나간다.
+    # 없는 자료로 MWh를 지어내지 않겠다는 결정이다 (api/solar_service.py 참고).
+    solar_capacity_mw: str = ""
+
+    # 위 설비용량의 출처. **비어 있으면 설비용량 값 자체를 무시한다** —
+    # 출처를 적을 수 없는 숫자는 지어낸 숫자와 구별되지 않기 때문이다.
+    # 요금 잠정치에 source·status를 달아 온 것과 같은 규칙이다.
+    solar_capacity_source: str = ""
+
+    @field_validator("charger_api_key", "kma_api_key")
     @classmethod
     def _normalize_service_key(cls, value: str) -> str:
         """Encoding 키가 들어와도 Decoding 형태로 맞춰 둔다.
