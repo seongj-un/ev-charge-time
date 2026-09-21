@@ -1,0 +1,105 @@
+import { describe, expect, test } from "vitest";
+
+import {
+  defaultForm,
+  fromSearchParams,
+  toRecommendRequest,
+  toSearchParams,
+  type RecommendForm,
+} from "./recommend-params";
+
+const FORM: RecommendForm = {
+  batteryKwh: 70,
+  chargerKw: 7,
+  socNow: 30,
+  socTarget: 60,
+  earliestStart: "2026-10-07T18:00",
+  deadline: "2026-10-08T08:00",
+  mode: "self_low",
+};
+
+/*
+ * 입력 화면과 결과 화면이 서로 다른 라우트다. 조건을 메모리에 들고 넘기면
+ * 결과 화면에서 새로고침하는 순간 날아간다. URL에 실어 보내면 새로고침도,
+ * 뒤로가기도, 링크 공유도 그냥 된다.
+ */
+describe("toSearchParams · fromSearchParams", () => {
+  test("왕복해도 값이 그대로다", () => {
+    expect(fromSearchParams(toSearchParams(FORM))).toEqual(FORM);
+  });
+
+  test("URL에 사람이 읽을 수 있는 이름으로 담는다", () => {
+    const params = toSearchParams(FORM);
+    expect(params.get("battery_kwh")).toBe("70");
+    expect(params.get("soc_now")).toBe("30");
+    expect(params.get("earliest_start")).toBe("2026-10-07T18:00");
+    expect(params.get("mode")).toBe("self_low");
+  });
+
+  test("필수 값이 빠지면 읽지 않는다", () => {
+    const params = toSearchParams(FORM);
+    params.delete("battery_kwh");
+    expect(fromSearchParams(params)).toBeNull();
+  });
+
+  test("숫자가 아닌 값이 오면 읽지 않는다", () => {
+    const params = toSearchParams(FORM);
+    params.set("charger_kw", "일곱");
+    expect(fromSearchParams(params)).toBeNull();
+  });
+
+  test("모르는 충전 방식이 오면 읽지 않는다", () => {
+    const params = toSearchParams(FORM);
+    params.set("mode", "self_medium");
+    expect(fromSearchParams(params)).toBeNull();
+  });
+});
+
+describe("toRecommendRequest", () => {
+  test("백엔드 요청 모양으로 바꾼다", () => {
+    expect(toRecommendRequest(FORM)).toEqual({
+      battery_kwh: 70,
+      charger_kw: 7,
+      soc_now: 30,
+      soc_target: 60,
+      earliest_start: "2026-10-07T18:00",
+      deadline: "2026-10-08T08:00",
+      mode: "self_low",
+    });
+  });
+
+  test("시각은 표준시를 붙이지 않고 그대로 보낸다", () => {
+    // 백엔드가 표준시 없는 입력을 KST로 읽는다 (API 명세서 1장).
+    // 여기서 Z를 붙이면 9시간 어긋난 추천이 돌아온다.
+    const request = toRecommendRequest(FORM);
+    expect(request.earliest_start).not.toContain("Z");
+    expect(request.earliest_start).not.toContain("+");
+  });
+});
+
+describe("defaultForm", () => {
+  test("시작 시각을 30분 단위로 올림한다", () => {
+    const form = defaultForm(new Date(2026, 9, 7, 18, 12));
+    expect(form.earliestStart).toBe("2026-10-07T18:30");
+  });
+
+  test("정각이면 그대로 둔다", () => {
+    const form = defaultForm(new Date(2026, 9, 7, 18, 0));
+    expect(form.earliestStart).toBe("2026-10-07T18:00");
+  });
+
+  test("완료 시각은 그다음 아침 8시다", () => {
+    const form = defaultForm(new Date(2026, 9, 7, 18, 0));
+    expect(form.deadline).toBe("2026-10-08T08:00");
+  });
+
+  test("새벽이면 완료 시각은 그날 아침 8시다", () => {
+    const form = defaultForm(new Date(2026, 9, 8, 2, 0));
+    expect(form.deadline).toBe("2026-10-08T08:00");
+  });
+
+  test("아침 8시를 지났으면 다음날 8시로 넘어간다", () => {
+    const form = defaultForm(new Date(2026, 9, 8, 8, 30));
+    expect(form.deadline).toBe("2026-10-09T08:00");
+  });
+});

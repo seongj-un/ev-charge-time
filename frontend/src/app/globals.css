@@ -1,0 +1,76 @@
+@import "tailwindcss";
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+
+/*
+ * 토큰 값은 화면 디자인 PDF의 픽셀에서 직접 뽑았다.
+ * 색을 새로 만들지 말고 여기 있는 것만 쓴다 — 디자인과 어긋나는 순간
+ * "왜 이 초록은 다르지" 같은 질문이 코드리뷰마다 돌아온다.
+ */
+@theme {
+  /* 면 */
+  --color-canvas: #f1f0eb; /* 페이지 배경 */
+  --color-surface: #fefefe; /* 카드 */
+  --color-sunken: #e6e3dc; /* 세그먼티드 트랙, 지도 자리 */
+  --color-field: #faf9f5; /* 입력 필드 */
+  --color-line: #d9d9d5; /* 테두리 */
+
+  /* 글자 */
+  --color-ink: #16171b; /* 본문·제목 */
+  --color-ink-2: #4b4c50; /* 보조 설명 */
+  --color-ink-3: #7c7d80; /* 각주·캡션 */
+
+  /* 브랜드 */
+  --color-brand: #0c5949; /* 주 버튼, 활성 탭 */
+  --color-accent: #c4de3c; /* 절감액 강조, 주말 할인 */
+
+  /* 부하 구간 — 차트와 범례가 공유한다 */
+  --color-band-light: #2f7c5a; /* 경부하 */
+  --color-band-middle: #c88918; /* 중간부하 */
+  --color-band-peak: #b7422e; /* 최대부하 */
+
+  /* 상태 배지 */
+  --color-ok-bg: #e2efe6;
+  --color-ok-fg: #275742;
+  --color-warn-bg: #f6ead0;
+  --color-warn-fg: #644303;
+  --color-off-bg: #e6e3dc;
+  --color-off-fg: #55565b;
+  --color-danger: #b7422e;
+
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  --radius-card: 16px;
+  --radius-field: 12px;
+  --radius-pill: 999px;
+}
+
+/*
+ * 다크 모드는 넣지 않는다. 디자인에 없고, 차트의 부하구간 색 3개는
+ * 어두운 배경에서 대비가 무너져서 별도 팔레트를 새로 정해야 한다.
+ */
+html {
+  color-scheme: light only;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 디자인에서 수치는 전부 고정폭이다 — 시각·금액·kWh가 자리를 안 흔든다. */
+.tnum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
