@@ -28,6 +28,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 
 from evcharge.infra.db import Base, get_session
@@ -82,8 +83,12 @@ def _ensure_test_database() -> None:
                 # 그대로 문자열 포매팅하는 게 찜찜해서 최소한 따옴표만 이스케이프.
                 conn.execute(text(f'CREATE DATABASE "{db_name.replace(chr(34), "")}"'))
         maintenance_engine.dispose()
-    except Exception:
-        # postgres가 안 떠 있거나 권한이 없거나 — 아래 test_engine이 알아서 skip한다.
+    except SQLAlchemyError:
+        # postgres가 안 떠 있거나 권한이 없거나 — 여기서 보고하지 않는 이유는
+        # 곧이어 test_engine이 같은 원인으로 실패하면서 훨씬 정확한 skip 메시지를
+        # 내놓기 때문이다. 여기서 먼저 떠들면 같은 사실을 두 번, 그것도 덜 친절한
+        # 문구로 알리게 된다. 삼키는 범위는 SQLAlchemyError로 좁혀 두어
+        # 오타·타입 오류 같은 진짜 버그는 그대로 터지게 한다.
         pass
 
 
@@ -94,7 +99,8 @@ def test_engine() -> Iterator[Engine]:
     engine = create_engine(test_url, pool_pre_ping=True)
     try:
         engine.connect().close()
-    except Exception:
+    except SQLAlchemyError:
+        # 접속 실패만 skip으로 바꾼다. 그 밖의 예외는 설정 실수이므로 그대로 터뜨린다.
         pytest.skip(_SKIP_MSG)
 
     Base.metadata.create_all(engine)

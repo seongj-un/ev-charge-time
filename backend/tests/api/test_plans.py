@@ -7,9 +7,8 @@ import pytest
 from evcharge.api.auth_deps import SESSION_COOKIE
 from evcharge.api.deps import get_tariff
 from evcharge.domain.pricing import KST
-from evcharge.infra.models import SavedPlan
+from evcharge.infra.models import SavedPlan, User
 from evcharge.infra.models import Session as SessionModel
-from evcharge.infra.models import User
 from evcharge.infra.security import hash_password, hash_token, new_session_token
 
 SPEC_EXAMPLE = {

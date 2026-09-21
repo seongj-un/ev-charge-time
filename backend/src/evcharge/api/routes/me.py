@@ -35,7 +35,7 @@ def delete_me(
     # (Finding 2) auth.logout과 같은 결함: 새 Response(status_code=204)를
     # 반환하면 FastAPI가 주입된 `response`의 Set-Cookie 헤더를 버린다.
     # 데코레이터가 이미 status_code=204를 정하므로 None을 반환한다.
-    return None
+    return
 
 
 # /api/me/* 의 나머지는 기능별로 분리되어 있다:

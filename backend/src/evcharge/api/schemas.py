@@ -122,7 +122,7 @@ class RecommendRequest(BaseModel):
         return value.astimezone(KST)
 
     @model_validator(mode="after")
-    def _check_ranges(self) -> "RecommendRequest":
+    def _check_ranges(self) -> RecommendRequest:
         if self.soc_target <= self.soc_now:
             raise ValueError("soc_target은 soc_now보다 커야 합니다.")
         if self.deadline <= self.earliest_start:

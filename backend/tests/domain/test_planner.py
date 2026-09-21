@@ -30,14 +30,14 @@ def flat(moment: datetime) -> PriceBreakdown:
 
 def spec_request(**overrides) -> ChargeRequest:
     """API 명세서 2-2의 예시 요청."""
-    defaults = dict(
-        battery_kwh=70.0,
-        soc_now=30.0,
-        soc_target=60.0,
-        charger_kw=7.0,
-        earliest_start=kst(2026, 10, 7, 18),
-        deadline=kst(2026, 10, 8, 8),
-    )
+    defaults = {
+        "battery_kwh": 70.0,
+        "soc_now": 30.0,
+        "soc_target": 60.0,
+        "charger_kw": 7.0,
+        "earliest_start": kst(2026, 10, 7, 18),
+        "deadline": kst(2026, 10, 8, 8),
+    }
     return ChargeRequest(**{**defaults, **overrides})
 
 

@@ -14,9 +14,8 @@ from sqlalchemy import select
 
 from evcharge.api.auth_deps import SESSION_COOKIE
 from evcharge.domain.pricing import KST
-from evcharge.infra.models import ChargerCache, FavoriteStation
+from evcharge.infra.models import ChargerCache, FavoriteStation, User
 from evcharge.infra.models import Session as SessionModel
-from evcharge.infra.models import User
 from evcharge.infra.security import hash_password, hash_token, new_session_token
 
 

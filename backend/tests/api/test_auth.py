@@ -32,7 +32,7 @@ def test_signup_returns_201_hides_password_sets_cookie_and_logs_in(client):
     body = response.json()
     assert body["email"] == EMAIL
     assert body["nickname"] == "충전러"
-    assert "id" in body and body["id"]
+    assert body.get("id")
     assert "password" not in body
     assert "password_hash" not in body
     assert PASSWORD not in response.text

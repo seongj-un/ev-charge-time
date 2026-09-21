@@ -1,11 +1,10 @@
 import uuid
 from datetime import datetime
 
+import pytest
 from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-
-import pytest
 
 from evcharge.domain.pricing import KST
 from evcharge.infra.models import ChargerCache, FavoriteStation, SavedPlan, User, Vehicle
