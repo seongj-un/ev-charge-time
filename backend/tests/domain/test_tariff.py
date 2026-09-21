@@ -90,19 +90,47 @@ def test_version_is_exposed(tmp_path):
     assert Tariff.load(path).version == "2026.1-draft"
 
 
-def test_real_config_flags_every_item_the_spec_lists_as_unverified():
-    """API 명세서 2-1의 /health 예시에 적힌 5개 항목이 모두 잡혀야 한다."""
+def test_real_config_unverified_set_is_exactly_what_we_expect():
+    """실제 설정의 미확인 항목 집합을 통째로 고정한다.
+
+    항목 하나가 verified로 바뀌거나 반대로 풀리면 이 테스트가 깨진다 — 요금
+    설정의 상태 변경은 항상 의도적이어야 하고, 조용히 일어나면 안 된다.
+    (/health와 /api/recommend가 이 목록을 그대로 내보내므로 화면의 "요금 일부
+    확인 중" 안내가 여기에 달려 있다.)
+
+    한전 공식 요금표(2023-11-09)를 확보해 시간대·전력량요금·가산항목·세금은
+    verified가 됐다. 남은 셋은 그 문서가 정하지 않는 값들이다:
+    공공 급속 단가는 충전사업자가 정하고, EV 충전 특례할인은 별도 고시다.
+    """
     from evcharge.settings import get_settings
 
     unverified = Tariff.load(get_settings().tariff_path).unverified_items()
 
-    for expected in [
-        "time_bands",
+    assert set(unverified) == {
         "public_fast.base_price_per_kwh",
+        "public_fast.weekend_discount",
+        "weekend_discount_self",
+    }
+
+
+def test_real_config_marks_the_kepco_sourced_items_verified():
+    """공식 요금표에서 옮긴 항목은 미확인 목록에 없어야 한다.
+
+    누가 값을 잠정치로 되돌리면서 status만 verified로 남겨두는 실수는 위
+    테스트가 못 잡는다. 반대로 status를 되돌리면 이 테스트가 잡는다.
+    """
+    from evcharge.settings import get_settings
+
+    unverified = Tariff.load(get_settings().tariff_path).unverified_items()
+
+    for kepco_sourced in [
+        "time_bands",
+        "seasons",
+        "energy_charge.self_low",
+        "energy_charge.self_high",
         "adders.climate_env_per_kwh",
         "adders.fuel_adjustment_per_kwh",
+        "vat_rate",
         "power_fund_rate",
     ]:
-        assert expected in unverified, f"{expected}가 미확인 목록에 없다"
-
-    assert "vat_rate" not in unverified
+        assert kepco_sourced not in unverified, f"{kepco_sourced}가 미확인으로 남아있다"
