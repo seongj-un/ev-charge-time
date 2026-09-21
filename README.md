@@ -33,14 +33,23 @@ uv run uvicorn evcharge.main:app --reload
 | `GET /api/chargers` | F-07 주변 충전소 | 구현 |
 | `/api/auth/*` | F-11 회원가입·로그인 | 구현 |
 | `/api/me/*` | F-12·F-13·F-14 사용자 데이터 | 구현 |
-| `GET /api/solar-forecast` | F-09 태양광 예측 | 501 스텁 |
+| `GET /api/solar-forecast` | F-09 태양광 예측 | 구현 (키 필요) |
 | `POST /api/chat` | F-10 자연어 질의 | 구현 (키 필요) |
 
-스텁도 경로·메서드·스키마는 명세대로 선언돼 있어 `/docs`에서 전체 계약을 볼 수 있다.
+**기능 명세의 F-01~F-14가 전부 구현됐다.** 스텁으로 남은 엔드포인트는 없다.
 
-`POST /api/chat`은 `GEMINI_API_KEY`가 비어 있으면 501을 낸다 —
-`GET /api/chargers`가 `CHARGER_API_KEY` 없이 501인 것과 같은 규칙이다.
-키 없이도 나머지 기능은 전부 돈다.
+세 엔드포인트는 외부 자격증명이 있어야 동작하고, 없으면 각자 501을 낸다.
+키 없이도 나머지 기능은 전부 돈다 — 기동 시점에 막지 않는다.
+
+| 키 | 없으면 501이 되는 곳 | 발급처 |
+| --- | --- | --- |
+| `CHARGER_API_KEY` | `GET /api/chargers` | [공공데이터포털 15076352](https://www.data.go.kr/data/15076352/openapi.do) |
+| `KMA_API_KEY` | `GET /api/solar-forecast` | [공공데이터포털 15084084](https://www.data.go.kr/data/15084084/openapi.do) |
+| `GEMINI_API_KEY` | `POST /api/chat` | [Google AI Studio](https://aistudio.google.com/apikey) (무료) |
+
+공공데이터포털은 계정당 인증키를 하나만 주므로 위 두 키는 **같은 문자열**이 된다.
+그래도 설정을 따로 두는 이유는 활용신청이 데이터셋별로 따로 승인되기 때문이다 —
+"충전소는 되는데 예보는 안 된다"는 상태가 실제로 있다.
 
 ## 충전소 캐시 수집 (F-07)
 
@@ -157,5 +166,10 @@ backend/config/  tariff.yaml · holidays.yaml
 - `config/holidays.yaml`의 음력·대체공휴일은 공공데이터포털 특일 정보 API로 대조 필요
 - `tariff_version`은 요금표 시행일로 매긴다(`2023.11.09-kepco`). 개정 시 함께 올린다
 - 충전소 `status`(`stat`)·충전기 종류(`chgerType`) 코드의 뜻 (원본 활용가이드 확보 후).
-  지금은 원문 코드를 그대로 내보내고 화면이 모르는 코드를 원문 표시한다 —
-  프론트의 급속/완속 필터는 그 표가 확정돼야 값을 맞출 수 있다
+  지금은 원문 코드를 그대로 내보낸다. 급속·완속 구분은 코드가 아니라 `capacity_kw`로
+  가른다 — `chgerType=04`가 7~350 kW에 걸쳐 있어 코드로는 못 가른다. 커넥터 종류
+  (DC차데모/AC완속/DC콤보)는 대체할 필드가 없어 그 표가 있어야 표시할 수 있다
+- 지역별 태양광 설비용량 (전력거래소). 없으면 `/api/solar-forecast`의 `predicted_mwh`가
+  null로 나간다 — 일사량과 STC 대비 지수는 설비용량과 무관하게 항상 채워진다
+- `SKY=2`와 `PTY=2·3`은 실제 예보에서 관찰되지 않아 미검증이다. 나오면 조용히 넘어가지
+  않고 예외로 터진다 (`domain/solar.py`의 `SKY_OCTAS`)
