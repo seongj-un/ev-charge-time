@@ -6,8 +6,10 @@ F-09(태양광 발전 예측)와 F-10(자연어 질의) 둘 다 구현됐다. �
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
 from functools import lru_cache
+from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, select
@@ -26,6 +28,8 @@ from ..recommend_service import compute_recommendation
 from ..schemas import ChatRequest, ChatResponse, RecommendRequest, SolarForecast
 from ..solar_service import SolarForecastService, parse_capacities
 from ..vehicle_resolution import resolve_vehicle_defaults
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["extensions"])
 
@@ -129,8 +133,10 @@ def chat(
             client, payload.message, now, payload.history
         )
     except LlmError as exc:
-        # 모델 쪽 사정이지 요청 잘못이 아니다. 문구에 내부 사정을 싣지 않는다
-        # (예외 메시지는 서버 로그용이고, 사용자에게는 다시 시도하라고만 한다).
+        # 모델 쪽 사정이지 요청 잘못이 아니다. 사용자에게는 다시 시도하라고만 하고
+        # 원인은 로그에만 남긴다 — 남기지 않으면 503이 왜 났는지 아무도 모른다.
+        # (모델 API 키가 응답에 되비쳐 나올 수 있으므로 예외만 싣고 요청 본문은 싣지 않는다.)
+        logger.warning("자연어 질의 실패: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=503,
             detail="지금은 질문에 답할 수 없습니다. 잠시 후 다시 시도해 주세요.",
@@ -211,13 +217,24 @@ def _consume_quota(session: DbSession, user: User, now: datetime) -> None:
     session.commit()
 
     if used > settings.chat_rate_limit_count:
+        # 서버는 창이 언제 리셋되는지 알고 있다. 그걸 알려주지 않으면 화면은
+        # 한도만 말할 수 있고, 사용자는 언제 다시 물어볼 수 있는지 모른 채
+        # 계속 누른다. Retry-After는 429의 표준 헤더라 따로 약속할 것이 없다.
+        #
+        # 올림하는 이유: 내림하면 그 시각에 다시 보내도 아직 같은 창이라
+        # 또 429가 난다. 최소 1초를 보장하는 것도 같은 이유다 — 0이면
+        # "지금 다시"가 되어 무한 재시도를 부른다.
+        reset_at = window_start + window
+        retry_after = max(1, ceil((reset_at - now).total_seconds()))
+        minutes = ceil(retry_after / 60)
         raise HTTPException(
             status_code=429,
             detail=(
                 f"질문 횟수 제한({settings.chat_rate_limit_window_minutes}분당 "
                 f"{settings.chat_rate_limit_count}회)을 초과했습니다. "
-                "잠시 후 다시 시도해 주세요."
+                f"약 {minutes}분 뒤에 다시 물어볼 수 있어요."
             ),
+            headers={"Retry-After": str(retry_after)},
         )
 
 

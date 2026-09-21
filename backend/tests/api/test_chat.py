@@ -33,6 +33,7 @@ from evcharge.infra.llm import LlmError
 from evcharge.infra.models import Session as SessionModel
 from evcharge.infra.models import User, Vehicle
 from evcharge.infra.security import hash_password, hash_token, new_session_token
+from evcharge.settings import get_settings
 
 # 기능 명세 시나리오 A(퇴근 후 귀가 → 다음날 출근 전)를 절대 시각으로 고정한 것.
 # 도메인 탐색은 "지금"을 보지 않으므로(planner.recommend) 과거·미래 어느 쪽이든
@@ -547,3 +548,44 @@ def test_a_failed_model_call_still_costs_quota(client, db_session, fake_llm, sma
         assert _ask(client).status_code == 503
 
     assert _ask(client).status_code == 429
+
+
+# ── 429에 언제 다시 물어볼 수 있는지 담는다 ─────────────────────────────
+
+
+def test_429_carries_retry_after_seconds(client, db_session, fake_llm, small_limit):
+    """제한에 걸리면 Retry-After 헤더로 남은 시간을 알려준다.
+
+    서버는 창이 언제 리셋되는지 알고 있다. 그걸 안 알려주면 화면은 한도만
+    말할 수 있고, 사용자는 언제 다시 물어볼 수 있는지 모른 채 계속 누른다.
+    Retry-After는 429에 대한 표준 헤더라 프론트가 따로 약속할 것도 없다.
+    """
+    _login(client, db_session)
+
+    for _ in range(small_limit):
+        assert _ask(client).status_code == 200
+
+    blocked = _ask(client)
+    assert blocked.status_code == 429
+
+    retry_after = blocked.headers.get("retry-after")
+    assert retry_after is not None, "429에 Retry-After가 없다"
+    seconds = int(retry_after)
+
+    window_seconds = get_settings().chat_rate_limit_window_minutes * 60
+    # 창이 막 시작했을 수도, 거의 끝나갈 수도 있으므로 범위로 본다.
+    # 0이면 "지금 다시 해보라"는 뜻이 되어 무한 재시도를 부른다.
+    assert 0 < seconds <= window_seconds, seconds
+
+
+def test_429_body_says_when_not_just_that_it_is_limited(
+    client, db_session, fake_llm, small_limit
+):
+    """본문에도 남은 시간을 담는다 — 헤더를 못 읽는 화면도 있다."""
+    _login(client, db_session)
+
+    for _ in range(small_limit):
+        _ask(client)
+
+    detail = _ask(client).json()["detail"]
+    assert "분" in detail, detail
