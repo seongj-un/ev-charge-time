@@ -195,11 +195,25 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
     renderScreen(routes({ body: [남산] }));
 
     await screen.findByRole("heading", { name: "남산 주차장" });
-    expect(stationItem("남산 주차장").getByText("2")).toBeInTheDocument();
-    expect(stationItem("남산 주차장").getByText("DC_CHAdeMO")).toBeInTheDocument();
+    // stat=9는 공식 코드표에 없는 값이다. 뜻을 지어내지 않고 원문을 남긴다.
+    expect(stationItem("남산 주차장").getByText("9")).toBeInTheDocument();
     expect(screen.queryByText("사용 가능")).not.toBeInTheDocument();
     // 왜 코드가 그대로 보이는지 화면이 한 줄로 설명한다.
     expect(screen.getByText(/아직 확정되지 않은 상태 코드/)).toBeInTheDocument();
+  });
+
+  /*
+   * 타입 코드는 뜻을 모르고 속도도 정하지 못한다(type=04가 7~350 kW). 보여주면
+   * 사용자가 읽어낼 것이 없는 숫자만 는다. 대신 출력으로 속도를 말한다.
+   */
+  test("타입 코드를 화면에 흘리지 않고 출력으로 속도를 말한다", async () => {
+    stubGeolocation(SEOUL);
+    renderScreen(routes({ body: [서울역] }));
+
+    await screen.findByRole("heading", { name: "서울역 공영주차장" });
+    expect(stationItem("서울역 공영주차장").getByText("급속")).toBeInTheDocument();
+    expect(stationItem("서울역 공영주차장").getByText("100 kW")).toBeInTheDocument();
+    expect(stationItem("서울역 공영주차장").queryByText("04")).not.toBeInTheDocument();
   });
 
   test("급속 필터는 급속이 있는 충전소만 남긴다", async () => {

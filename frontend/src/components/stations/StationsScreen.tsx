@@ -13,6 +13,7 @@ import type { Station } from "@/lib/api/types";
 
 import { StationCard } from "./StationCard";
 import {
+  FAST_MIN_KW,
   filterStations,
   latestStatusUpdate,
   statusUpdatedLabel,
@@ -197,6 +198,16 @@ export function StationsScreen() {
               </label>
             </div>
           </fieldset>
+
+          {/*
+            * 급속/완속 기준을 화면에 적는다. 타입 코드로 가르지 않고 출력으로 가르는데,
+            * 그 경계를 숨기면 "왜 이게 급속이지"에 답할 수 없다.
+            */}
+          {filter.type !== "all" ? (
+            <p className="mt-2 text-xs text-ink-3">
+              충전기 출력 기준으로 나눠요 — 급속 {FAST_MIN_KW} kW 이상, 완속 그 미만.
+            </p>
+          ) : null}
 
           {filter.availableOnly ? (
             <p className="mt-2 text-xs text-ink-3">

@@ -48,11 +48,39 @@ export function statusView(status: string): StatusView {
   return { label: status.trim(), tone: "off", known: false, available: false };
 }
 
-const KNOWN_TYPE: Record<string, string> = { fast: "급속", slow: "완속" };
+/**
+ * 급속/완속을 가르는 경계 (kW).
+ *
+ * 실데이터(전남광주 32,835대)에서 41~49 kW는 한 대도 없다 —
+ * 40 kW가 2대, 50 kW가 1,052대로 그 사이가 비어 있다. 임의로 고른 값이 아니다.
+ */
+export const FAST_MIN_KW = 50;
 
-/** 자기 뜻을 적어 보낸 값만 옮기고 나머지는 원문을 남긴다. */
-export function chargerTypeLabel(type: string): string {
-  return KNOWN_TYPE[type.trim().toLowerCase()] ?? type;
+export type ChargeSpeed = "fast" | "slow" | "unknown";
+
+/**
+ * 충전 속도는 **타입 코드가 아니라 출력으로** 정한다.
+ *
+ * 타입은 속도를 결정하지 못한다 — 실데이터에서 type=04가 7~350 kW에 걸쳐
+ * 있고 그중 137대는 50 kW 미만이다. 타입으로 가르면 수백 대가 틀린다.
+ * 게다가 타입 코드는 공식 활용가이드가 없어 뜻을 모른다 (stat과 같은 이유).
+ *
+ * capacity_kw는 API가 주는 실측값이라 넘겨짚을 여지가 없다.
+ * 다만 0 kW인 충전기가 20대 실제로 있어, 그건 완속이라 말하지 않는다.
+ */
+export function speedOf(capacityKw: number): ChargeSpeed {
+  if (!Number.isFinite(capacityKw) || capacityKw <= 0) return "unknown";
+  return capacityKw >= FAST_MIN_KW ? "fast" : "slow";
+}
+
+const SPEED_LABEL: Record<ChargeSpeed, string> = {
+  fast: "급속",
+  slow: "완속",
+  unknown: "출력 정보 없음",
+};
+
+export function speedLabel(capacityKw: number): string {
+  return SPEED_LABEL[speedOf(capacityKw)];
 }
 
 /** "320 m" · "1.2 km". 모르면 빈 문자열 — 0 km라고 단정하지 않는다. */
@@ -76,12 +104,13 @@ export function metaLine(parts: (string | null | undefined)[]): string {
 }
 
 export type StationFilter = {
+  /** "fast"·"slow"는 출력(kW) 기준이다. 타입 코드가 아니다 — speedOf 참고. */
   type: "all" | "fast" | "slow";
   availableOnly: boolean;
 };
 
 /**
- * 종류와 상태 조건은 **같은 충전기 한 대가 동시에** 만족해야 한다.
+ * 속도와 상태 조건은 **같은 충전기 한 대가 동시에** 만족해야 한다.
  * 따로 세면 "급속은 충전 중이고 완속만 비어 있는 곳"이 '급속 + 사용 가능만'에 걸린다.
  */
 export function filterStations<T extends { chargers: Charger[] | null }>(
@@ -91,9 +120,9 @@ export function filterStations<T extends { chargers: Charger[] | null }>(
   if (filter.type === "all" && !filter.availableOnly) return stations;
   return stations.filter((item) =>
     (item.chargers ?? []).some((charger) => {
-      const typeOk = filter.type === "all" || charger.type.trim().toLowerCase() === filter.type;
+      const speedOk = filter.type === "all" || speedOf(charger.capacity_kw) === filter.type;
       const statusOk = !filter.availableOnly || statusView(charger.status).available;
-      return typeOk && statusOk;
+      return speedOk && statusOk;
     }),
   );
 }

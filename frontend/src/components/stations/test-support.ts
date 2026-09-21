@@ -10,9 +10,10 @@ import type { Charger, FavoriteStation, Station } from "@/lib/api/types";
  * 501인 오늘의 화면에는 목록이 없다는 것을 따로 못 박아 둔다.
  */
 
+/* 실제 API 모양: 타입은 "02"·"04" 같은 코드, 속도는 capacity_kw가 말해 준다. */
 export const FAST_AVAILABLE: Charger = {
   charger_id: "c-fast",
-  type: "fast",
+  type: "04",
   capacity_kw: 100,
   status: "available",
   status_updated_at: "2026-09-21T22:10:00+09:00",
@@ -20,21 +21,21 @@ export const FAST_AVAILABLE: Charger = {
 
 export const SLOW_CHARGING: Charger = {
   charger_id: "c-slow",
-  type: "slow",
+  type: "02",
   capacity_kw: 7,
   status: "charging",
   status_updated_at: "2026-09-21T22:05:00+09:00",
 };
 
 /**
- * 뜻을 모르는 상태 코드. 한국환경공단 원본은 "1".."9" 같은 숫자를 쓰는데
- * 명세 2-4가 "상태 코드 매핑은 원본 API 문서 확인 후 확정"으로 남아 있다.
+ * 뜻을 모르는 상태 코드. 실데이터에 stat=9가 1,734대(5.3%) 있는데
+ * 공식 코드표에 없는 값이다. 활용가이드 확인 전까지 원문 그대로 둔다.
  */
 export const UNKNOWN_STATUS: Charger = {
   charger_id: "c-unknown",
-  type: "DC_CHAdeMO",
+  type: "06",
   capacity_kw: 50,
-  status: "2",
+  status: "9",
   status_updated_at: null,
 };
 
