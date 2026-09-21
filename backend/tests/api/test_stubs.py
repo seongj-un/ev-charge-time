@@ -12,11 +12,6 @@ import pytest
 # (tests/api/test_vehicles.py 참고). OpenAPI 등록 확인만 아래에서 계속한다.
 STUB_ENDPOINTS = [
     ("GET", "/api/chargers?lat=35.0&lng=126.7", "/api/chargers", None),
-    ("GET", "/api/me/plans", "/api/me/plans", None),
-    ("GET", "/api/me/plans/summary?month=2026-10", "/api/me/plans/summary", None),
-    ("GET", "/api/me/plans/p_01", "/api/me/plans/{plan_id}", None),
-    ("POST", "/api/me/plans", "/api/me/plans", None),
-    ("DELETE", "/api/me/plans/p_01", "/api/me/plans/{plan_id}", None),
     ("GET", "/api/me/favorites", "/api/me/favorites", None),
     ("PUT", "/api/me/favorites/ST-001", "/api/me/favorites/{station_id}", None),
     ("DELETE", "/api/me/favorites/ST-001", "/api/me/favorites/{station_id}", None),
@@ -34,6 +29,9 @@ IMPLEMENTED = [
     "/api/me",
     "/api/me/vehicles",
     "/api/me/vehicles/{vehicle_id}",
+    "/api/me/plans",
+    "/api/me/plans/summary",
+    "/api/me/plans/{plan_id}",
 ]
 
 
