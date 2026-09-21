@@ -196,6 +196,25 @@ def test_delete_account_response_actually_clears_the_session_cookie(client):
     assert "max-age=0" in header
 
 
+# ── I-2: DB 컬럼 길이 초과가 500으로 새면 안 된다 ───────────────────────────
+#
+# 리뷰어가 라이브로 재현: nickname 60자(컬럼은 varchar(50)), email 406자
+# (컬럼은 varchar(320))가 스키마의 max_length 부재로 그대로 DB까지 내려가
+# StringDataRightTruncation → sqlalchemy.exc.DataError → 500이 됐다. 둘 다
+# 로그인이 필요 없는 회원가입 경로라 누구나 칠 수 있었다.
+
+
+def test_signup_nickname_over_column_length_is_422(client):
+    response = signup(client, email="long-nickname@example.com", nickname="n" * 60)
+    assert response.status_code == 422
+
+
+def test_signup_email_over_column_length_is_422(client):
+    long_email = ("a" * 390) + "@example.com"
+    response = signup(client, email=long_email)
+    assert response.status_code == 422
+
+
 def test_login_timing_does_not_leak_whether_the_email_is_registered(client):
     """Finding 1 회귀 테스트 (Critical).
 

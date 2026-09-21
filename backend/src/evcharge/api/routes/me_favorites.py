@@ -11,7 +11,7 @@ station_id도 station_id만 채운 채 목록에 나온다.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession
@@ -75,7 +75,9 @@ def list_favorites(
 
 @router.put("/{station_id}", status_code=204)
 def add_favorite(
-    station_id: str,
+    # favorite_stations.station_id는 varchar(64)(I-2) — 경로 파라미터라
+    # 스키마의 Field가 아니라 Path()로 컬럼 길이를 맞춘다.
+    station_id: str = Path(max_length=64),
     user: User = Depends(current_user),
     session: DbSession = Depends(get_session),
 ) -> None:
@@ -102,7 +104,7 @@ def add_favorite(
 
 @router.delete("/{station_id}", status_code=204)
 def remove_favorite(
-    station_id: str,
+    station_id: str = Path(max_length=64),
     user: User = Depends(current_user),
     session: DbSession = Depends(get_session),
 ) -> None:

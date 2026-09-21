@@ -148,6 +148,20 @@ def test_favorites_are_scoped_to_user(client, db_session):
     assert body == []
 
 
+# ── I-2: DB 컬럼 길이 초과가 500으로 새면 안 된다 ───────────────────────────
+
+
+def test_put_favorite_station_id_over_column_length_is_422(client, db_session):
+    """favorite_stations.station_id는 varchar(64). station_id는 경로
+    파라미터라 body 스키마가 아니라 ``Path(max_length=64)``로 막아야 한다."""
+    user = _make_user(db_session)
+    _login(client, db_session, user)
+
+    response = client.put(f"/api/me/favorites/{'S' * 100}")
+
+    assert response.status_code == 422
+
+
 # ── C-1(Critical): DELETE가 다른 사용자의 즐겨찾기를 지우면 안 된다 ────────
 #
 # 최종 전체 리뷰가 실제로 확인했다: ``me_favorites.py:112``의

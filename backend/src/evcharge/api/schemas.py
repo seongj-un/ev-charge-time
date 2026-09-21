@@ -102,9 +102,13 @@ class RecommendResponse(BaseModel):
 
 
 class SignupRequest(BaseModel):
-    email: str
+    # max_length는 infra/models.py의 컬럼 정의와 맞춘다(I-2) — users.email은
+    # varchar(320), users.nickname은 varchar(50). 여기서 막지 않으면 길이
+    # 초과 입력이 그대로 DB까지 내려가 DataError(→ errors.py의 2차 안전망)가
+    # 되는데, 그건 500을 422로 바꿔줄 뿐 진짜 1차 방어선은 아니다.
+    email: str = Field(max_length=320)
     password: str = Field(min_length=8)
-    nickname: str | None = None
+    nickname: str | None = Field(default=None, max_length=50)
 
 
 class LoginRequest(BaseModel):
@@ -124,7 +128,8 @@ class UserOut(BaseModel):
 
 
 class VehicleIn(BaseModel):
-    name: str
+    # vehicles.name은 varchar(100)(I-2) — 컬럼과 어긋나지 않게 맞춘다.
+    name: str = Field(max_length=100)
     battery_kwh: float = Field(gt=0)
     charger_kw: float = Field(gt=0)
     mode: Mode = "self_low"
@@ -144,7 +149,7 @@ class VehicleUpdate(BaseModel):
     라우터가 ``exclude_unset=True``로 실제로 실린 필드만 골라 반영한다.
     """
 
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=100)
     battery_kwh: float | None = Field(default=None, gt=0)
     charger_kw: float | None = Field(default=None, gt=0)
     mode: Mode | None = None

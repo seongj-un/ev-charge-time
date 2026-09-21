@@ -2,7 +2,7 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 
 from ..domain.errors import DomainError, TariffConfigError
 
@@ -43,4 +43,24 @@ def register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=409,
             content={"detail": "요청이 기존 데이터와 충돌합니다. 잠시 후 다시 시도하세요."},
+        )
+
+    @app.exception_handler(DataError)
+    def _data_error(request: Request, exc: DataError) -> JSONResponse:
+        """DB 컬럼 제약(길이 초과 등)에 대한 안전망(I-2). IntegrityError(A-1)의
+        형제뻘이지만 SQLAlchemy 계층에서는 별개 예외라(둘 다 DatabaseError의
+        서로 다른 자식) A-1이 이 경로를 덮지 못했다.
+
+        스키마의 max_length가 1차 방어선이라(schemas.py) 정상 경로에서는
+        여기까지 오지 않아야 한다 — 여기는 스키마와 컬럼 정의가 어긋나거나
+        새 입력 경로가 max_length를 빠뜨렸을 때를 위한 2차 그물이다.
+
+        상태 코드는 IntegrityError(409, "기존 데이터와 충돌")와 다르게 422를
+        쓴다 — 길이 초과는 자원 충돌이 아니라 "요청 값 자체가 잘못됨"이라
+        도메인 업무 오류(422 + detail 문자열)와 성격이 같다.
+        """
+        logger.warning("처리되지 않은 DataError: %s", exc, exc_info=exc)
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "요청 값이 올바르지 않습니다."},
         )

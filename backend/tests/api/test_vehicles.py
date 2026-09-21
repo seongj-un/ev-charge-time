@@ -133,6 +133,18 @@ def test_create_vehicle_rejects_non_positive_charger(auth_client):
     assert response.status_code == 422
 
 
+# ── I-2: DB 컬럼 길이 초과가 500으로 새면 안 된다 ───────────────────────────
+
+
+def test_create_vehicle_name_over_column_length_is_422(auth_client):
+    """vehicles.name은 varchar(100). 스키마에 max_length가 없으면 그대로 DB
+    까지 내려가 StringDataRightTruncation → DataError → (고치기 전) 500이었다."""
+    response = auth_client.post(
+        "/api/me/vehicles", json={**VEHICLE, "name": "차" * 200}
+    )
+    assert response.status_code == 422
+
+
 # ── 기본 차량 단일성 ────────────────────────────────────────────────────
 
 
