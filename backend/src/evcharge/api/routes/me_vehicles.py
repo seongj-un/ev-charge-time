@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session as DbSession
 from ...infra.db import get_session
 from ...infra.models import User, Vehicle
 from ..auth_deps import current_user
-from ..schemas import VehicleIn, VehicleOut
+from ..schemas import VehicleIn, VehicleOut, VehicleUpdate
 
 router = APIRouter(prefix="/api/me/vehicles", tags=["vehicles"])
 
@@ -91,20 +91,26 @@ def create_vehicle(
 @router.patch("/{vehicle_id}", response_model=VehicleOut)
 def update_vehicle(
     vehicle_id: str,
-    payload: VehicleIn,
+    payload: VehicleUpdate,
     user: User = Depends(current_user),
     session: DbSession = Depends(get_session),
 ) -> VehicleOut:
-    vehicle = _get_owned_vehicle(session, vehicle_id, user)
+    """부분 갱신(C-2): 요청에 실제로 실린 필드만 반영한다.
 
-    if payload.is_default:
+    ``VehicleIn``을 그대로 받던 이전 버전은 ``is_default``·``mode``에 기본값이
+    있어서, 예를 들어 이름만 바꾸려고 그 필드들을 빼고 보내면 기본값(False,
+    "self_low")이 그대로 실려 기존 기본 차량이 조용히 해제됐다.
+    ``exclude_unset=True``로 실제로 실린 필드만 골라내면 이 문제가 사라진다.
+    """
+    vehicle = _get_owned_vehicle(session, vehicle_id, user)
+    updates = payload.model_dump(exclude_unset=True)
+
+    if updates.get("is_default") is True:
         _clear_existing_default(session, user.id, except_vehicle_id=vehicle.id)
 
-    vehicle.name = payload.name
-    vehicle.battery_kwh = payload.battery_kwh
-    vehicle.charger_kw = payload.charger_kw
-    vehicle.mode = payload.mode
-    vehicle.is_default = payload.is_default
+    for field_name, value in updates.items():
+        setattr(vehicle, field_name, value)
+
     session.commit()
     session.refresh(vehicle)
     return _to_out(vehicle)

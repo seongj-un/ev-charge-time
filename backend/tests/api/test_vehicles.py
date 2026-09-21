@@ -7,12 +7,13 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from evcharge.api.auth_deps import SESSION_COOKIE
 from evcharge.domain.pricing import KST
 from evcharge.infra.db import get_session
 from evcharge.infra.models import Session as SessionModel
-from evcharge.infra.models import User
+from evcharge.infra.models import User, Vehicle
 from evcharge.infra.security import hash_password, hash_token, new_session_token
 from evcharge.main import create_app
 
@@ -170,6 +171,148 @@ def test_updating_default_moves_it_to_the_edited_vehicle(auth_client):
     assert listed[second["id"]]["is_default"] is True
 
 
+# ── A-1: 기본 차량 동시 설정 (IntegrityError 안전망) ──────────────────────
+
+
+def test_concurrent_default_vehicle_creation_is_409_not_500(concurrent):
+    """두 요청이 동시에 ``is_default: true``로 차량을 등록하면, 둘 다
+    ``_clear_existing_default``(해제할 기존 기본이 없어 no-op)를 통과한 뒤
+    동시에 INSERT해 부분 유니크 인덱스(uq_vehicles_one_default_per_user)를
+    다툰다. 이 라우터엔 개별 IntegrityError 처리가 없으므로, 진 쪽이 A-1의
+    안전망 없이는 500을 냈다."""
+    session = concurrent.session()
+    try:
+        user = User(
+            id=str(uuid.uuid4()),
+            email=f"vehicle-race-{uuid.uuid4().hex}@example.com",
+            password_hash=hash_password("password123"),
+            nickname="레이스",
+        )
+        session.add(user)
+        session.commit()
+        user_id = user.id
+
+        token = new_session_token()
+        session.add(
+            SessionModel(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                token_hash=hash_token(token),
+                expires_at=datetime.now(KST) + timedelta(days=14),
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    def create_default_vehicle(client):
+        client.cookies.set(SESSION_COOKIE, token)
+        return client.post(
+            "/api/me/vehicles", json={**VEHICLE, "is_default": True}
+        ).status_code
+
+    try:
+        results = concurrent.run(create_default_vehicle, count=2)
+
+        assert sorted(results) == [201, 409], (
+            f"기본 차량 동시 생성 2건의 결과: {results}. 하나는 성공(201)하고, "
+            "부분 유니크 인덱스를 위반한 쪽은 500이 아니라 409여야 한다(A-1)."
+        )
+
+        verify_session = concurrent.session()
+        try:
+            defaults = verify_session.scalars(
+                select(Vehicle).where(
+                    Vehicle.user_id == user_id, Vehicle.is_default.is_(True)
+                )
+            ).all()
+        finally:
+            verify_session.close()
+
+        assert len(defaults) == 1, "기본 차량은 최종적으로 정확히 1대여야 한다"
+    finally:
+        cleanup_session = concurrent.session()
+        try:
+            cleanup_session.query(Vehicle).filter_by(user_id=user_id).delete()
+            cleanup_session.query(SessionModel).filter_by(user_id=user_id).delete()
+            cleanup_session.query(User).filter_by(id=user_id).delete()
+            cleanup_session.commit()
+        finally:
+            cleanup_session.close()
+
+
+# ── 부분 갱신 (C-2) ───────────────────────────────────────────────────────
+# PATCH가 VehicleIn(is_default·mode에 기본값 있음)을 그대로 받던 시절엔,
+# 이름만 바꾸려고 is_default를 빼고 보내면 기본값(False)이 실려 기존 기본
+# 차량이 조용히 해제됐다. VehicleUpdate + exclude_unset=True로 실제로 보낸
+# 필드만 반영하도록 고쳤다.
+
+
+def test_patch_name_only_keeps_existing_default(auth_client):
+    vehicle = auth_client.post(
+        "/api/me/vehicles", json={**VEHICLE, "is_default": True}
+    ).json()
+
+    updated = auth_client.patch(
+        f"/api/me/vehicles/{vehicle['id']}", json={"name": "새 이름"}
+    )
+
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["name"] == "새 이름"
+    assert body["is_default"] is True, "is_default를 안 보냈으면 그대로 유지돼야 한다"
+    assert body["battery_kwh"] == VEHICLE["battery_kwh"]
+    assert body["charger_kw"] == VEHICLE["charger_kw"]
+
+
+def test_patch_is_default_true_clears_existing_default(auth_client):
+    """기존 동작 유지: is_default: true를 부분 PATCH로 보내도 기존 기본은 해제된다."""
+    first = auth_client.post(
+        "/api/me/vehicles", json={**VEHICLE, "name": "1호차", "is_default": True}
+    ).json()
+    second = auth_client.post(
+        "/api/me/vehicles", json={**VEHICLE, "name": "2호차", "is_default": False}
+    ).json()
+
+    updated = auth_client.patch(
+        f"/api/me/vehicles/{second['id']}", json={"is_default": True}
+    )
+    assert updated.status_code == 200
+    assert updated.json()["is_default"] is True
+
+    listed = {v["id"]: v for v in auth_client.get("/api/me/vehicles").json()}
+    assert listed[first["id"]]["is_default"] is False
+    assert listed[second["id"]]["is_default"] is True
+
+
+def test_patch_empty_body_changes_nothing(auth_client):
+    vehicle = auth_client.post(
+        "/api/me/vehicles", json={**VEHICLE, "is_default": True}
+    ).json()
+
+    updated = auth_client.patch(f"/api/me/vehicles/{vehicle['id']}", json={})
+
+    assert updated.status_code == 200
+    assert updated.json() == vehicle
+
+
+def test_patch_rejects_non_positive_values_when_sent(auth_client):
+    vehicle = auth_client.post("/api/me/vehicles", json=VEHICLE).json()
+
+    assert (
+        auth_client.patch(
+            f"/api/me/vehicles/{vehicle['id']}", json={"battery_kwh": 0}
+        ).status_code
+        == 422
+    )
+    assert (
+        auth_client.patch(
+            f"/api/me/vehicles/{vehicle['id']}", json={"charger_kw": -1}
+        ).status_code
+        == 422
+    )
+
+
 # ── 소유권 (다른 사용자 → 404) ───────────────────────────────────────────
 
 
@@ -242,6 +385,34 @@ def test_recommend_explicit_value_wins_over_vehicle(auth_client):
     body = response.json()
     # energy_kwh = battery_kwh(100, explicit) * (60-30)/100 = 30.0
     assert body["best"]["energy_kwh"] == pytest.approx(30.0)
+
+
+def test_recommend_explicit_charger_kw_wins_over_vehicle(auth_client):
+    """D-3: battery_kwh는 이미 테스트가 있고 mode는 리뷰어가 수동 확인했지만,
+    charger_kw는 요청 값이 차량 기본값을 이긴다는 테스트가 없었다."""
+    vehicle = auth_client.post("/api/me/vehicles", json=VEHICLE).json()  # charger_kw=7
+
+    default_response = auth_client.post(
+        "/api/recommend", json={**RECOMMEND_BASE, "vehicle_id": vehicle["id"]}
+    ).json()
+    explicit_response = auth_client.post(
+        "/api/recommend",
+        json={**RECOMMEND_BASE, "vehicle_id": vehicle["id"], "charger_kw": 22},
+    ).json()
+
+    # energy_kwh(=battery_kwh 기반)는 charger_kw와 무관하게 그대로다.
+    assert explicit_response["best"]["energy_kwh"] == pytest.approx(
+        default_response["best"]["energy_kwh"]
+    )
+
+    def _duration(plan: dict) -> timedelta:
+        start = datetime.fromisoformat(plan["start"])
+        end = datetime.fromisoformat(plan["end"])
+        return end - start
+
+    # charger_kw가 차량 기본값(7kW)보다 훨씬 크면(22kW) 같은 에너지를 채우는
+    # 시간이 눈에 띄게 짧아져야 한다 — 요청 값이 차량 기본값을 이겼다는 뜻이다.
+    assert _duration(explicit_response["best"]) < _duration(default_response["best"])
 
 
 def test_recommend_with_another_users_vehicle_id_is_404(auth_client, other_auth_client):

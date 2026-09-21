@@ -9,11 +9,12 @@ F-13(충전 기록 저장)은 클라이언트가 보낸 추천 결과를 신뢰�
 같은 계산을 다시 해서 저장해야 한다. 그 "같은 계산"이 라우터 함수 안에 갇혀
 있으면 재사용할 수 없어서 이 모듈로 뺐다.
 
-TODO(follow-up): 이 작업(Task 4) 시점에는 ``routes/recommend.py``를 다른
-에이전트가 같은 파일을 동시에 수정 중이라 건드릴 수 없었다. 그래서 지금은
-``routes/recommend.py``와 이 모듈에 동일한 로직이 중복돼 있다. 후속 작업으로
-``routes/recommend.py``의 ``recommend()``가 이 모듈의 ``compute_recommendation``을
-호출하도록 리팩터링해서 계산 로직이 한 곳에만 있게 정리해야 한다.
+(C-3, 후속 정리 완료) ``routes/recommend.py``의 ``recommend()``는 이제 이
+모듈의 ``compute_recommendation``에 위임한다. vehicle_id 해석(로그인 확인,
+본인 차량 조회, 기본값 병합)은 DB 세션이 필요해 라우터 쪽에 남아 있고, 여기
+``vehicle_id is not None`` 분기는 ``compute_recommendation``이 세션 없이
+직접 호출됐을 때(F-13처럼 vehicle_id를 아직 지원하지 않는 호출자)를 위한
+방어선이다 — 라우터는 호출 전에 항상 vehicle_id를 지운 payload를 넘긴다.
 """
 
 from __future__ import annotations
