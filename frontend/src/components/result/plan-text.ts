@@ -74,17 +74,6 @@ export function assumptionsSentence(assumptions: string[]): string | null {
   return `계산 가정: ${assumptions.join(" · ")}`;
 }
 
-/**
- * 확인 전 요금 고지 문구.
- *
- * 백엔드가 주는 unverified_tariff_items는 `adders.climate_env_per_kwh`처럼 코드 안에서
- * 쓰는 키다. 그걸 그대로 문장에 이어 붙이면 아무도 읽지 않는 아홉 줄이 되고,
- * 안 읽히는 고지는 고지가 아니다. 그래서 읽는 사람이 알아야 할 것은 이 한 문장으로
- * 고정하고, 실제 항목 목록은 이 문장 아래 접어서 그대로 보여준다.
- */
-export const UNVERIFIED_NOTICE =
-  "시간대 구분과 부가 요금은 공식 요금표 확인 전 값입니다.";
-
 function dayNumberOf(iso: string): number {
   const wall = parseKstWallClock(iso);
   return Math.floor(Date.UTC(wall.year, wall.month - 1, wall.day) / MS_PER_DAY);

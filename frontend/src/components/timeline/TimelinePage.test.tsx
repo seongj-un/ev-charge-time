@@ -87,7 +87,9 @@ describe("TimelinePage", () => {
     render(<TimelinePage />);
 
     await waitFor(() => expect(urls.length).toBeGreaterThan(0));
-    expect(urls[0]).toMatch(/^\/api\/timeline\?day=\d{4}-\d{2}-\d{2}&mode=self_low$/);
-    expect(urls[0]).not.toContain("2026-02-30");
+    // /health도 같은 목록에 쌓인다. 단가 요청만 골라 본다.
+    const timelineUrls = urls.filter((url) => url.startsWith("/api/timeline"));
+    expect(timelineUrls[0]).toMatch(/^\/api\/timeline\?day=\d{4}-\d{2}-\d{2}&mode=self_low$/);
+    expect(timelineUrls[0]).not.toContain("2026-02-30");
   });
 });

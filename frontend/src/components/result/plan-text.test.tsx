@@ -4,7 +4,7 @@ import {
   assumptionsSentence,
   durationHours,
   planSummarySentence,
-  relativeDayWord,
+  relativeDayWord
 } from "./plan-text";
 
 /*

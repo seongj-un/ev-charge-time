@@ -12,7 +12,9 @@ import { coveredHours } from "@/lib/charging";
 import { fromSearchParams, toRecommendRequest, type RecommendForm } from "@/lib/recommend-params";
 
 import { bandSummary, buildAxis, buildColumns, type Axis } from "./chart-data";
-import { assumptionsSentence, UNVERIFIED_NOTICE } from "./plan-text";
+import { unverifiedNotice } from "@/lib/tariff";
+
+import { assumptionsSentence } from "./plan-text";
 import { PlanCards } from "./PlanCards";
 import { PriceChartCard } from "./PriceChartCard";
 import { ResultActions } from "./ResultActions";
@@ -180,7 +182,8 @@ export function ResultView({ query }: { query: string }) {
           */}
           {unverifiedItems.length > 0 ? (
             <Notice className="mt-4 lg:mt-5">
-              <strong className="font-bold">요금 일부 확인 중</strong> · {UNVERIFIED_NOTICE}
+              <strong className="font-bold">요금 일부 확인 중</strong> ·{" "}
+              {unverifiedNotice(unverifiedItems)}
               {/*
                 어느 항목이 확인 전인지는 백엔드가 키로 알려준다 (`adders.fuel_adjustment_per_kwh` 등).
                 문장에 그대로 이어 붙이면 아무도 안 읽으므로 접어 두되, 버리지는 않는다 —

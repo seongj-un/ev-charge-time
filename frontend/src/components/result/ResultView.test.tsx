@@ -253,7 +253,8 @@ describe("정직함", () => {
     render(withSession(QUERY));
 
     expect(
-      await screen.findByText(/시간대 구분과 부가 요금은 공식 요금표 확인 전 값입니다/),
+      // 문구는 실제로 남은 항목에서 만들어진다 (fixture: time_bands · 연료비조정).
+      await screen.findByText(/시간대 구분과 연료비조정요금은 공식 요금표 확인 전 값입니다/),
     ).toBeInTheDocument();
     // 어느 항목이 확인 전인지도 버리지 않는다.
     expect(screen.getByText(/확인 전 항목/)).toBeInTheDocument();

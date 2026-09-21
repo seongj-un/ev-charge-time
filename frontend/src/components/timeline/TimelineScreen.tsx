@@ -9,8 +9,9 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { ApiError } from "@/lib/api/client";
-import { fetchTimeline } from "@/lib/api/endpoints";
+import { fetchHealth, fetchTimeline } from "@/lib/api/endpoints";
 import { MODE_LABEL, type Mode, type TimelineResponse } from "@/lib/api/types";
+import { unverifiedNotice } from "@/lib/tariff";
 
 import { DayStepper } from "./DayStepper";
 import { useIsDesktop, useIsHydrated } from "./hooks";
@@ -86,6 +87,27 @@ export function TimelineScreen({
    * 다르면 그건 그냥 로딩이다 — 상태가 하나라 어긋날 수가 없다.
    */
   const [retryCount, setRetryCount] = useState(0);
+  /**
+   * 요금이 얼마나 확인됐는지. /health가 알려준다.
+   *
+   * 못 받으면 null로 둔다 — 단가 화면은 이것과 무관하게 서야 하고, 못 받았다고
+   * "잠정치다"라고 단정하면 그것도 근거 없는 말이다.
+   */
+  const [tariffNote, setTariffNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetchHealth()
+      .then((health) => {
+        if (alive) setTariffNote(unverifiedNotice(health.unverified_tariff_items));
+      })
+      .catch(() => {
+        if (alive) setTariffNote(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [result, setResult] = useState<{ key: string; load: Load } | null>(null);
   const requestKey = day === null ? null : `${day}|${mode}|${retryCount}`;
   const load: Load =
@@ -239,7 +261,9 @@ export function TimelineScreen({
             <DiscountBanner range={discountRange} scope={discountScopeLabel(data)} />
           ) : null}
 
-          {data ? <PriceListCard rows={bandPriceRows(hours)} /> : null}
+          {data ? (
+            <PriceListCard rows={bandPriceRows(hours)} note={tariffNote} />
+          ) : null}
 
           {/* 모바일에는 이 버튼이 없다 (디자인 p-04) — 하단 탭바의 "충전 추천"이 같은 곳으로 간다. */}
           {data && day ? (

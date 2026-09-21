@@ -96,12 +96,17 @@ describe("TimelineScreen", () => {
     expect(within(priceList).queryByText("최대부하")).toBeNull();
   });
 
-  test("요금표가 확정되지 않았다는 각주는 항상 붙는다", async () => {
-    stubFetch(() => ({ body: timeline() }));
+  test("각주는 언제나 붙는다 — 확인이 끝났으면 출처를 적는다", async () => {
+    // 각주 자체를 빼면 화면이 숫자의 출처를 말하지 않게 된다.
+    stubFetch((url) =>
+      url.startsWith("/health")
+        ? { body: { status: "ok", unverified_tariff_items: [] } }
+        : { body: timeline() },
+    );
 
     render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
 
-    expect(await screen.findByText(/예시 값 · 요금표 확정 후 바뀝니다/)).toBeInTheDocument();
+    expect(await screen.findByText(/한국전력공사 전기요금표/)).toBeInTheDocument();
   });
 
   test("응답의 계절·요일에서 부제를 만든다", async () => {
@@ -234,8 +239,10 @@ describe("TimelineScreen", () => {
 
     render(<TimelineScreen initialMode="self_low" />);
 
-    await waitFor(() => expect(urls).toHaveLength(1));
-    expect(urls[0]).toMatch(/^\/api\/timeline\?day=\d{4}-\d{2}-\d{2}&mode=self_low$/);
+    await waitFor(() => expect(urls.filter((url) => url.startsWith("/api/timeline"))).toHaveLength(1));
+    // /health도 같은 목록에 쌓인다. 단가 요청만 골라 본다.
+    const timelineUrls = urls.filter((url) => url.startsWith("/api/timeline"));
+    expect(timelineUrls[0]).toMatch(/^\/api\/timeline\?day=\d{4}-\d{2}-\d{2}&mode=self_low$/);
   });
 });
 
@@ -257,5 +264,45 @@ describe("TimelineScreen 서버 렌더", () => {
     );
 
     expect(html).toContain("10월 10일 (토)");
+  });
+});
+
+/*
+ * 단가 각주가 "예시 값 · 요금표 확정 후 바뀝니다"로 고정돼 있었다.
+ * 한전 공식 요금표가 들어오면서 자가 저압 단가는 확정됐는데 각주만 남아 거짓말이 됐다.
+ * 이제 /health가 알려주는 실제 미확인 항목에서 문장을 만든다.
+ */
+describe("단가 각주", () => {
+  function renderWithHealth(health: { status?: number; body: unknown }) {
+    stubFetch((url) =>
+      url.startsWith("/health") ? health : { body: timeline() },
+    );
+    render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
+  }
+
+  test("남은 미확인 항목만 말한다", async () => {
+    renderWithHealth({
+      body: { status: "ok", unverified_tariff_items: ["public_fast.base_price_per_kwh"] },
+    });
+
+    expect(
+      await screen.findByText(/공공 급속 단가는 공식 요금표 확인 전 값입니다/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/예시 값/)).not.toBeInTheDocument();
+  });
+
+  test("전부 확인됐으면 잠정치라고 말하지 않는다", async () => {
+    renderWithHealth({ body: { status: "ok", unverified_tariff_items: [] } });
+
+    expect(await screen.findByText(/한국전력공사 전기요금표/)).toBeInTheDocument();
+    expect(screen.queryByText(/확인 전 값입니다/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/예시 값/)).not.toBeInTheDocument();
+  });
+
+  /* /health를 못 받아도 단가 화면은 그대로 서야 한다. */
+  test("확인 상태를 못 받아도 차트는 그대로 나온다", async () => {
+    renderWithHealth({ status: 500, body: "boom" });
+
+    expect(await screen.findAllByText("경부하")).not.toHaveLength(0);
   });
 });

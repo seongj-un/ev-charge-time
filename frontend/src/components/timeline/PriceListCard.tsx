@@ -12,9 +12,12 @@ import { formatBandPrice, type BandPriceRow } from "./timeline-view";
  */
 export function PriceListCard({
   rows,
+  note,
   className = "",
 }: {
   rows: BandPriceRow[];
+  /** 요금이 얼마나 확인됐는지. 확인이 끝났으면 null. */
+  note: string | null;
   className?: string;
 }) {
   return (
@@ -39,12 +42,14 @@ export function PriceListCard({
       </ul>
 
       {/*
-       * 늘 붙어 있어야 하는 줄이다. 2026년 개편 요금표가 아직 공식 확인 전이라
-       * 여기 숫자는 전부 잠정치다 — 각주를 빼면 화면이 확정 요금을 말하는 게 된다.
+       * 각주를 고정 문장으로 두면 요금표가 바뀔 때 조용히 틀린다 — 실제로 그랬다.
+       * "예시 값 · 요금표 확정 후"라고 적어 뒀는데 한전 공식 요금표가 들어오면서
+       * 이 단가들은 확정됐고 각주만 남아 거짓말이 됐다. 이제 서버가 알려주는
+       * 미확인 항목에서 문장을 만들고, 남은 게 없으면 출처만 적는다.
        */}
-      <p className="border-t border-line px-4 py-3 text-xs text-ink-3 lg:px-5">
+      <p className="border-t border-line px-4 py-3 text-xs leading-relaxed text-ink-3 lg:px-5">
         <span className="hidden lg:inline">원/kWh · </span>
-        예시 값 · 요금표 확정 후 바뀝니다
+        {note ?? "출처: 한국전력공사 전기요금표"}
       </p>
     </Card>
   );
