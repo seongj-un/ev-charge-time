@@ -31,8 +31,12 @@ const USER = {
   created_at: "2026-09-01T09:00:00+09:00",
 };
 
+/**
+ * charge_start는 백엔드가 result.best.start와 같은 값으로 보장한다 (API 명세서 7-3).
+ * 픽스처에서 둘이 갈라지면 화면 테스트가 거짓으로 통과하므로 파생시킨다.
+ */
 function plan(overrides: Partial<SavedPlan> & { id: string }): SavedPlan {
-  return {
+  const merged: SavedPlan = {
     created_at: "2026-10-10T11:00:00+09:00",
     request: {
       battery_kwh: 70,
@@ -65,8 +69,10 @@ function plan(overrides: Partial<SavedPlan> & { id: string }): SavedPlan {
     },
     tariff_version: "2026.1-draft",
     vehicle_name: null,
+    charge_start: "",
     ...overrides,
   };
+  return { ...merged, charge_start: merged.result.best.start };
 }
 
 const PLAN_A = plan({ id: "a" });
@@ -230,7 +236,7 @@ describe("기록 목록", () => {
 
     renderScreen();
 
-    expect(await screen.findByText("아직 저장한 계획이 없어요")).toBeInTheDocument();
+    expect(await screen.findByText(/에 충전할 계획이 없어요/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /추천/ })).toHaveAttribute("href", "/recommend");
   });
 });
@@ -305,14 +311,20 @@ describe("아직 못 불러온 기록", () => {
     await user.click(screen.getByRole("button", { name: "더 보기" }));
 
     expect(await screen.findByText("10월 7일 (수)")).toBeInTheDocument();
-    expect(calls.map((call) => call.url)).toContain("/api/me/plans?limit=20&cursor=c1");
+    const more = calls.map((call) => call.url).find((url) => url.includes("cursor=c1"));
+    expect(more).toContain("month=");
+    expect(more).toContain("limit=20");
     // 다 불러왔으면 버튼이 사라진다.
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "더 보기" })).not.toBeInTheDocument(),
     );
   });
 
-  test("고른 달 기록이 아직 안 왔으면 빈 목록이라고 단정하지 않는다", async () => {
+  /*
+   * 서버가 그 달만 걸러 주지만 페이지는 나뉜다. 요약이 3건이라는데 화면이 0건이면
+   * "없다"고 단정하면 안 된다 — 다음 페이지에 있다.
+   */
+  test("요약에 있는 기록이 아직 안 왔으면 빈 목록이라고 단정하지 않는다", async () => {
     stubFetch({
       plans: () => json({ items: [], next_cursor: "c1" }),
       summary: (month) => json({ month, count: 3, total_savings_won: 900 }),
@@ -320,7 +332,7 @@ describe("아직 못 불러온 기록", () => {
 
     renderScreen();
 
-    expect(await screen.findByText(/아직 불러오지 않았어요/)).toBeInTheDocument();
+    expect(await screen.findByText(/3건 중 0건/)).toBeInTheDocument();
     expect(screen.queryByText("아직 저장한 계획이 없어요")).not.toBeInTheDocument();
   });
 });
@@ -416,7 +428,9 @@ describe("표 머리글", () => {
     await screen.findByText("10월 10일 (토)");
 
     const header = screen.getByTestId("plan-table-header");
-    expect(within(header).getByText("저장일")).toBeInTheDocument();
+    // 저장일이 아니라 충전 날짜다 — 월 선택과 정렬이 이 값 기준으로 돈다.
+    expect(within(header).getByText("충전 날짜")).toBeInTheDocument();
+    expect(within(header).queryByText("저장일")).not.toBeInTheDocument();
     expect(within(header).getByText("차량")).toBeInTheDocument();
     expect(within(header).getByText("추천 시간")).toBeInTheDocument();
     expect(within(header).getByText("예상 비용")).toBeInTheDocument();
@@ -431,5 +445,37 @@ describe("목록을 못 불러왔을 때", () => {
     renderScreen();
 
     expect(await screen.findByText(/기록을 읽지 못했습니다/)).toBeInTheDocument();
+  });
+});
+
+/*
+ * 월 기준이 충전 날짜로 바뀌면서 빈 화면의 뜻이 달라졌다.
+ *
+ * 9월에 세운 10월 충전 계획은 9월 목록에 안 나온다 — 그게 맞다. 그런데 그때
+ * "아직 저장한 계획이 없어요"라고 하면 거짓말이다. 계획은 있고, 다른 달에 있을 뿐이다.
+ */
+describe("고른 달에 기록이 없을 때", () => {
+  test("저장한 계획이 아예 없다고 단정하지 않는다", async () => {
+    stubFetch({
+      plans: () => json({ items: [], next_cursor: null }),
+      summary: (month) => json({ month, count: 0, total_savings_won: 0 }),
+    });
+
+    renderScreen();
+
+    expect(await screen.findByText(/에 충전할 계획이 없어요/)).toBeInTheDocument();
+    expect(screen.queryByText("아직 저장한 계획이 없어요")).not.toBeInTheDocument();
+  });
+
+  test("다른 달을 볼 수 있다는 것을 알려준다", async () => {
+    stubFetch({
+      plans: () => json({ items: [], next_cursor: null }),
+      summary: (month) => json({ month, count: 0, total_savings_won: 0 }),
+    });
+
+    renderScreen();
+
+    await screen.findByText(/에 충전할 계획이 없어요/);
+    expect(screen.getByText(/다른 달/)).toBeInTheDocument();
   });
 });

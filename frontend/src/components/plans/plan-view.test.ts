@@ -4,7 +4,6 @@ import type { SavedPlan } from "@/lib/api/types";
 
 import {
   currentMonth,
-  filterByMonth,
   formatMonth,
   isMonth,
   monthOf,
@@ -16,6 +15,7 @@ function plan(overrides: Partial<SavedPlan> = {}): SavedPlan {
   return {
     id: "p1",
     created_at: "2026-09-21T17:04:06.133679+09:00",
+    charge_start: "2026-09-21T22:00:00+09:00",
     request: {
       battery_kwh: 70,
       charger_kw: 7,
@@ -84,15 +84,30 @@ describe("currentMonth", () => {
 });
 
 describe("monthOptions", () => {
-  test("이번 달부터 과거로 12개를 준다", () => {
-    const options = monthOptions(new Date(2026, 9, 7), "2026-10");
+  /*
+   * 충전 계획은 대개 **앞으로** 충전할 것이다. 월 기준이 충전 날짜로 바뀌었으므로
+   * 과거만 주면 "오늘 세운 다음 달 계획"을 고를 수가 없다 — 저장하고도 못 찾는다.
+   */
+  test("앞으로 올 달도 고를 수 있다", () => {
+    const options = monthOptions(new Date(2026, 8, 21), "2026-09");
+    expect(options).toContain("2026-10");
+    expect(options).toContain("2026-11");
+  });
+
+  test("이번 달을 포함해 12개를 최신순으로 준다", () => {
+    const options = monthOptions(new Date(2026, 8, 21), "2026-09");
     expect(options).toHaveLength(12);
-    expect(options[0]).toBe("2026-10");
-    expect(options[11]).toBe("2025-11");
+    expect(options).toContain("2026-09");
+    expect([...options].sort().reverse()).toEqual(options);
+  });
+
+  test("과거도 충분히 남겨 둔다", () => {
+    const options = monthOptions(new Date(2026, 8, 21), "2026-09");
+    expect(options).toContain("2026-01");
   });
 
   /* 링크로 받은 달이 목록에 없으면 <select>가 엉뚱한 달을 고른 것처럼 보인다. */
-  test("고른 달이 12개월 밖이면 끼워 넣는다", () => {
+  test("고른 달이 목록 밖이면 끼워 넣는다", () => {
     const options = monthOptions(new Date(2026, 9, 7), "2024-03");
     expect(options).toContain("2024-03");
     // 최신순이 유지된다.
@@ -109,36 +124,34 @@ describe("formatMonth", () => {
 
 describe("vehicleLabel", () => {
   /*
-   * 응답에 차량 이름이 없다. 디자인의 "출퇴근 차"를 흉내 내려면 이름을 지어내야 하는데,
-   * 없는 사실을 화면에 적는 건 금액을 틀리게 적는 것과 같은 종류의 거짓말이다.
-   * 저장된 조건을 그대로 되읽어 준다.
+   * 이름과 조건을 둘 다 보여준다. 차량을 고른 뒤 값을 고쳐 저장할 수 있어서,
+   * 이름만 쓰면 사용자가 그 차의 제원 그대로 계산됐다고 읽는다.
    */
-  test("차량 이름이 없으면 저장된 조건을 보여준다", () => {
-    expect(vehicleLabel(plan())).toBe("70 kWh · 7 kW");
+  test("이름이 있으면 조건과 함께 보여준다", () => {
+    expect(vehicleLabel(plan({ vehicle_name: "출퇴근 차" }))).toBe(
+      "출퇴근 차 · 70 kWh · 7 kW",
+    );
+  });
+
+  test("고친 값이 있으면 이름이 아니라 그 값을 보여준다", () => {
+    // 77 kWh 차를 골라 58로 고쳐 저장한 경우. 이름만 보이면 제원 그대로라고 오해한다.
+    const edited = plan({
+      vehicle_name: "출퇴근 차",
+      request: { ...plan().request, battery_kwh: 58 },
+    });
+    expect(vehicleLabel(edited)).toBe("출퇴근 차 · 58 kWh · 7 kW");
+  });
+
+  /* 직접 입력하면 vehicle_name이 null이다 — 정상값이라 폴백은 계속 쓰인다. */
+  test("이름이 없으면 저장된 조건만 보여준다", () => {
+    expect(vehicleLabel(plan({ vehicle_name: null }))).toBe("70 kWh · 7 kW");
   });
 
   test("이름을 지어내지 않는다", () => {
-    expect(vehicleLabel(plan())).not.toMatch(/차$/);
+    expect(vehicleLabel(plan({ vehicle_name: null }))).not.toMatch(/차$/);
   });
 
-  /* 백엔드가 vehicle_name을 넣기 전까지의 임시 표시. null이 정상값이라 폴백은 계속 필요하다. */
-  test("등록 차량으로 저장한 기록은 그 사실만 덧붙인다", () => {
-    const saved = plan();
-    const withVehicle = {
-      ...saved,
-      request: { ...saved.request, vehicle_id: "v1" },
-    } as SavedPlan;
-    expect(vehicleLabel(withVehicle)).toBe("내 차량 · 70 kWh · 7 kW");
-  });
-});
-
-describe("filterByMonth", () => {
-  test("created_at이 그 달인 것만 남긴다", () => {
-    const items = [
-      plan({ id: "a", created_at: "2026-10-10T11:00:00+09:00" }),
-      plan({ id: "b", created_at: "2026-09-30T23:59:00+09:00" }),
-      plan({ id: "c", created_at: "2026-10-01T00:00:00+09:00" }),
-    ];
-    expect(filterByMonth(items, "2026-10").map((item) => item.id)).toEqual(["a", "c"]);
+  test("빈 이름은 없는 것으로 친다", () => {
+    expect(vehicleLabel(plan({ vehicle_name: "   " }))).toBe("70 kWh · 7 kW");
   });
 });

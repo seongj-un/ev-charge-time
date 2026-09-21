@@ -30,9 +30,16 @@ export function currentMonth(now: Date): string {
 }
 
 const OPTION_COUNT = 12;
+/**
+ * 앞으로 올 달도 보여준다.
+ *
+ * 월 기준이 **충전 날짜**라, 오늘 세운 계획은 대개 앞으로 충전할 것이다.
+ * 과거만 주면 "오늘 저장한 다음 달 계획"을 고를 수가 없어서, 저장하고도 못 찾는다.
+ */
+const MONTHS_AHEAD = 2;
 
 /**
- * 월 선택에 띄울 달들. 이번 달부터 과거로 12개.
+ * 월 선택에 띄울 달들. 앞으로 2개월 + 이번 달 + 과거로 채워 12개.
  *
  * 고른 달이 그 12개 밖이면(오래된 링크를 받은 경우) 끼워 넣는다. 목록에 없는 값을
  * <select>에 물리면 브라우저가 멋대로 첫 항목을 고른 것처럼 보여서, 화면의 달과
@@ -40,8 +47,8 @@ const OPTION_COUNT = 12;
  */
 export function monthOptions(now: Date, selected: string): string[] {
   const months: string[] = [];
-  for (let back = 0; back < OPTION_COUNT; back += 1) {
-    const date = new Date(now.getFullYear(), now.getMonth() - back, 1);
+  for (let offset = MONTHS_AHEAD; offset > OPTION_COUNT * -1 + MONTHS_AHEAD; offset -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     months.push(currentMonth(date));
   }
   if (!months.includes(selected)) {
@@ -59,32 +66,24 @@ export function formatMonth(month: string): string {
 }
 
 /**
- * 기록 한 줄의 '차량' 칸.
+ * 기록 한 줄의 '차량' 칸. 이름과 조건을 **둘 다** 보여준다.
  *
- * ⚠️ 응답에 차량 이름이 없다. 디자인의 "출퇴근 차"를 그리려면 이름을 지어내거나
- * 차량 API와 조인해야 하는데, 지어내는 건 금액을 틀리게 적는 것과 같은 거짓말이고
- * 조인은 이번 범위가 아니다. 그래서 저장된 조건을 그대로 되읽어 준다.
+ * 차량을 고른 뒤 폼의 값을 직접 고쳐 저장할 수 있다. 서버는 둘의 일치를 검사하지
+ * 않고, 그게 맞다 — 그 차량을 기준으로 시작한 계획이니까. 다만 화면이 "출퇴근 차"라고만
+ * 쓰면 사용자가 그 차의 제원 그대로 계산됐다고 읽는다. 77 kWh 차를 골라 58로 고쳐
+ * 저장했는데 이름만 보이면, 나중에 그 기록을 잘못된 전제로 다시 읽게 된다.
  *
- * 백엔드가 `vehicle_name`(저장 시점 스냅샷, 직접 입력이면 null)을 넣기로 했다.
- * 그때 이 함수의 마지막 줄이 `plan.vehicle_name ?? conditionLabel(...)`이 된다 —
- * null이 정상값이라 조건 폴백은 그 뒤로도 계속 쓰인다.
+ * vehicle_name이 null인 것(직접 입력)은 정상값이라 조건만 남는다.
  */
 export function vehicleLabel(plan: SavedPlan): string {
   const condition = conditionLabel(plan.request);
-  // 등록 차량으로 저장했는지는 request에 남아 있을 수 있다. 이름은 몰라도
-  // "직접 입력이 아니라 내 차량으로 저장했다"는 사실까지 버릴 이유는 없다.
-  const vehicleId = (plan.request as RecommendRequest & { vehicle_id?: string }).vehicle_id;
-  return vehicleId ? `내 차량 · ${condition}` : condition;
+  const name = plan.vehicle_name?.trim();
+  return name ? `${name} · ${condition}` : condition;
 }
 
 /** "70 kWh · 7 kW" */
 export function conditionLabel(request: RecommendRequest): string {
   return `${formatKwh(request.battery_kwh)} · ${request.charger_kw} kW`;
-}
-
-/** 그 달에 저장된 기록만 남긴다. */
-export function filterByMonth(items: SavedPlan[], month: string): SavedPlan[] {
-  return items.filter((item) => monthOf(item.created_at) === month);
 }
 
 function pad2(value: number): string {

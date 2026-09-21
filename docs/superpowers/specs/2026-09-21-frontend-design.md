@@ -5,26 +5,30 @@
 ## 무엇을 만드는가
 
 충전 조건을 넣으면 가장 싼 시간을 알려주는 반응형 웹. 디자인 PDF는 모바일 13화면과
-데스크톱 12화면을 모두 그려 두었다. **이번 범위는 백엔드가 실제로 도는 네 화면이다.**
+데스크톱 12화면을 모두 그려 두었다. F-07 주변 충전소만 빼고 전부 붙었다.
 
 | 화면 | 경로 | 쓰는 API | 상태 |
 | --- | --- | --- | --- |
 | 홈 | `/` | 없음 (정적) | 구현 |
-| 충전 조건 입력 | `/recommend` | 없음 (제출 시 이동) | 구현 |
-| 추천 결과 | `/recommend/result` | `POST /api/recommend`, `GET /api/timeline` | 구현 |
+| 충전 조건 입력 | `/recommend` | `GET /api/me/vehicles` | 구현 |
+| 추천 결과 | `/recommend/result` | `POST /api/recommend`, `GET /api/timeline`, `POST /api/me/plans` | 구현 |
 | 하루 단가 | `/timeline` | `GET /api/timeline` | 구현 |
-| 주변 충전소 | `/stations` | `GET /api/chargers` | 준비 중 (백엔드 501) |
-| 로그인·회원가입·내 정보 | `/login` `/signup` `/me` | `/api/auth/*` `/api/me/*` | 준비 중 (미병합·501) |
+| 로그인·회원가입 | `/login` `/signup` | `/api/auth/*` | 구현 |
+| 마이페이지 | `/me` | `GET /api/me`, `DELETE /api/me` | 구현 |
+| 내 차량 | `/me/vehicles` | `/api/me/vehicles` | 구현 |
+| 충전 기록 | `/me/plans` | `/api/me/plans` | 구현 |
+| 즐겨찾는 충전소 | `/me/favorites` | `GET /api/me/favorites` | 구현 (이름 미확보) |
+| 주변 충전소 | `/stations` | `GET /api/chargers` | UI 구현, 백엔드 501 |
 
-준비 중 화면은 **빈 골격과 사유**만 둔다. 가짜 데이터를 채우지 않는다 —
-시연에서 없는 기능이 있는 것처럼 보이면 질문 한 번에 무너진다.
+백엔드가 501인 화면은 계약대로 UI를 만들어 두고, 501이 오면 그 사실을 화면에 적는다.
+가짜 데이터를 채우지 않는다 — 시연에서 없는 기능이 있는 것처럼 보이면 질문 한 번에 무너진다.
 
 ## 스택
 
 Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · Vitest + Testing Library.
 노션 기술 스택 문서가 Next.js(반응형 웹, PWA)로 정해 둔 것을 따른다.
 
-## 확정한 결정 네 가지
+## 확정한 결정
 
 ### 1. 백엔드는 rewrite로 넘긴다
 
@@ -70,6 +74,33 @@ URL만 보고도 무슨 요청이 나갈지 안다. 계약은 `lib/recommend-par
 **막대 높이는 0을 바닥으로 단가에 비례한다.** 축을 자르면 62.5원과 125.1원이
 몇 배 차이처럼 보인다 — 절감액을 주장하는 화면에서 그건 과장이다.
 
+### 5. 로그인 여부는 한 곳에서만 판단한다
+
+세션이 httpOnly 쿠키라 자바스크립트가 읽을 수 없다. "로그인했나?"를 아는 유일한
+방법은 `GET /api/me`를 불러 401인지 보는 것이다. 화면마다 이걸 하면 같은 요청이
+네 번 나가고 로딩 처리가 제각각이 된다. `SessionProvider` 하나가 판단한다.
+
+상태를 넷으로 나눴다. `loading`을 따로 둬야 로그인한 사용자에게 "로그인" 버튼이
+번쩍이지 않고, `unreachable`을 손님과 구분해야 백엔드가 꺼졌을 때 "로그인하세요"로
+오도하지 않는다 — 그 경우 사용자는 로그인을 시도하고 또 실패한다.
+
+**401만 손님이다.** 처음엔 `status === 0`(fetch 자체 실패)만 연결 실패로 봤는데,
+rewrite 프록시를 쓰면 브라우저 fetch는 성공하고 프록시가 500 + 평문을 돌려준다.
+백엔드를 실제로 꺼 보고서야 발견했다. 지금은 401이 아닌 모든 실패를 연결 실패로 보고,
+`detail`을 읽을 수 있는 5xx만 백엔드가 살아서 낸 오류로 취급한다.
+
+### 6. `vehicle_id`는 저장 요청에만 싣는다
+
+차량을 고르면 그 사실이 URL에 실려 결과 화면까지 간다. 저장할 때 `vehicle_id`를
+보내야 `SavedPlan.vehicle_name`이 채워지고, 그래야 기록이 "어느 차로 세운 계획인지"를 안다.
+
+**추천 요청에는 싣지 않는다.** `vehicle_id`가 붙은 요청은 로그인을 요구해서, 결과 URL을
+공유받은 게스트가 401을 맞는다. 이 앱은 로그인 없이 쓸 수 있는 게 전제다. 차량을 고르면
+값(배터리·출력·모드)이 이미 폼에 복사되므로 추천 결과는 동일하다.
+
+기록 목록은 차량 이름과 조건을 **둘 다** 보여준다. 차량을 고른 뒤 값을 고쳐 저장할 수 있는데,
+이름만 보여주면 그 차의 제원 그대로 계산됐다고 오해한다.
+
 ## 디자인 토큰
 
 PDF 픽셀에서 직접 뽑아 `app/globals.css`의 `@theme`에 넣었다. **새 색을 만들지 않는다.**
@@ -111,16 +142,22 @@ frontend/src/
 │   ├── recommend/page.tsx         충전 조건 입력
 │   ├── recommend/result/page.tsx  추천 결과
 │   ├── timeline/page.tsx          하루 단가
-│   ├── {stations,me,login,signup}/page.tsx   준비 중
+│   ├── login/ · signup/           인증
+│   ├── me/ · me/vehicles/ · me/plans/ · me/favorites/   사용자 데이터
+│   ├── stations/page.tsx          주변 충전소 (백엔드 501)
 │   ├── manifest.ts                PWA
 │   └── globals.css                디자인 토큰
 ├── components/
 │   ├── shell/    AppShell · TopNav(데스크톱) · TabBar(모바일) · nav · icons
 │   ├── ui/       Button · Card · Badge · Field · SegmentedControl · Notice
 │   ├── chart/    PriceBarChart · BandLegend · bands
-│   ├── recommend/  입력 폼
-│   ├── result/     추천 결과
-│   └── timeline/   하루 단가
+│   ├── auth/       SessionProvider — 로그인 여부 판단
+│   ├── recommend/  입력 폼 · 내 차량 불러오기
+│   ├── result/     추천 결과 · 계획 저장
+│   ├── timeline/   하루 단가
+│   ├── me/         마이페이지 · 내 차량
+│   ├── plans/      충전 기록
+│   └── stations/   주변 충전소 · 즐겨찾기
 └── lib/
     ├── api/      types(백엔드 스키마 1:1) · client · endpoints
     ├── format.ts     원·kWh·시각 포맷
@@ -138,9 +175,11 @@ FastAPI는 오류를 두 모양으로 보낸다 (API 명세서 1장). 업무 오
 필드 검증 실패는 배열이다. 화면마다 이 분기를 풀면 같은 코드가 네 군데 생기므로
 `lib/api/client.ts`의 `messageFromDetail`이 한 곳에서 문장으로 만든다.
 
-`ApiError`는 `status`와 함께 `notImplemented`(501)·`needsLogin`(401)을 노출한다.
-`status === 0`은 서버에 닿지 못한 경우로, "백엔드가 실행 중인지 확인하세요"로 바꿔 준다 —
-원래 메시지 "fetch failed"는 사용자에게 아무것도 알려주지 않는다.
+`ApiError`는 `status`와 함께 `notImplemented`(501)·`needsLogin`(401)·`unreachable`을
+노출한다. `unreachable`은 "서버의 답이 아니라 서버에 닿지 못했다"는 뜻이다 — fetch 자체가
+터진 경우와, rewrite 프록시가 업스트림 실패로 돌려준 `detail` 없는 5xx가 여기 든다.
+둘 다 "백엔드가 실행 중인지 확인하세요"로 바꿔 준다. 원래 메시지("fetch failed",
+"Internal Server Error")는 사용자에게 아무것도 알려주지 않는다.
 
 ## 요금이 잠정치라는 사실을 숨기지 않는다
 
@@ -161,7 +200,15 @@ FastAPI는 오류를 두 모양으로 보낸다 (API 명세서 1장). 업무 오
 
 ## 남은 공백
 
-- 주변 충전소·인증·차량·충전 기록·즐겨찾기 화면 (백엔드 501 또는 미병합)
+- **주변 충전소 (F-07)** — 백엔드 501. UI는 계약대로 만들어 뒀고 데이터만 오면 된다
+- **즐겨찾는 충전소의 이름** — F-07이 채우는 공유 캐시에서 오므로, F-07 전까지는
+  `station_id`만 있고 나머지가 `null`이다. 이 화면은 당분간 "이름 없는 목록"이 정상이다
+- **충전 기록의 월 기준** — 표시·필터·정렬을 모두 충전 날짜(`charge_start`) 기준으로
+  바꾸기로 백엔드와 합의했다. 백엔드 작업이 끝나면 세 가지를 한 번에 전환한다.
+  지금은 저장 시각 기준이며, 그 자체로는 표시와 필터가 일치한다
 - PWA 아이콘 에셋 없음 — manifest의 `icons`가 비어 있다
 - 서비스 이름 미정. `components/shell/nav.ts`의 `SERVICE_NAME` 한 곳만 고치면 된다
 - 태양광 발전 예측 겹쳐 보기 (F-09, 백엔드 501)
+- `tailwind-merge` 미도입 — `Button`/`Badge`에 `className`으로 `display`나 `color`를
+  덮어쓸 수 없다 (출력 CSS 순서상 기본 클래스가 이긴다). 지금은 래퍼로 우회하며,
+  세 번 밟았다. 넣으면 근본 해결되지만 검증된 레이아웃을 건드리는 변경이다

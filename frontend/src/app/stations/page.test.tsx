@@ -1,23 +1,17 @@
-import { render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 
-import StationsPage from "./page";
+import StationsPage, { metadata } from "./page";
 
-describe("주변 충전소", () => {
-  test("제목과 지도 자리, 준비 중 안내를 보여준다", () => {
-    render(<StationsPage />);
-
-    expect(screen.getByRole("heading", { level: 1, name: "주변 충전소" })).toBeInTheDocument();
-    expect(screen.getByText("지도 영역")).toBeInTheDocument();
-    expect(screen.getByText("준비 중")).toBeInTheDocument();
-    expect(screen.getByText(/한국환경공단/)).toBeInTheDocument();
+/*
+ * 라우트는 화면을 얹기만 한다. 화면의 동작은 StationsScreen.test.tsx가 본다.
+ * 여기서는 이 경로가 더 이상 "준비 중" 자리표시자가 아니라는 것만 못 박는다.
+ */
+describe("/stations 라우트", () => {
+  test("제목을 붙인다", () => {
+    expect(metadata.title).toBe("주변 충전소");
   });
 
-  /** 가짜 충전소를 그려 두면 시연에서 "이거 실제 데이터인가요" 한마디에 무너진다. */
-  test("없는 충전소 목록을 지어내지 않는다", () => {
-    render(<StationsPage />);
-
-    expect(screen.queryByText(/충전소 이름/)).not.toBeInTheDocument();
-    expect(screen.queryByText("사용 가능")).not.toBeInTheDocument();
+  test("실제 화면을 얹는다", () => {
+    expect(StationsPage().type).toBeTypeOf("function");
   });
 });

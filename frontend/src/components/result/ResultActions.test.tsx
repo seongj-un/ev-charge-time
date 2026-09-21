@@ -250,3 +250,36 @@ describe("조건이 주소에 없을 때", () => {
     expect(calls.some((call) => call.url === "/api/me/plans")).toBe(false);
   });
 });
+
+/*
+ * 차량을 골라 추천받았으면 저장할 때 vehicle_id를 함께 보내야 한다.
+ * 안 보내면 SavedPlan.vehicle_name이 항상 null이라, 충전 기록이 "어느 차로 세운
+ * 계획인지"를 영영 모른다 (API 명세서 7-3).
+ */
+describe("차량을 고른 계획 저장", () => {
+  const saveCalls = (calls: Call[]) =>
+    calls.filter((call) => call.method === "POST" && call.url === "/api/me/plans");
+
+  test("URL에 vehicle_id가 있으면 저장 요청에 함께 보낸다", async () => {
+    search = new URLSearchParams(`${QUERY}&vehicle_id=v1`);
+    const calls = stubFetch({ me: () => json(USER) });
+    const user = userEvent.setup();
+
+    renderActions();
+    await user.click(await screen.findByRole("button", { name: "충전 기록에 저장" }));
+
+    await waitFor(() => expect(saveCalls(calls)).toHaveLength(1));
+    expect(saveCalls(calls)[0].body).toMatchObject({ vehicle_id: "v1" });
+  });
+
+  test("직접 입력이면 vehicle_id를 보내지 않는다", async () => {
+    const calls = stubFetch({ me: () => json(USER) });
+    const user = userEvent.setup();
+
+    renderActions();
+    await user.click(await screen.findByRole("button", { name: "충전 기록에 저장" }));
+
+    await waitFor(() => expect(saveCalls(calls)).toHaveLength(1));
+    expect(saveCalls(calls)[0].body).not.toHaveProperty("vehicle_id");
+  });
+});

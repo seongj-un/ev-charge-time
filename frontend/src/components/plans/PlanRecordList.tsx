@@ -36,7 +36,7 @@ export function PlanRecordList({
         data-testid="plan-table-header"
         className={`hidden lg:grid ${GRID_COLUMNS} gap-x-4 border-b border-line bg-sunken/40 px-5 py-3 text-xs font-bold text-ink-2`}
       >
-        <span>저장일</span>
+        <span>충전 날짜</span>
         <span>차량</span>
         <span>추천 시간</span>
         <span>예상 비용</span>
@@ -66,7 +66,13 @@ function PlanRecordRow({
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const date = formatKoreanDate(plan.created_at);
+  /*
+   * 앞에 세우는 날짜는 **충전하는 날**이다 (charge_start). 저장한 날이 아니다.
+   * 목록의 월 선택과 정렬이 이 값을 기준으로 돌기 때문에, 여기에 저장일을 쓰면
+   * "10월을 골랐는데 9월 날짜가 보이는" 화면이 된다.
+   */
+  const date = formatKoreanDate(plan.charge_start);
+  const savedOn = formatKoreanDate(plan.created_at);
   const time = `${formatHm(plan.result.best.start)} – ${formatHm(plan.result.best.end)}`;
 
   async function remove() {
@@ -94,6 +100,9 @@ function PlanRecordRow({
             </span>
             <p className="truncate text-sm text-ink-2">{vehicleLabel(plan)}</p>
           </div>
+
+          {/* 저장일은 버리지 않는다 — "언제 세운 계획인지"도 알아야 한다. */}
+          <p className="mt-0.5 text-xs text-ink-3 lg:hidden">{savedOn}에 저장</p>
 
           <p className="mt-1 text-xl font-bold tnum lg:mt-0 lg:text-base">{time}</p>
 

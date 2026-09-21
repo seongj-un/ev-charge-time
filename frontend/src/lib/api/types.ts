@@ -165,6 +165,13 @@ export type SavedPlan = {
   tariff_version: string;
   /** 저장 시점 차량 이름 스냅샷. 직접 입력했으면 null (API 명세서 7-3). */
   vehicle_name: string | null;
+  /**
+   * 충전을 시작하는 시각 (= result.best.start). 월 필터·정렬의 기준이다.
+   *
+   * 저장 시각(created_at)이 아니다. 9월에 세운 10월 충전 계획은 10월에 잡힌다 —
+   * 사용자가 묻는 건 "10월에 얼마나 아끼나"이지 "9월에 계획을 몇 번 세웠나"가 아니다.
+   */
+  charge_start: string;
 };
 
 export type SavedPlanPage = {

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { SavedPlan } from "@/lib/api/types";
 
-import { loadPlanPage, PAGE_SIZE } from "./load-plans";
+import { loadPlanPage } from "./load-plans";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -43,6 +43,7 @@ function plan(id: string, createdAt: string): SavedPlan {
     },
     tariff_version: "2026.1-draft",
     vehicle_name: null,
+    charge_start: "2026-09-21T22:00:00+09:00",
   };
 }
 
@@ -63,17 +64,17 @@ function stubFetch(body: unknown) {
 
 describe("loadPlanPage", () => {
   /*
-   * 목록 API에는 아직 month 필터가 없다. FastAPI는 모르는 쿼리 파라미터를 조용히
-   * 무시하므로 month를 실어 보내면 "걸러진 것처럼 보이는 전체 목록"이 돌아온다.
-   * 화면이 조용히 거짓말을 하는 것보다, 프론트에서 거르고 한계를 밝히는 편이 낫다.
+   * 필터도 정렬도 서버가 한다. month는 충전 날짜(charge_start) 기준이다
+   * (API 명세서 7-3). 프론트에서 거르던 시절에는 "그 달 기록이 다음 커서
+   * 페이지에 있어 안 보이는" 구멍이 있었는데, 그건 화면에 한계를 적어 덮을
+   * 문제가 아니라 API가 가져야 할 필터였다.
    */
-  test("month를 API에 보내지 않는다", async () => {
+  test("month를 API에 그대로 넘긴다", async () => {
     const urls = stubFetch({ items: [], next_cursor: null });
 
     await loadPlanPage({ month: "2026-10" });
 
-    expect(urls).toEqual([`/api/me/plans?limit=${PAGE_SIZE}`]);
-    expect(urls[0]).not.toContain("month");
+    expect(urls[0]).toContain("month=2026-10");
   });
 
   /* limit=0은 지금 백엔드가 500을 낸다. 0을 보낼 여지를 아예 두지 않는다. */
@@ -91,22 +92,24 @@ describe("loadPlanPage", () => {
 
     await loadPlanPage({ month: "2026-10", cursor: "c1" });
 
-    expect(urls[0]).toBe(`/api/me/plans?limit=${PAGE_SIZE}&cursor=c1`);
+    expect(urls[0]).toContain("cursor=c1");
+    expect(urls[0]).toContain("month=2026-10");
   });
 
-  test("받아 온 페이지에서 그 달 기록만 남기고, 원본 개수도 함께 알려준다", async () => {
+  test("서버가 준 목록을 그대로 쓰고 커서를 넘긴다", async () => {
+    // 서버가 이미 그 달만, 충전 날짜 내림차순으로 걸러 준다. 다시 거르거나
+    // 다시 정렬하면 서버와 화면이 갈라진다.
     stubFetch({
       items: [
-        plan("a", "2026-10-10T11:00:00+09:00"),
-        plan("b", "2026-09-30T23:00:00+09:00"),
+        plan("a", "2026-10-20T22:00:00+09:00"),
+        plan("b", "2026-10-07T22:00:00+09:00"),
       ],
       next_cursor: "c2",
     });
 
     const page = await loadPlanPage({ month: "2026-10" });
 
-    expect(page.items.map((item) => item.id)).toEqual(["a"]);
-    expect(page.fetched).toBe(2);
+    expect(page.items.map((item) => item.id)).toEqual(["a", "b"]);
     expect(page.nextCursor).toBe("c2");
   });
 });

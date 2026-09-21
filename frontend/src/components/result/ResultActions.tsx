@@ -11,7 +11,7 @@ import { ApiError } from "@/lib/api/client";
 import { savePlan } from "@/lib/api/endpoints";
 import type { SavedPlan } from "@/lib/api/types";
 import { formatSignedWon, formatWon } from "@/lib/format";
-import { fromSearchParams, toRecommendRequest } from "@/lib/recommend-params";
+import { fromSearchParams, toSavePlanRequest } from "@/lib/recommend-params";
 
 /**
  * 화면 아래 행동들.
@@ -96,7 +96,7 @@ function SavePlanAction() {
 
     setState({ status: "saving" });
     try {
-      setState({ status: "saved", plan: await savePlan(toRecommendRequest(form)) });
+      setState({ status: "saved", plan: await savePlan(toSavePlanRequest(form)) });
     } catch (caught) {
       const apiError = caught instanceof ApiError ? caught : null;
       setState({

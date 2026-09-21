@@ -1,9 +1,0 @@
-{
-  "pid": 98392,
-  "port": 27703,
-  "token": "bed12f35-5e17-4396-84d8-b5d5e6c373f6",
-  "startedAt": "2026-09-21T07:56:44.284Z",
-  "serverPath": "/Users/seongjun/.claude/skills/gstack/browse/src/server.ts",
-  "mode": "launched",
-  "configHash": "303a7eeccc03078b"
-}

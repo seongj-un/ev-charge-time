@@ -275,10 +275,16 @@ function PlansBody({
 
   if (list.items.length === 0 && shortfall === null) {
     return (
+      /*
+       * 달을 특정해서 말한다. 월 기준이 충전 날짜라, 9월에 세운 10월 계획은
+       * 9월 목록에 없다 — 그건 맞다. 그런데 "아직 저장한 계획이 없어요"라고 하면
+       * 거짓말이 된다. 계획은 있고, 다른 달에 있을 뿐이다.
+       */
       <Card className="mt-4 p-6 text-center lg:mt-5 lg:p-10">
-        <h2 className="text-base font-bold">아직 저장한 계획이 없어요</h2>
+        <h2 className="text-base font-bold">{formatMonth(month)}에 충전할 계획이 없어요</h2>
         <p className="mx-auto mt-2 max-w-[28rem] text-sm leading-relaxed text-ink-2">
-          추천 결과 화면에서 &lsquo;충전 기록에 저장&rsquo;을 누르면 여기에 쌓입니다.
+          다른 달에 저장한 계획이 있을 수 있어요. 위에서 달을 바꿔 보세요. 추천 결과
+          화면에서 &lsquo;충전 기록에 저장&rsquo;을 누르면 여기에 쌓입니다.
         </p>
         <ButtonLink href="/recommend" size="lg" className="mt-6">
           충전 시간 추천받기
@@ -309,12 +315,11 @@ function PlansBody({
 }
 
 /**
- * "이 달 기록을 다 보여주고 있는가"를 숫자로 말한다.
+ * 아직 안 불러온 기록이 남았는지 한 줄로 말한다.
  *
- * 요약(/plans/summary)은 달로 세지만 목록은 최신순 커서 페이지라, 그 달 기록이
- * 다음 페이지에 남아 있을 수 있다. 두 숫자를 맞대면 몇 건이 안 보이는지 정확히
- * 말할 수 있다 — "다 보여준 것 같은데 실은 아닌" 화면을 만들지 않으려고 둔다.
- * 나중에 목록 API에 달 필터가 붙어도 이 문장은 페이지네이션 안내로 그대로 맞다.
+ * 이제 필터도 정렬도 서버가 충전 날짜 기준으로 한다. 그래서 "그 달 기록이 다음
+ * 페이지에 숨어 있다"는 예전 구멍은 없다 — 남은 건 순수한 페이지네이션뿐이다.
+ * 그래도 요약 건수와 화면 건수를 맞대 두면, 사용자가 "이게 전부인가"를 묻지 않아도 된다.
  */
 export function shortfallMessage(params: {
   month: string;
@@ -326,13 +331,11 @@ export function shortfallMessage(params: {
   const label = formatMonth(month);
 
   if (total !== null && total > shown) {
-    return shown === 0
-      ? `${label}에 저장한 계획이 ${total}건 있는데 아직 불러오지 않았어요. 아래 ‘더 보기’로 이전 기록까지 불러오면 보입니다.`
-      : `${label} 기록 ${total}건 중 ${shown}건을 불러왔어요. 나머지는 ‘더 보기’로 불러오면 보입니다.`;
+    return `${label} 기록 ${total}건 중 ${shown}건을 불러왔어요. 나머지는 ‘더 보기’로 불러오면 보입니다.`;
   }
 
   if (hasMore) {
-    return `아직 불러오지 않은 기록이 남아 있어요. ${label} 기록이 더 있을 수 있습니다.`;
+    return `아직 불러오지 않은 기록이 남아 있어요.`;
   }
 
   return null;
