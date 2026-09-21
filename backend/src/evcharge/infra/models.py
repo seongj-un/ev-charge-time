@@ -89,6 +89,18 @@ class SavedPlan(Base):
     # None을 담는다. 차량이 나중에 지워지거나 이름이 바뀌어도 "그때 무엇으로
     # 계획했는지"는 이 스냅샷에 그대로 남아야 한다(FK가 아니라 이름 문자열인 이유).
     vehicle_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # 충전이 시작되는 시각 = result["best"]["start"] (4번 수정).
+    #
+    # result가 JSONB라 (result->'best'->>'start')::timestamptz로 매번 캐스팅해
+    # 거를 수도 있지만, 저장 시점에 뽑아 컬럼으로 둔다: 인덱스를 태울 수 있고,
+    # JSONB 경로 오타가 런타임에야 드러나는 일이 없다. tariff_version·
+    # vehicle_name과 같은 "저장 당시 값 스냅샷"이기도 하다.
+    #
+    # 월 필터와 목록 정렬이 둘 다 이 컬럼을 기준으로 한다 — 사용자가 보는
+    # 날짜가 충전 날짜이므로, 거르는 기준과 보이는 기준이 같아야 한다.
+    charge_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     created_at: Mapped[datetime] = _now()
 
 

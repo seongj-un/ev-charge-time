@@ -89,14 +89,34 @@ _VALID_RESULT = {
 }
 
 
-def _raw_plan(user_id: str, created_at: datetime, *, plan_id: str | None = None, savings_won: int = 1) -> SavedPlan:
+def _raw_plan(
+    user_id: str,
+    created_at: datetime,
+    *,
+    plan_id: str | None = None,
+    savings_won: int = 1,
+    charge_start: datetime | None = None,
+) -> SavedPlan:
+    """4번 수정: 실제 엔드포인트는 ``result.best.start``에서 ``charge_start``를
+    뽑아 저장한다. 여기서도 그 파생 관계를 실제로 반영해 둔다 — ``result``와
+    ``charge_start`` 컬럼이 따로 노는 테스트 데이터는 실제로는 나올 수 없는
+    상태라 혼란만 준다. ``charge_start``를 명시하지 않으면 ``created_at``과
+    같은 값을 쓴다(저장 시각과 충전 시각이 같은, 구분할 필요 없는 테스트용
+    기본값) — 두 값이 다른 경우를 검증하는 테스트만 따로 넘긴다."""
+    resolved_charge_start = charge_start if charge_start is not None else created_at
+    result = {**_VALID_RESULT, "savings_won": savings_won}
+    result = {
+        **result,
+        "best": {**result["best"], "start": resolved_charge_start.isoformat()},
+    }
     return SavedPlan(
         id=plan_id or str(uuid.uuid4()),
         user_id=user_id,
         request=dict(SPEC_EXAMPLE),
-        result={**_VALID_RESULT, "savings_won": savings_won},
+        result=result,
         tariff_version="test",
         created_at=created_at,
+        charge_start=resolved_charge_start,
     )
 
 
@@ -136,7 +156,19 @@ def test_stored_tariff_version_matches_current(client, auth_user):
 
 
 def test_list_is_newest_first_and_paginates(client, auth_user):
-    ids = [post_plan(client).json()["id"] for _ in range(3)]
+    """충전 날짜 내림차순 + 커서 페이징.
+
+    세 계획의 충전 날짜를 일부러 다르게 만든다 — 조건이 같으면 charge_start가
+    동률이 되어 id 순으로 떨어지고, 그러면 이 테스트가 정렬을 검증하지 못한다.
+    """
+    ids = [
+        post_plan(
+            client,
+            earliest_start=f"2026-10-0{day}T18:00",
+            deadline=f"2026-10-0{day + 1}T08:00",
+        ).json()["id"]
+        for day in (5, 6, 7)
+    ]
 
     page1 = client.get("/api/me/plans", params={"limit": 2}).json()
     assert [item["id"] for item in page1["items"]] == list(reversed(ids))[:2]
@@ -161,7 +193,8 @@ def test_list_default_limit_is_20(client, auth_user):
 def test_summary_returns_month_count_and_savings_sum(client, auth_user):
     plan1 = post_plan(client).json()
     plan2 = post_plan(client).json()
-    month = plan1["created_at"][:7]
+    # 저장 시각이 아니라 충전 시작 시각 기준이다(4번 수정)
+    month = plan1["charge_start"][:7]
 
     summary = client.get("/api/me/plans/summary", params={"month": month}).json()
 
@@ -334,16 +367,28 @@ def test_summary_month_boundary_rolls_over_year(client, db_session, auth_user):
 # ── D-2: 동률 created_at 페이징 ────────────────────────────────────────────
 
 
-def test_pagination_with_tied_created_at_visits_each_row_exactly_once(
+def test_pagination_with_tied_charge_start_visits_each_row_exactly_once(
     client, db_session, auth_user
 ):
-    """created_at이 전부 같은 행 5개를 넣고 커서로 끝까지 넘겼을 때, 각 행이
-    정확히 한 번씩만 나와야 한다(id 내림차순 동률 깨기가 안 되면 건너뛰거나
-    중복될 수 있다)."""
-    same_time = datetime(2026, 5, 1, 12, 0, tzinfo=KST)
+    """charge_start가 전부 같은 행 5개를 넣고 커서로 끝까지 넘겼을 때, 각 행이
+    정확히 한 번씩만 나와야 한다.
+
+    정렬·커서 키가 created_at에서 charge_start로 바뀌었으므로(4번 수정) 동률
+    불변식도 새 키에서 성립해야 한다. id 내림차순 동률 깨기가 없으면 같은
+    시각 행들을 건너뛰거나 중복해서 돌려준다. 저장 시각은 일부러 제각각으로
+    둬서, 커서가 실수로 created_at을 다시 잡으면 이 테스트가 깨지게 한다.
+    """
+    same_charge = datetime(2026, 5, 1, 12, 0, tzinfo=KST)
     ids = [str(uuid.uuid4()) for _ in range(5)]
-    for plan_id in ids:
-        db_session.add(_raw_plan(auth_user.id, same_time, plan_id=plan_id))
+    for offset, plan_id in enumerate(ids):
+        db_session.add(
+            _raw_plan(
+                auth_user.id,
+                datetime(2026, 4, 1 + offset, 9, 0, tzinfo=KST),
+                plan_id=plan_id,
+                charge_start=same_charge,
+            )
+        )
     db_session.commit()
 
     seen: list[str] = []
@@ -520,3 +565,140 @@ def test_create_plan_with_another_users_vehicle_id_is_404(client, db_session, au
     response = post_plan(client, vehicle_id=other_vehicle["id"])
 
     assert response.status_code == 404
+
+
+# ── 4번: 월 필터·정렬 기준이 저장 시각이 아니라 충전 시작 시각 ──────────────
+
+
+def test_month_filters_by_charge_start_not_created_at(client, db_session, auth_user):
+    """9월에 저장한 "10월 충전 계획"은 10월에 잡혀야 한다.
+
+    이 테스트가 4번 수정의 핵심이다. 예전에는 created_at 기준이라 이 계획이
+    9월에 잡히고 10월 필터는 0건이었다 — 화면은 충전 날짜를 보여주는데
+    필터는 저장일 기준이라, 사용자가 10월을 고르면 방금 세운 10월 계획이
+    안 보였다.
+    """
+    plan_id = str(uuid.uuid4())
+    db_session.add(
+        _raw_plan(
+            auth_user.id,
+            datetime(2026, 9, 21, 17, 0, tzinfo=KST),  # 저장: 9월
+            plan_id=plan_id,
+            charge_start=datetime(2026, 10, 7, 22, 0, tzinfo=KST),  # 충전: 10월
+        )
+    )
+    db_session.commit()
+
+    october = client.get("/api/me/plans", params={"month": "2026-10"}).json()
+    september = client.get("/api/me/plans", params={"month": "2026-09"}).json()
+
+    assert [item["id"] for item in october["items"]] == [plan_id]
+    assert september["items"] == []
+
+
+def test_summary_uses_charge_start_not_created_at(client, db_session, auth_user):
+    """summary도 같은 기준이어야 목록 건수와 합계가 맞는다."""
+    db_session.add(
+        _raw_plan(
+            auth_user.id,
+            datetime(2026, 9, 21, 17, 0, tzinfo=KST),
+            savings_won=1500,
+            charge_start=datetime(2026, 10, 7, 22, 0, tzinfo=KST),
+        )
+    )
+    db_session.commit()
+
+    october = client.get(
+        "/api/me/plans/summary", params={"month": "2026-10"}
+    ).json()
+    september = client.get(
+        "/api/me/plans/summary", params={"month": "2026-09"}
+    ).json()
+
+    assert october == {"month": "2026-10", "count": 1, "total_savings_won": 1500}
+    assert september == {"month": "2026-09", "count": 0, "total_savings_won": 0}
+
+
+def test_midnight_crossing_plan_lands_in_the_month_it_starts(
+    client, db_session, auth_user
+):
+    """10월 31일 22:00 → 11월 1일 01:00 충전은 **10월**에만 잡힌다.
+
+    best.end가 아니라 best.start를 기준으로 삼는 이유가 이것이다. 경부하가
+    22–08시라 최적해가 자정을 넘기는 일이 흔하고, 사용자가 보는 날짜는
+    시작일이다. 끝 시각을 기준으로 삼거나 두 달에 모두 넣으면 합계가 중복된다.
+    """
+    plan_id = str(uuid.uuid4())
+    db_session.add(
+        _raw_plan(
+            auth_user.id,
+            datetime(2026, 10, 25, 9, 0, tzinfo=KST),
+            plan_id=plan_id,
+            charge_start=datetime(2026, 10, 31, 22, 0, tzinfo=KST),
+        )
+    )
+    db_session.commit()
+
+    october = client.get("/api/me/plans", params={"month": "2026-10"}).json()
+    november = client.get("/api/me/plans", params={"month": "2026-11"}).json()
+
+    assert [item["id"] for item in october["items"]] == [plan_id]
+    assert november["items"] == []
+
+
+def test_charge_start_month_boundary_is_kst_not_utc(client, db_session, auth_user):
+    """2026-10-01 00:30 KST(= 09-30 15:30 UTC) 충전은 10월이다.
+
+    UTC로 잘랐다면 9월로 밀린다.
+    """
+    plan_id = str(uuid.uuid4())
+    db_session.add(
+        _raw_plan(
+            auth_user.id,
+            datetime(2026, 9, 1, 9, 0, tzinfo=KST),
+            plan_id=plan_id,
+            charge_start=datetime(2026, 10, 1, 0, 30, tzinfo=KST),
+        )
+    )
+    db_session.commit()
+
+    body = client.get("/api/me/plans", params={"month": "2026-10"}).json()
+    assert [item["id"] for item in body["items"]] == [plan_id]
+
+
+def test_list_is_sorted_by_charge_start_descending(client, db_session, auth_user):
+    """목록 정렬도 충전 날짜 내림차순이다.
+
+    필터만 충전 날짜 기준이고 정렬이 저장 순서로 남으면, 10월로 걸러도 날짜
+    열이 뒤죽박죽 나와 사용자 눈에는 정렬이 없는 목록으로 보인다. 저장 순서를
+    충전 순서와 일부러 반대로 넣어, created_at 정렬이 남아 있으면 깨지게 한다.
+    """
+    early_charge, late_charge = str(uuid.uuid4()), str(uuid.uuid4())
+    db_session.add(
+        _raw_plan(  # 먼저 저장, 늦게 충전
+            auth_user.id,
+            datetime(2026, 10, 1, 9, 0, tzinfo=KST),
+            plan_id=late_charge,
+            charge_start=datetime(2026, 10, 20, 22, 0, tzinfo=KST),
+        )
+    )
+    db_session.add(
+        _raw_plan(  # 나중에 저장, 일찍 충전
+            auth_user.id,
+            datetime(2026, 10, 2, 9, 0, tzinfo=KST),
+            plan_id=early_charge,
+            charge_start=datetime(2026, 10, 5, 22, 0, tzinfo=KST),
+        )
+    )
+    db_session.commit()
+
+    body = client.get("/api/me/plans").json()
+    assert [item["id"] for item in body["items"]] == [late_charge, early_charge]
+
+
+def test_charge_start_is_exposed_at_top_level(client, auth_user):
+    """프론트가 result를 파고들지 않고 목록 날짜를 표시할 수 있어야 한다."""
+    created = post_plan(client).json()
+
+    assert created["charge_start"] == created["result"]["best"]["start"]
+    assert created["charge_start"].endswith("+09:00")

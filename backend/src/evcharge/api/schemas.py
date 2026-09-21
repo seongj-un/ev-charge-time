@@ -208,6 +208,10 @@ class SavedPlanOut(BaseModel):
     # 저장 당시 차량 이름 스냅샷(3번 수정). 직접 입력이면 null — 빈 문자열이
     # 아니다. 프론트가 ``vehicle_name ?? 조건폴백``으로 분기한다.
     vehicle_name: str | None = None
+    # 충전 시작 시각(= result.best.start, 4번 수정). 최상위에 올려 두면
+    # 프론트가 result를 파고들지 않고 목록의 날짜를 표시할 수 있다.
+    # 월 필터와 목록 정렬의 기준이기도 하다.
+    charge_start: KstDatetime
 
 
 class SavedPlanPage(BaseModel):

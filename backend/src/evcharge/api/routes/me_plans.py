@@ -46,7 +46,7 @@ def list_plans(
     user: User = Depends(current_user),
     session: DbSession = Depends(get_session),
 ) -> SavedPlanPage:
-    """최신순, 커서 기반 페이지네이션. ``limit`` 기본 20, 1~100 (B-1).
+    """충전 날짜 내림차순, 커서 기반 페이지네이션. ``limit`` 기본 20, 1~100 (B-1).
 
     하한이 없으면 ``?limit=0``(또는 음수)이 저장 기록 1건 이상인 사용자에게
     ``has_more``를 빈 슬라이스 전에 계산한 뒤 ``rows[-1]``을 해서 IndexError →
@@ -58,26 +58,35 @@ def list_plans(
     직접 거르면, 그 달 기록이 아직 안 넘어온 다음 페이지에 있어 화면에서
     누락되는 문제가 생겨서 서버가 먼저 걸러야 한다. 안 주면(``None``) 기존과
     완전히 동일하게 전체를 반환한다.
+
+    필터·정렬·커서가 모두 ``charge_start``(충전 시작 시각) 기준이다(4번 수정).
+    예전에는 ``created_at``(저장 시각)이었는데, 화면이 보여주는 날짜는 충전
+    날짜이므로 거르는 기준과 보이는 기준이 어긋났다 — 9월에 저장한 "10월 7일
+    충전 계획"이 10월 필터에 안 잡혔고, 10월로 걸러도 순서는 저장한 순서라
+    날짜 열이 뒤죽박죽 나왔다. ``created_at``은 "언제 세운 계획인지"를 위해
+    응답에는 그대로 남는다.
     """
     query = select(SavedPlan).where(SavedPlan.user_id == user.id)
 
     if month is not None:
         start, end = _month_bounds(month)
-        query = query.where(SavedPlan.created_at >= start, SavedPlan.created_at < end)
+        query = query.where(
+            SavedPlan.charge_start >= start, SavedPlan.charge_start < end
+        )
 
     if cursor is not None:
-        cursor_created_at, cursor_id = _decode_cursor(cursor)
+        cursor_charge_start, cursor_id = _decode_cursor(cursor)
         query = query.where(
             or_(
-                SavedPlan.created_at < cursor_created_at,
+                SavedPlan.charge_start < cursor_charge_start,
                 and_(
-                    SavedPlan.created_at == cursor_created_at,
+                    SavedPlan.charge_start == cursor_charge_start,
                     SavedPlan.id < cursor_id,
                 ),
             )
         )
 
-    query = query.order_by(SavedPlan.created_at.desc(), SavedPlan.id.desc()).limit(
+    query = query.order_by(SavedPlan.charge_start.desc(), SavedPlan.id.desc()).limit(
         limit + 1
     )
     rows = list(session.scalars(query).all())
@@ -85,7 +94,9 @@ def list_plans(
     has_more = len(rows) > limit
     rows = rows[:limit]
 
-    next_cursor = _encode_cursor(rows[-1].created_at, rows[-1].id) if has_more else None
+    next_cursor = (
+        _encode_cursor(rows[-1].charge_start, rows[-1].id) if has_more else None
+    )
 
     return SavedPlanPage(
         items=[_to_saved_plan_out(row) for row in rows],
@@ -99,14 +110,19 @@ def plans_summary(
     user: User = Depends(current_user),
     session: DbSession = Depends(get_session),
 ) -> PlanSummary:
-    """그 달에 저장한 계획의 건수와 ``savings_won`` 합계."""
+    """그 달에 **충전할** 계획의 건수와 ``savings_won`` 합계.
+
+    저장한 달이 아니라 충전하는 달 기준이다(4번 수정) — 사용자가 묻는 것은
+    "10월에 얼마나 아끼나"이지 "9월에 계획을 몇 번 세웠나"가 아니다.
+    ``/plans?month=``과 같은 기준이어야 목록 건수와 합계가 맞는다.
+    """
     start, end = _month_bounds(month)
 
     rows = session.scalars(
         select(SavedPlan).where(
             SavedPlan.user_id == user.id,
-            SavedPlan.created_at >= start,
-            SavedPlan.created_at < end,
+            SavedPlan.charge_start >= start,
+            SavedPlan.charge_start < end,
         )
     ).all()
 
@@ -151,6 +167,7 @@ def create_plan(
         result=result.model_dump(mode="json"),
         tariff_version=tariff.version,
         vehicle_name=vehicle_name,
+        charge_start=result.best.start,
         created_at=datetime.now(KST),
     )
     session.add(row)
@@ -163,6 +180,7 @@ def create_plan(
         result=result,
         tariff_version=row.tariff_version,
         vehicle_name=row.vehicle_name,
+        charge_start=row.charge_start,
     )
 
 
@@ -193,6 +211,7 @@ def _to_saved_plan_out(row: SavedPlan) -> SavedPlanOut:
         result=row.result,
         tariff_version=row.tariff_version,
         vehicle_name=row.vehicle_name,
+        charge_start=row.charge_start,
     )
 
 
@@ -227,18 +246,24 @@ def _month_bounds(month: str) -> tuple[datetime, datetime]:
     return start, end
 
 
-def _encode_cursor(created_at: datetime, plan_id: str) -> str:
-    raw = f"{created_at.isoformat()}|{plan_id}"
+def _encode_cursor(charge_start: datetime, plan_id: str) -> str:
+    """커서는 정렬 키와 같은 쌍이어야 한다 — ``(charge_start, id)`` (4번 수정).
+
+    id 타이브레이커가 필요한 이유: 같은 시각에 시작하는 계획이 여러 건일 수
+    있고, 그때 커서가 시각만 들고 있으면 같은 시각 행들을 건너뛰거나 중복해서
+    돌려준다.
+    """
+    raw = f"{charge_start.isoformat()}|{plan_id}"
     return base64.urlsafe_b64encode(raw.encode()).decode()
 
 
 def _decode_cursor(cursor: str) -> tuple[datetime, str]:
     try:
         raw = base64.urlsafe_b64decode(cursor.encode()).decode()
-        created_at_str, plan_id = raw.rsplit("|", 1)
-        created_at = datetime.fromisoformat(created_at_str)
+        charge_start_str, plan_id = raw.rsplit("|", 1)
+        charge_start = datetime.fromisoformat(charge_start_str)
     except Exception as exc:
         raise HTTPException(
             status_code=422, detail="cursor가 올바르지 않습니다."
         ) from exc
-    return created_at, plan_id
+    return charge_start, plan_id

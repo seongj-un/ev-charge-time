@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Session
 
 import pytest
 
+from evcharge.domain.pricing import KST
 from evcharge.infra.models import ChargerCache, FavoriteStation, SavedPlan, User, Vehicle
 
 # engine/db_session은 tests/conftest.py의 공용 fixture를 쓴다 (evcharge_test DB,
@@ -60,6 +62,7 @@ def test_deleting_a_user_removes_their_data(db_session):
                 request={"soc_now": 30},
                 result={"savings_won": 399},
                 tariff_version="2026.1-draft",
+                charge_start=datetime(2026, 10, 7, 22, 0, tzinfo=KST),
             ),
             FavoriteStation(user_id=user.id, station_id="ST-001"),
         ]
