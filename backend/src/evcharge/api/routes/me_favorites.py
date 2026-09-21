@@ -42,7 +42,7 @@ def _to_favorite_out(station_id: str, cache: ChargerCache | None) -> FavoriteSta
         operator=data.get("operator"),
         available_hours=data.get("available_hours"),
         is_favorite=True,
-        chargers=data.get("chargers", []),
+        chargers=data.get("chargers"),
     )
 
 

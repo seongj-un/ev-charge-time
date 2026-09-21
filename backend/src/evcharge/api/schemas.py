@@ -194,7 +194,9 @@ class FavoriteStationOut(StationBase):
     distance_m: int | None = None
     operator: str | None = None
     available_hours: str | None = None
-    chargers: list[ChargerOut] = Field(default_factory=list)
+    # []가 아니라 None이다 — []는 "충전기가 0대인 충전소",
+    # None은 "아직 캐시에서 못 불러왔다"로 프론트가 다르게 표시한다.
+    chargers: list[ChargerOut] | None = None
 
 
 class SavedPlanOut(BaseModel):

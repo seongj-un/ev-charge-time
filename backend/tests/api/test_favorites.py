@@ -112,7 +112,7 @@ def test_favorite_without_cache_still_lists_with_station_id_only(client, db_sess
     assert body[0]["station_id"] == "ST-003"
     assert body[0]["name"] is None
     assert body[0]["address"] is None
-    assert body[0]["chargers"] == []
+    assert body[0]["chargers"] is None
 
 
 def test_delete_favorite_returns_204_and_removes_from_list(client, db_session):
@@ -219,7 +219,7 @@ def test_favorite_list_cache_fields_are_null_on_cache_miss(client, db_session):
     assert station["distance_m"] is None
     assert station["operator"] is None
     assert station["available_hours"] is None
-    assert station["chargers"] == []
+    assert station["chargers"] is None
 
 
 # ── A-3/B-2: 즐겨찾기 PUT 동시 요청 ─────────────────────────────────────────
