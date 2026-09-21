@@ -46,6 +46,40 @@ class Settings(BaseSettings):
     # 확인했다. 같은 이유로 강원은 42가 아니라 51, 전북은 45가 아니라 52다.
     charger_zcodes: str = "12"
 
+    # F-10 자연어 질의 — Google Gemini 무료 티어 (https://aistudio.google.com/apikey)
+    #
+    # `charger_api_key`와 같은 규칙이다: 비어 있으면 POST /api/chat은 501을
+    # 반환하고, 나머지 기능은 키 없이도 전부 돌아야 하므로 기동 시점에 막지 않는다.
+    #
+    # 공공데이터포털 키와 달리 정규화가 필요 없다 — SDK가 이 값을 쿼리
+    # 문자열이 아니라 x-goog-api-key 헤더로 실으므로 Encoding/Decoding 구분이
+    # 없고, AI Studio가 주는 키에는 `%`가 들어가지 않는다.
+    gemini_api_key: str = ""
+
+    # 모델 ID를 설정으로 두는 이유: 무료 티어에서 쓸 수 있는 모델은 바뀐다.
+    # 기본값은 설치된 google-genai 2.24.0이 "현재 서비스되는 모델"로 열거한
+    # 목록(_gaos/types/interactions/model.py의 Model Literal)에서 확인한 정확한
+    # 표기다 — 그 목록의 설명은 "Our most cost-efficient model, optimized for
+    # high-volume agentic tasks, translation, and simple data processing".
+    # `-preview` 접미사는 붙지 않는다.
+    #
+    # 키가 없어 models.list()로 이 계정에서 실제로 쓸 수 있는지까지는 확인하지
+    # 못했다. 거부되면 이 값만 바꾸면 된다 (.env.example에 후보를 적어 뒀다).
+    gemini_model: str = "gemini-3.1-flash-lite"
+
+    # 사용자별 호출 제한 (명세 F-10, 초과 시 429).
+    #
+    # 20회/시간으로 잡은 근거:
+    #  - 무료 티어는 분당·일일 호출 한도가 프로젝트 전체에 걸린다. 한 사람이
+    #    그 공용 예산을 다 써버리면 시연 중 다른 심사위원의 질문이 전부 막힌다.
+    #  - 실제 사용은 "질문 몇 개"다. 질문 하나당 모델 호출은 정확히 1회이므로
+    #    (문장은 서버가 쓴다 — api/chat_service.py) 20회/시간은 정상 사용자가
+    #    체감할 일이 없으면서, 폭주하는 클라이언트 하나가 예산을 비우는 것은 막는다.
+    #  - 고정 창(fixed window)이라 경계에서 최대 2배까지 몰릴 수 있다. 정확한
+    #    슬라이딩 윈도우가 필요할 만큼 비싼 자원은 아니라 단순한 쪽을 택했다.
+    chat_rate_limit_count: int = 20
+    chat_rate_limit_window_minutes: int = 60
+
     @field_validator("charger_api_key")
     @classmethod
     def _normalize_service_key(cls, value: str) -> str:

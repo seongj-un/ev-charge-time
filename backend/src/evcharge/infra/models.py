@@ -157,6 +157,43 @@ class LoginAttempt(Base):
     )
 
 
+class ChatRateLimit(Base):
+    """F-10 자연어 질의의 사용자별 호출 제한 (고정 창 카운터).
+
+    **사용자당 한 행이다.** (user_id, window_start) 복합키로 창마다 새 행을
+    쌓지 않는 이유: 그러면 지난 창의 행이 영영 남아 따로 청소해 줘야 한다.
+    대신 ``window_start``를 값으로 들고 다니면서, UPSERT 한 문장이 "같은
+    창이면 +1, 창이 넘어갔으면 1로 초기화"를 함께 처리한다
+    (``routes/extensions.py``의 ``_consume_quota``).
+
+    카운터를 애플리케이션에서 읽고-쓰지 않는 것이 핵심이다 —
+    ``login_attempts.failed_count``가 정확히 그 방식이라 병렬 요청에 증가분을
+    잃어버렸고(lost update), 순차 5회는 잠기는데 병렬 5회는 안 잠겼다.
+    """
+
+    __tablename__ = "chat_rate_limits"
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    # 이 카운터가 속한 고정 창의 시작 시각. 요청이 들어온 창과 다르면
+    # used_count를 1로 되돌린다.
+    window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    # server_default도 둔다 — login_attempts.failed_count와 같은 이유로,
+    # SQLAlchemy를 거치지 않는 raw INSERT가 NOT NULL을 위반하지 않게.
+    used_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class ChargerCache(Base):
     __tablename__ = "charger_cache"
 
