@@ -341,3 +341,51 @@ describe("필드 검증 실패를 우리말로", () => {
     ).toContain("월");
   });
 });
+
+/*
+ * 백엔드가 추가한 검증들. 라이브 응답을 그대로 옮겨 왔다.
+ */
+describe("백엔드가 새로 거르는 입력", () => {
+  test("이메일 형식 오류는 우리말로 바꾼다", () => {
+    // pydantic EmailStr은 value_error로 오지만 msg가 영어다. 그대로 살리면 샌다.
+    expect(
+      messageFromDetail([
+        {
+          type: "value_error",
+          loc: ["body", "email"],
+          msg: "value is not a valid email address: An email address must have an @-sign.",
+          ctx: { reason: "An email address must have an @-sign." },
+        },
+      ]),
+    ).toBe("이메일: 이메일 형식이 올바르지 않아요.");
+  });
+
+  /*
+   * 모델 전체를 보는 검증(model_validator)은 loc이 ["body"]뿐이라 필드가 없다.
+   * 필드 이름 없이 문장만 보여줘야 한다 — ": " 같은 빈 접두사가 붙으면 안 된다.
+   */
+  test("필드가 없는 검증은 문장만 보여준다", () => {
+    expect(
+      messageFromDetail([
+        {
+          type: "value_error",
+          loc: ["body"],
+          msg: "Value error, earliest_start와 deadline 사이는 14일을 넘을 수 없습니다.",
+        },
+      ]),
+    ).toBe("earliest_start와 deadline 사이는 14일을 넘을 수 없습니다.");
+  });
+
+  test("길이 제한은 경계값과 함께 말한다", () => {
+    expect(
+      messageFromDetail([
+        {
+          type: "string_too_long",
+          loc: ["body", "nickname"],
+          msg: "String should have at most 50 characters",
+          ctx: { max_length: 50 },
+        },
+      ]),
+    ).toBe("닉네임: 50자 이하여야 해요.");
+  });
+});

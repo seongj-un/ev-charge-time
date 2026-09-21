@@ -72,8 +72,13 @@ function ruleMessage(item: ValidationItem): string {
     case "string_too_long":
       return `${ctx.max_length}자 이하여야 해요.`;
     case "value_error":
-      // 백엔드가 던진 ValueError는 이미 우리말이다. pydantic이 앞에 붙이는
-      // "Value error, "만 떼고 그대로 쓴다 — 다시 쓰면 뜻이 흐려진다.
+      /*
+       * 백엔드가 던진 ValueError는 이미 우리말이라 접두사만 떼고 살린다.
+       * 다만 pydantic EmailStr은 같은 type으로 영어를 보낸다 — 그것만 갈라낸다.
+       */
+      if (raw.startsWith("value is not a valid email address")) {
+        return "이메일 형식이 올바르지 않아요.";
+      }
       return raw.replace(/^Value error,\s*/, "");
     default:
       return raw;

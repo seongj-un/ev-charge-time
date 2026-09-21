@@ -236,3 +236,33 @@ describe("LoginForm", () => {
     expect(screen.getByRole("link", { name: "회원가입" })).toHaveAttribute("href", "/signup");
   });
 });
+
+/*
+ * 백엔드가 이메일 형식을 검증하기 시작했다. 그대로 보내면 422가 오는데,
+ * 오타는 사용자가 가장 자주 내는 실수라 이게 상시 경로가 된다.
+ * 왕복 없이 바로 알려주는 편이 빠르고, 서버 부담도 없다.
+ */
+describe("이메일 형식", () => {
+  test("@가 없으면 보내지 않고 바로 알려준다", async () => {
+    const fetchMock = respondWith(USER);
+    const user = userEvent.setup();
+    render(<LoginForm />);
+
+    await fill(user, { email: "notanemail" });
+    await user.click(submitButton());
+
+    expect(await screen.findByText("이메일 형식이 올바르지 않아요.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("형식이 맞으면 그대로 보낸다", async () => {
+    const fetchMock = respondWith(USER);
+    const user = userEvent.setup();
+    render(<LoginForm />);
+
+    await fill(user);
+    await user.click(submitButton());
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  });
+});

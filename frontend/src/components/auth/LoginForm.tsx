@@ -33,6 +33,9 @@ const LOCKED_ERROR = "로그인 실패가 많아 잠시 잠겼어요. 15분 뒤�
 
 const OFFLINE_ERROR = "서버에 연결하지 못했습니다. 백엔드가 실행 중인지 확인해 주세요.";
 
+/** 서버가 거르는 것과 같은 수준의 헐거운 검사. 확정은 서버가 한다. */
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 type FieldErrors = { email?: string; password?: string };
 
 export function LoginForm({ nextPath }: { nextPath?: string | null }) {
@@ -53,7 +56,12 @@ export function LoginForm({ nextPath }: { nextPath?: string | null }) {
     if (pending || offline) return;
 
     const errors: FieldErrors = {};
-    if (email.trim() === "") errors.email = "이메일을 입력해 주세요.";
+    if (email.trim() === "") {
+      errors.email = "이메일을 입력해 주세요.";
+    } else if (!EMAIL_SHAPE.test(email.trim())) {
+      // 백엔드도 형식을 거른다(422). 오타는 가장 잦은 실수라 왕복 없이 바로 말해 준다.
+      errors.email = "이메일 형식이 올바르지 않아요.";
+    }
     if (password === "") errors.password = "비밀번호를 입력해 주세요.";
     setFieldErrors(errors);
     if (errors.email || errors.password) {
