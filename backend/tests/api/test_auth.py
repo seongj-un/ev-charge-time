@@ -160,6 +160,42 @@ def test_delete_account_success_frees_the_email_for_reuse(client):
     assert again.status_code == 201
 
 
+def test_logout_response_actually_clears_the_session_cookie(client):
+    """Finding 2 회귀 테스트.
+
+    ``logout``이 ``clear_session_cookie(response)``로 주입된 ``response``에
+    삭제 헤더를 단 뒤 ``return Response(status_code=204)``로 **새** Response를
+    반환하면, FastAPI가 그 새 객체를 쓰면서 주입된 ``response``에 달아둔
+    Set-Cookie 헤더를 버린다 — 세션 행은 지워져도 브라우저에는 죽은 쿠키가
+    계속 남는다. ``test_cookie_helpers.py``는 헬퍼를 합성 앱에 직접 붙여서
+    검증하므로 이 결함을 잡지 못한다 — 반드시 실제 라우터를 통해야 한다.
+    """
+    signup(client, email="logout-cookie@example.com")
+
+    response = client.post("/api/auth/logout")
+
+    assert response.status_code == 204
+    header = response.headers.get("set-cookie", "").lower()
+    assert header, "logout 응답에 Set-Cookie 헤더가 없다"
+    assert "session=" in header
+    assert "max-age=0" in header
+
+
+def test_delete_account_response_actually_clears_the_session_cookie(client):
+    """Finding 2 회귀 테스트. ``DELETE /api/me``도 로그아웃과 같은 패턴으로
+    쿠키 삭제 헤더를 잃는다."""
+    email = "delete-cookie@example.com"
+    signup(client, email=email)
+
+    response = client.request("DELETE", "/api/me", json={"password": PASSWORD})
+
+    assert response.status_code == 204
+    header = response.headers.get("set-cookie", "").lower()
+    assert header, "탈퇴 응답에 Set-Cookie 헤더가 없다"
+    assert "session=" in header
+    assert "max-age=0" in header
+
+
 def test_login_timing_does_not_leak_whether_the_email_is_registered(client):
     """Finding 1 회귀 테스트 (Critical).
 

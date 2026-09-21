@@ -141,4 +141,8 @@ def logout(
         db.execute(delete(SessionModel).where(SessionModel.token_hash == hash_token(token)))
         db.commit()
     clear_session_cookie(response)
-    return Response(status_code=204)
+    # (Finding 2) 여기서 새 Response(status_code=204)를 만들어 반환하면
+    # FastAPI가 그 객체를 쓰면서 주입된 `response`에 clear_session_cookie가
+    # 달아둔 Set-Cookie 헤더를 버린다 — 데코레이터의 status_code=204가 이미
+    # 상태 코드를 정하므로 None을 반환해 주입된 response를 그대로 쓰게 한다.
+    return None
