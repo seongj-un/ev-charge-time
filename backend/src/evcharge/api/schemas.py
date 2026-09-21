@@ -110,6 +110,11 @@ class UserOut(BaseModel):
     nickname: str | None = None
     created_at: datetime | None = None
 
+    @field_serializer("created_at")
+    def _as_kst(self, value: datetime | None) -> str | None:
+        """응답 시각은 항상 +09:00을 달고 나간다 (API 명세서 1장)."""
+        return None if value is None else value.astimezone(KST).isoformat()
+
 
 class VehicleIn(BaseModel):
     name: str

@@ -1,41 +1,20 @@
-import os
 import uuid
 from datetime import datetime, timedelta
 
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session as DbSession
 
 from evcharge.api.auth_deps import SESSION_COOKIE, current_user
 from evcharge.domain.pricing import KST
-from evcharge.infra.db import Base, get_session
+from evcharge.infra.db import get_session
 from evcharge.infra.models import Session as SessionModel
 from evcharge.infra.models import User
 from evcharge.infra.security import hash_token, new_session_token
-from evcharge.settings import get_settings
 
-
-@pytest.fixture(scope="module")
-def engine():
-    url = os.environ.get("DATABASE_URL", get_settings().database_url)
-    engine = create_engine(url)
-    try:
-        engine.connect().close()
-    except Exception:
-        pytest.skip("PostgreSQL이 떠 있지 않습니다 (docker compose up -d db)")
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-
-
-@pytest.fixture
-def db_session(engine):
-    with DbSession(engine) as session:
-        yield session
-        session.rollback()
+# engine/db_session은 tests/conftest.py의 공용 fixture를 쓴다 (evcharge_test DB,
+# 세션당 스키마 1회 생성, 테스트별 트랜잭션 롤백) — tests/infra/test_models.py와
+# 같은 이유로, 이 파일도 더 이상 자체 drop_all/create_all을 하지 않는다.
 
 
 @pytest.fixture

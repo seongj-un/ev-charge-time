@@ -11,13 +11,6 @@ VEHICLE = {"name": "출퇴근 차", "battery_kwh": 70, "charger_kw": 7}
 
 STUB_ENDPOINTS = [
     ("GET", "/api/chargers?lat=35.0&lng=126.7", "/api/chargers", None),
-    ("POST", "/api/auth/signup", "/api/auth/signup",
-     {"email": "a@example.com", "password": "12345678"}),
-    ("POST", "/api/auth/login", "/api/auth/login",
-     {"email": "a@example.com", "password": "12345678"}),
-    ("POST", "/api/auth/logout", "/api/auth/logout", None),
-    ("GET", "/api/me", "/api/me", None),
-    ("DELETE", "/api/me", "/api/me", {"password": "12345678"}),
     ("GET", "/api/me/vehicles", "/api/me/vehicles", None),
     ("POST", "/api/me/vehicles", "/api/me/vehicles", VEHICLE),
     ("PATCH", "/api/me/vehicles/v_01", "/api/me/vehicles/{vehicle_id}", VEHICLE),
@@ -34,7 +27,15 @@ STUB_ENDPOINTS = [
     ("POST", "/api/chat", "/api/chat", {"message": "내일 출근 전까지 80% 채우려면?"}),
 ]
 
-IMPLEMENTED = ["/health", "/api/timeline", "/api/recommend"]
+IMPLEMENTED = [
+    "/health",
+    "/api/timeline",
+    "/api/recommend",
+    "/api/auth/signup",
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/me",
+]
 
 
 @pytest.mark.parametrize(
