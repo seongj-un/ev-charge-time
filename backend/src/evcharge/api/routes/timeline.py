@@ -2,7 +2,7 @@ from datetime import date
 
 from fastapi import APIRouter, Query
 
-from ...domain.calendar import day_type_of, season_of
+from ...domain.calendar import season_of
 from ...domain.pricing import hourly_prices
 from ..deps import get_holidays, get_tariff
 from ..schemas import HourPriceOut, Mode, TimelineResponse
