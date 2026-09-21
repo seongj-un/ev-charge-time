@@ -115,6 +115,30 @@ export function toSavePlanRequest(
   return form.vehicleId ? { ...request, vehicle_id: form.vehicleId } : request;
 }
 
+const DAY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * 특정 날짜로 계획할 때 채워 둘 시각.
+ *
+ * 하루 단가 화면에서 "이 날짜로 추천받기"로 넘어오면 그 날짜가 온다. '지금'과
+ * 무관한 미래 날짜라 "지금부터"라는 기본값이 뜻이 없다. 그 날 저녁 18시부터
+ * 다음날 아침 8시까지 — 이 앱이 상정하는 가장 흔한 쓰임이고 디자인 예시와도 같다.
+ *
+ * 읽을 수 없는 날짜면 null. 주소창은 누구나 고친다.
+ */
+export function timesForDay(day: string): { earliestStart: string; deadline: string } | null {
+  const matched = DAY_PATTERN.exec(day);
+  if (!matched) return null;
+  const [, year, month, date] = matched;
+  const start = new Date(Number(year), Number(month) - 1, Number(date), 18, 0, 0, 0);
+  // Date가 2026-13-99 같은 값을 조용히 굴려 버린다. 되읽어 확인한다.
+  if (start.getMonth() !== Number(month) - 1 || start.getDate() !== Number(date)) return null;
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  end.setHours(8, 0, 0, 0);
+  return { earliestStart: toLocalInput(start), deadline: toLocalInput(end) };
+}
+
 /** 처음 열었을 때 채워 둘 값. 디자인의 예시(70 kWh · 7 kW · 30% → 60%)를 따른다. */
 export function defaultForm(now: Date): RecommendForm {
   const start = ceilToHalfHour(now);

@@ -11,7 +11,12 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { MODE_LABEL, type Mode, type Vehicle } from "@/lib/api/types";
 import { estimateHours, requiredEnergyKwh } from "@/lib/charging";
 import { formatDuration, formatKwh } from "@/lib/format";
-import { defaultForm, toSearchParams, type RecommendForm } from "@/lib/recommend-params";
+import {
+  defaultForm,
+  timesForDay,
+  toSearchParams,
+  type RecommendForm,
+} from "@/lib/recommend-params";
 
 import { useMyVehicles } from "./useMyVehicles";
 
@@ -119,9 +124,19 @@ function vehicleHintFor(
   return "차량을 고르면 배터리 용량·충전기 출력·충전 방식이 채워져요.";
 }
 
-export function ChargeForm() {
+export function ChargeForm({
+  initialDay,
+  initialMode,
+}: {
+  /** 하루 단가 화면에서 "이 날짜로 추천받기"로 넘어온 날짜 (YYYY-MM-DD) */
+  initialDay?: string;
+  initialMode?: Mode;
+} = {}) {
   const router = useRouter();
-  const [draft, setDraft] = useState<Draft>(initialDraft);
+  const [draft, setDraft] = useState<Draft>(() => {
+    const base = initialDraft();
+    return initialMode ? { ...base, mode: initialMode } : base;
+  });
   /** 제출을 한 번이라도 눌렀는지. 누르기 전에는 빨간 글씨를 띄우지 않는다. */
   const [submitted, setSubmitted] = useState(false);
   const defaults = useDefaultTimes();
@@ -137,10 +152,17 @@ export function ChargeForm() {
    */
   const [specTouched, setSpecTouched] = useState(false);
 
+  /*
+   * 넘어온 날짜가 있으면 그 날 기준이 기본값이다. 없으면 '지금' 기준인데,
+   * 그건 마운트 뒤에만 읽을 수 있다 (useDefaultTimes).
+   */
+  const dayTimes = initialDay ? timesForDay(initialDay) : null;
+  const fallback = dayTimes ?? defaults;
+
   const conditions: Conditions = {
     ...draft,
-    earliestStart: draft.earliestStart ?? defaults?.earliestStart ?? "",
-    deadline: draft.deadline ?? defaults?.deadline ?? "",
+    earliestStart: draft.earliestStart ?? fallback?.earliestStart ?? "",
+    deadline: draft.deadline ?? fallback?.deadline ?? "",
   };
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
@@ -174,7 +196,8 @@ export function ChargeForm() {
   const defaultVehicle = vehicles.find((vehicle) => vehicle.is_default);
   if (defaultVehicle && vehicleId === "" && !specTouched) {
     setVehicleId(defaultVehicle.id);
-    applyVehicle(defaultVehicle);
+    // 주소로 넘어온 충전 방식은 직전 화면에서 사용자가 고른 것이다. 차량이 덮지 않는다.
+    applyVehicle(initialMode ? { ...defaultVehicle, mode: initialMode } : defaultVehicle);
   }
 
   const canPickVehicle = vehicles.length > 0;

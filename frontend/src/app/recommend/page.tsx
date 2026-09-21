@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import type { Mode } from "@/lib/api/types";
+
 import { ChargeForm } from "@/components/recommend/ChargeForm";
 import { PageContainer } from "@/components/shell/AppShell";
 import { BoltIcon } from "@/components/shell/icons";
@@ -24,7 +26,27 @@ const GUIDES = [
   },
 ];
 
-export default function RecommendPage() {
+const MODES: Mode[] = ["self_low", "self_high", "public_fast"];
+
+/**
+ * 하루 단가 화면의 "이 날짜로 추천받기"가 ?day=·?mode=를 달고 보낸다.
+ * 서버에서 읽어 폼에 내려준다 — useSearchParams를 쓰면 이 화면이 동적이 되고
+ * Suspense 경계가 필요해지는데, 값 두 개 읽자고 그럴 이유가 없다.
+ */
+export default async function RecommendPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const day = typeof params.day === "string" ? params.day : undefined;
+  const rawMode = typeof params.mode === "string" ? params.mode : undefined;
+  const mode = MODES.includes(rawMode as Mode) ? (rawMode as Mode) : undefined;
+
+  return renderPage(day, mode);
+}
+
+function renderPage(initialDay?: string, initialMode?: Mode) {
   return (
     <PageContainer className="pb-6">
       {/* 모바일에는 상단 내비가 없다(탭바가 대신한다). 그래서 로고를 화면이 직접 단다. */}
@@ -45,7 +67,7 @@ export default function RecommendPage() {
       </h1>
 
       <div className="mt-6 lg:mt-0 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">
-        <ChargeForm />
+        <ChargeForm initialDay={initialDay} initialMode={initialMode} />
 
         <aside className="hidden lg:flex lg:flex-col lg:gap-4">
           {GUIDES.map((guide) => (

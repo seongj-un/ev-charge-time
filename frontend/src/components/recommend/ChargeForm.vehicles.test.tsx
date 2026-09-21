@@ -221,3 +221,57 @@ describe("고른 차량을 결과까지 들고 간다", () => {
     expect(new URLSearchParams(target.split("?")[1]).has("vehicle_id")).toBe(false);
   });
 });
+
+/*
+ * 하루 단가 화면의 "이 날짜로 충전 시간 추천받기"가 /recommend?day=…&mode=… 로 보낸다.
+ * 폼이 그 값을 안 쓰면 그 버튼은 장식이다 — 11월 11일로 계획하려고 눌렀는데
+ * 오늘 날짜가 뜬다. 본선이 그 날짜고 시연이 날짜 시뮬레이션이라 특히 중요하다.
+ */
+describe("하루 단가에서 넘어온 날짜", () => {
+  function renderWithDay(props: { initialDay?: string; initialMode?: "self_low" | "self_high" | "public_fast" }) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () =>
+        json({ detail: "로그인이 필요합니다." }, 401),
+      ),
+    );
+    render(
+      <SessionProvider>
+        <ChargeForm {...props} />
+      </SessionProvider>,
+    );
+  }
+
+  const start = () => screen.getByLabelText("충전 시작 가능") as HTMLInputElement;
+  const end = () => screen.getByLabelText("이때까지 완료") as HTMLInputElement;
+
+  test("넘어온 날짜를 시작 시각에 쓴다", async () => {
+    renderWithDay({ initialDay: "2026-11-11" });
+    await waitFor(() => expect(start().value).toMatch(/^2026-11-11T/));
+  });
+
+  test("완료 시각은 그다음 날 아침이다", async () => {
+    renderWithDay({ initialDay: "2026-11-11" });
+    await waitFor(() => expect(end().value).toBe("2026-11-12T08:00"));
+  });
+
+  test("넘어온 충전 방식을 그대로 고른다", async () => {
+    renderWithDay({ initialDay: "2026-11-11", initialMode: "public_fast" });
+    await waitFor(() =>
+      expect(screen.getByRole("radio", { name: "공공 급속" })).toBeChecked(),
+    );
+  });
+
+  test("날짜가 없으면 지금 기준 기본값을 쓴다", async () => {
+    renderWithDay({});
+    await waitFor(() => expect(start().value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/));
+    expect(end().value).toMatch(/T08:00$/);
+  });
+
+  /* 주소창에서 날짜를 망가뜨려도 화면이 서야 한다. */
+  test("읽을 수 없는 날짜는 무시하고 기본값으로 간다", async () => {
+    renderWithDay({ initialDay: "2026-13-99" });
+    await waitFor(() => expect(start().value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/));
+    expect(start().value).not.toContain("2026-13");
+  });
+});
