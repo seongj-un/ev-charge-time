@@ -1,3 +1,4 @@
+import base64
 import uuid
 from datetime import datetime, timedelta
 
@@ -61,6 +62,42 @@ def auth_user(client, db_session) -> User:
 
 def post_plan(client, **overrides):
     return client.post("/api/me/plans", json={**SPEC_EXAMPLE, **overrides})
+
+
+# D-1·D-2: SavedPlanOut은 request/result 전 필드가 필수라, DB에 직접 꽂는
+# 행도 완전한 형태를 갖춰야 한다(``created_at``만 바꿔치기하는 게 목적이라
+# 나머지 값 자체는 임의로 둬도 된다).
+_VALID_RESULT = {
+    "best": {
+        "start": "2026-05-01T13:00:00+09:00",
+        "end": "2026-05-01T14:00:00+09:00",
+        "energy_kwh": 10.0,
+        "cost_won": 1000,
+        "discounted_kwh": 0.0,
+    },
+    "baseline_now": {
+        "start": "2026-05-01T12:00:00+09:00",
+        "end": "2026-05-01T13:00:00+09:00",
+        "energy_kwh": 10.0,
+        "cost_won": 1500,
+        "discounted_kwh": 0.0,
+    },
+    "savings_won": 1,
+    "candidates_checked": 1,
+    "assumptions": [],
+    "unverified_tariff_items": [],
+}
+
+
+def _raw_plan(user_id: str, created_at: datetime, *, plan_id: str | None = None, savings_won: int = 1) -> SavedPlan:
+    return SavedPlan(
+        id=plan_id or str(uuid.uuid4()),
+        user_id=user_id,
+        request=dict(SPEC_EXAMPLE),
+        result={**_VALID_RESULT, "savings_won": savings_won},
+        tariff_version="test",
+        created_at=created_at,
+    )
 
 
 def test_create_plan_recomputes_and_matches_recommend(client, auth_user):
@@ -202,3 +239,124 @@ def test_unauthenticated_requests_are_401(client):
     assert client.get("/api/me/plans/some-id").status_code == 401
     assert client.post("/api/me/plans", json=SPEC_EXAMPLE).status_code == 401
     assert client.delete("/api/me/plans/some-id").status_code == 401
+
+
+# ── B-1: limit 하한/상한 경계값 ──────────────────────────────────────────
+
+
+@pytest.mark.parametrize("limit", [0, -1, 101])
+def test_list_plans_limit_out_of_range_is_422(client, auth_user, limit):
+    """limit 하한이 없으면 0/음수가, 저장 기록이 1건 이상인 사용자에게 ``has_more``를
+    빈 슬라이스 전에 계산한 뒤 ``rows[-1]``을 해서 500(IndexError)을 냈다
+    (라이브 서버에서 재현됨). 101(상한+1)도 함께 검증한다."""
+    post_plan(client)  # 기록이 있어야 예전 버그(rows[-1])가 재현되는 조건과 같다.
+
+    response = client.get("/api/me/plans", params={"limit": limit})
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("limit", [1, 100])
+def test_list_plans_limit_boundary_is_accepted(client, auth_user, limit):
+    post_plan(client)
+
+    response = client.get("/api/me/plans", params={"limit": limit})
+
+    assert response.status_code == 200
+    assert len(response.json()["items"]) <= limit
+
+
+# ── B-3: month 형식 검증 ─────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "month", ["26-10", "2026-2", "2026/10", "2026-13", "not-a-month", ""]
+)
+def test_summary_invalid_month_format_is_422(client, auth_user, month):
+    """``_month_bounds``가 ``"26-10"``·``"2026-2"``처럼 자릿수가 다른 값을
+    조용히 받아 그대로 응답에 되돌려주던 것을 막는다."""
+    response = client.get("/api/me/plans/summary", params={"month": month})
+    assert response.status_code == 422
+
+
+# ── B-4: 조작된/망가진 cursor ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("cursor", ["not-base64!!!", "aGVsbG8=", "%%%"])
+def test_list_plans_malformed_cursor_is_422_not_500(client, auth_user, cursor):
+    """평문 base64라 서명은 없지만(B-4, 유출 경로 없음이 확인되어 의도적으로
+    안 함), 조작되거나 깨진 cursor가 500이 아니라 422를 내는지는 검증한다."""
+    response = client.get("/api/me/plans", params={"cursor": cursor})
+    assert response.status_code == 422
+
+
+def test_list_plans_cursor_with_invalid_date_is_422_not_500(client, auth_user):
+    """base64 자체는 유효하지만(``"|"``로 잘리는 형식도 맞음) 날짜 부분이
+    ``fromisoformat``으로 파싱되지 않는 cursor."""
+    bad_cursor = base64.urlsafe_b64encode(b"not-a-date|some-id").decode()
+
+    response = client.get("/api/me/plans", params={"cursor": bad_cursor})
+
+    assert response.status_code == 422
+
+
+# ── D-1: 월 경계는 KST 기준이어야 한다 ─────────────────────────────────────
+
+
+def test_summary_month_boundary_is_kst_not_utc(client, db_session, auth_user):
+    """2026-10-01 00:30 KST(= 2026-09-30 15:30 UTC)로 저장된 기록은 summary?month=2026-10에
+    잡히고 2026-09에는 안 잡혀야 한다. UTC 기준으로 비교하면 9월로 잘못 샌다."""
+    row = _raw_plan(auth_user.id, datetime(2026, 10, 1, 0, 30, tzinfo=KST), savings_won=111)
+    db_session.add(row)
+    db_session.commit()
+
+    oct_summary = client.get("/api/me/plans/summary", params={"month": "2026-10"}).json()
+    sep_summary = client.get("/api/me/plans/summary", params={"month": "2026-09"}).json()
+
+    assert oct_summary["count"] == 1
+    assert oct_summary["total_savings_won"] == 111
+    assert sep_summary["count"] == 0
+
+
+def test_summary_month_boundary_rolls_over_year(client, db_session, auth_user):
+    """12월 → 1월 롤오버도 KST 기준으로 정확해야 한다."""
+    row = _raw_plan(auth_user.id, datetime(2027, 1, 1, 0, 15, tzinfo=KST), savings_won=222)
+    db_session.add(row)
+    db_session.commit()
+
+    jan_summary = client.get("/api/me/plans/summary", params={"month": "2027-01"}).json()
+    dec_summary = client.get("/api/me/plans/summary", params={"month": "2026-12"}).json()
+
+    assert jan_summary["count"] == 1
+    assert dec_summary["count"] == 0
+
+
+# ── D-2: 동률 created_at 페이징 ────────────────────────────────────────────
+
+
+def test_pagination_with_tied_created_at_visits_each_row_exactly_once(
+    client, db_session, auth_user
+):
+    """created_at이 전부 같은 행 5개를 넣고 커서로 끝까지 넘겼을 때, 각 행이
+    정확히 한 번씩만 나와야 한다(id 내림차순 동률 깨기가 안 되면 건너뛰거나
+    중복될 수 있다)."""
+    same_time = datetime(2026, 5, 1, 12, 0, tzinfo=KST)
+    ids = [str(uuid.uuid4()) for _ in range(5)]
+    for plan_id in ids:
+        db_session.add(_raw_plan(auth_user.id, same_time, plan_id=plan_id))
+    db_session.commit()
+
+    seen: list[str] = []
+    cursor = None
+    for _ in range(10):  # 안전장치: next_cursor가 끝없이 이어지면 무한 루프를 막는다.
+        params = {"limit": 2}
+        if cursor is not None:
+            params["cursor"] = cursor
+        page = client.get("/api/me/plans", params=params).json()
+        seen.extend(item["id"] for item in page["items"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+
+    assert sorted(seen) == sorted(ids)
+    assert len(seen) == len(set(seen))

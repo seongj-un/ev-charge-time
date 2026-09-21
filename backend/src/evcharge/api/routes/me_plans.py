@@ -13,10 +13,11 @@
 from __future__ import annotations
 
 import base64
+import re
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session as DbSession
 
@@ -30,15 +31,23 @@ from ..schemas import PlanSummary, RecommendRequest, SavedPlanOut, SavedPlanPage
 
 router = APIRouter(prefix="/api/me", tags=["me", "plans"])
 
+_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
+
 
 @router.get("/plans", response_model=SavedPlanPage)
 def list_plans(
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100),
     cursor: str | None = None,
     user: User = Depends(current_user),
     session: DbSession = Depends(get_session),
 ) -> SavedPlanPage:
-    """최신순, 커서 기반 페이지네이션. ``limit`` 기본 20."""
+    """최신순, 커서 기반 페이지네이션. ``limit`` 기본 20, 1~100 (B-1).
+
+    하한이 없으면 ``?limit=0``(또는 음수)이 저장 기록 1건 이상인 사용자에게
+    ``has_more``를 빈 슬라이스 전에 계산한 뒤 ``rows[-1]``을 해서 IndexError →
+    500을 냈다(라이브 서버에서 재현됨). 상한도 함께 거는 이유는
+    ``?limit=999999``가 DB를 통째로 긁어오는 것을 막기 위해서다.
+    """
     query = select(SavedPlan).where(SavedPlan.user_id == user.id)
 
     if cursor is not None:
@@ -162,7 +171,17 @@ def _to_saved_plan_out(row: SavedPlan) -> SavedPlanOut:
 
 
 def _month_bounds(month: str) -> tuple[datetime, datetime]:
-    """``"YYYY-MM"``을 KST 기준 [그 달 1일 00:00, 다음 달 1일 00:00) 경계로."""
+    """``"YYYY-MM"``을 KST 기준 [그 달 1일 00:00, 다음 달 1일 00:00) 경계로.
+
+    (B-3) 예전에는 형식 검증이 없어 ``"26-10"``이나 ``"2026-2"``도 조용히
+    받아 ``month``를 그대로 응답에 되돌려줬다. ``int()``/범위 체크만으로는
+    자릿수가 다른 값을 걸러내지 못해 ``YYYY-MM`` 정규식으로 먼저 형식 자체를
+    확인한다.
+    """
+    if not _MONTH_RE.match(month):
+        raise HTTPException(
+            status_code=422, detail="month는 YYYY-MM 형식이어야 합니다."
+        )
     try:
         year_str, month_str = month.split("-")
         year, month_num = int(year_str), int(month_str)

@@ -13,25 +13,26 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession
 
 from ...infra.db import get_session
 from ...infra.models import ChargerCache, FavoriteStation, User
 from ..auth_deps import current_user
-from ..schemas import StationOut
+from ..schemas import FavoriteStationOut
 
 router = APIRouter(prefix="/api/me/favorites", tags=["me"])
 
 # 모두 로그인 필요. 본인 즐겨찾기만 보이며, 다른 사용자의 것은 절대 섞이지 않는다.
 
 
-def _to_station_out(station_id: str, cache: ChargerCache | None) -> StationOut:
-    """캐시가 있으면 이름·주소 등을 채우고, 없으면 station_id만 채운다."""
+def _to_favorite_out(station_id: str, cache: ChargerCache | None) -> FavoriteStationOut:
+    """캐시가 있으면 이름·주소 등을 채우고, 없으면 station_id만 채운다(나머지는 None)."""
     if cache is None:
-        return StationOut(station_id=station_id, is_favorite=True)
+        return FavoriteStationOut(station_id=station_id, is_favorite=True)
 
     data = cache.data
-    return StationOut(
+    return FavoriteStationOut(
         station_id=station_id,
         name=data.get("name"),
         address=data.get("address"),
@@ -45,11 +46,11 @@ def _to_station_out(station_id: str, cache: ChargerCache | None) -> StationOut:
     )
 
 
-@router.get("", response_model=list[StationOut])
+@router.get("", response_model=list[FavoriteStationOut])
 def list_favorites(
     user: User = Depends(current_user),
     session: DbSession = Depends(get_session),
-) -> list[StationOut]:
+) -> list[FavoriteStationOut]:
     favorites = session.scalars(
         select(FavoriteStation)
         .where(FavoriteStation.user_id == user.id)
@@ -67,7 +68,7 @@ def list_favorites(
         }
 
     return [
-        _to_station_out(favorite.station_id, caches.get(favorite.station_id))
+        _to_favorite_out(favorite.station_id, caches.get(favorite.station_id))
         for favorite in favorites
     ]
 
@@ -78,16 +79,25 @@ def add_favorite(
     user: User = Depends(current_user),
     session: DbSession = Depends(get_session),
 ) -> None:
-    """멱등: 이미 즐겨찾기한 station_id를 다시 PUT해도 204이며 중복 저장되지 않는다."""
-    existing = session.scalar(
-        select(FavoriteStation).where(
-            FavoriteStation.user_id == user.id,
-            FavoriteStation.station_id == station_id,
+    """멱등: 이미 즐겨찾기한 station_id를 다시 PUT해도 204이며 중복 저장되지 않는다.
+
+    (B-2) check-then-insert(SELECT 후 없으면 INSERT)였을 때는 동시 요청 두
+    건이 모두 SELECT를 통과하면 두 번째 INSERT가 복합 PK 위반으로
+    IntegrityError를 냈다 — "멱등 PUT은 절대 500/에러를 내면 안 된다"는
+    계약 위반이었고 리뷰어가 두 세션으로 실제 재현했다. ``ON CONFLICT DO
+    NOTHING``으로 바꿔 그 경쟁 자체를 Postgres가 원자적으로 처리하게 한다.
+    (A-1의 IntegrityError 안전망이 있다고 해도 이 경로는 409로 새는 것도
+    틀렸다 — 멱등 API는 경쟁 중에도 항상 204여야 한다.)
+    """
+    stmt = (
+        pg_insert(FavoriteStation)
+        .values(user_id=user.id, station_id=station_id)
+        .on_conflict_do_nothing(
+            index_elements=[FavoriteStation.user_id, FavoriteStation.station_id]
         )
     )
-    if existing is None:
-        session.add(FavoriteStation(user_id=user.id, station_id=station_id))
-        session.commit()
+    session.execute(stmt)
+    session.commit()
 
 
 @router.delete("/{station_id}", status_code=204)
