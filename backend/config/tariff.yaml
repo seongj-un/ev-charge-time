@@ -1,0 +1,122 @@
+# 전기요금 설정.
+#
+# ★ 출처: 한국전력공사 「전기요금(종합)」 2023년 11월 9일 시행
+#   같은 폴더의 20231109(total).pdf — source 필드가 가리키는 그 문서다.
+#
+# 2026-09-21 확인: 이후 개정판이 없어 2023-11-09 시행분이 현행이다.
+# 개정되면 value와 source의 시행일만 고치면 된다 — 코드는 건드리지 않는다.
+#
+# status 의미:
+#   verified   — 위 공식 요금표에서 그대로 옮긴 값
+#   derived    — 공식 값에서 계산해 얻은 값
+#   unverified — 아직 공식 근거를 못 찾은 값
+#
+# /health 와 /api/recommend 응답의 unverified_tariff_items 는 이 파일을 훑어
+# status != verified 인 항목을 모아 만든다. 목록을 코드에 박지 않는 이유는
+# 그러면 요금표를 확인할 때마다 두 곳을 고쳐야 하고 반드시 어긋나기 때문이다.
+
+version: "2023.11.09-kepco"
+
+# ── 계절 구분 (요금표 3쪽 "계절별·시간대별 구분") ─────────────────────────
+seasons:
+  value:
+    summer: [6, 7, 8]
+    spring_fall: [3, 4, 5, 9, 10]
+    winter: [11, 12, 1, 2]
+  source: "한전 전기요금(종합) 2023-11-09, 3쪽 계절별·시간대별 구분"
+  status: verified
+
+# ── 평일 시간대별 부하구간 (요금표 3쪽) ──────────────────────────────────
+# [시작시, 끝시) 반열린 구간.
+#
+# 요금표의 토요일·공휴일 계산기준(임시공휴일 제외):
+#   토요일 : 최대부하 시간대의 사용전력량 → 중간부하 시간대로 계량
+#   공휴일 : 최대수요전력 및 사용전력량 → 경부하 시간대로 계량
+# 판정 순서 구현은 domain/calendar.py 에 있다.
+time_bands:
+  value:
+    spring_fall:
+      light: [[22, 24], [0, 8]]
+      middle: [[8, 11], [12, 13], [18, 22]]
+      peak: [[11, 12], [13, 18]]
+    summer:
+      light: [[22, 24], [0, 8]]
+      middle: [[8, 11], [12, 13], [18, 22]]
+      peak: [[11, 12], [13, 18]]
+    winter:
+      light: [[22, 24], [0, 8]]
+      middle: [[8, 9], [12, 16], [19, 22]]
+      peak: [[9, 12], [16, 19]]
+  source: "한전 전기요금(종합) 2023-11-09, 3쪽 계절별·시간대별 구분"
+  status: verified
+
+# ── 전력량요금 (원/kWh) ──────────────────────────────────────────────────
+# 요금표 2쪽 "전기자동차 충전전력요금(자가소비용)".
+# 기본요금(저압 2,390 / 고압 2,580 원/kW)은 기능 명세 F-03 가정대로 제외한다 —
+# 이 서비스는 "언제 충전할지"에 답하므로 시각에 따라 달라지지 않는 월 고정비는
+# 추천 결과를 바꾸지 않는다.
+energy_charge:
+  self_low:
+    value:
+      summer: {light: 84.3, middle: 172.0, peak: 259.2}
+      spring_fall: {light: 85.4, middle: 97.2, peak: 102.1}
+      winter: {light: 107.4, middle: 154.9, peak: 217.5}
+    source: "한전 전기요금(종합) 2023-11-09, 2쪽 전기차 충전전력요금(자가소비용) 저압"
+    status: verified
+  self_high:
+    value:
+      summer: {light: 79.2, middle: 137.4, peak: 190.4}
+      spring_fall: {light: 80.2, middle: 91.0, peak: 94.9}
+      winter: {light: 96.6, middle: 127.7, peak: 165.5}
+    source: "한전 전기요금(종합) 2023-11-09, 2쪽 전기차 충전전력요금(자가소비용) 고압"
+    status: verified
+
+# ── kWh당 가산 항목 (요금표 1쪽 "전기요금 구조") ─────────────────────────
+adders:
+  climate_env_per_kwh:
+    value: 9.0
+    source: "한전 전기요금(종합) 2023-11-09, 1쪽 기후환경요금단가 (2023년 1월 기준, 매년 변동)"
+    status: verified
+  fuel_adjustment_per_kwh:
+    value: 5.0
+    source: "한전 전기요금(종합) 2023-11-09, 1쪽 연료비조정단가 (2023년 4분기 기준, 매 분기 변동, 상하한 ±5원/kWh)"
+    status: verified
+
+# ── 세금·기금 (요금표 1쪽 "청구금액 = 전기요금 + 부가가치세 + 전력산업기반기금") ──
+vat_rate:
+  value: 0.1
+  source: "한전 전기요금(종합) 2023-11-09, 1쪽 — 전기요금 × 10%"
+  status: verified
+
+power_fund_rate:
+  value: 0.037
+  source: "한전 전기요금(종합) 2023-11-09, 1쪽 전력산업기반기금 — 전기요금 × 3.7%"
+  status: verified
+
+# ── 공공 급속 ────────────────────────────────────────────────────────────
+# 공공 급속 충전 단가는 한전 요금표가 정하지 않는다 — 충전사업자가 각자 정한다.
+# (요금표 2쪽의 "전기자동차 충전전력요금(충전서비스 제공사업자용)"은 사업자가
+#  한전에서 전기를 사올 때의 요금이지, 사업자가 소비자에게 받는 단가가 아니다.)
+public_fast:
+  base_price_per_kwh:
+    value: 0.0
+    source: "사업자별 상이 — 요청의 public_base_price 또는 이 설정값으로 주입"
+    status: unverified
+  weekend_discount:
+    value:
+      saturday: 48.6
+      sunday_holiday: 42.7
+    source: "기능 명세서 F-02 (근거 문서 미확보)"
+    status: unverified
+
+# ── 봄·가을 주말 할인 (자가소비용) ───────────────────────────────────────
+# 이 항목은 확보한 요금표(종합)에 없다. EV 충전 특례할인은 별도 고시·약관에
+# 규정되므로 그 문서를 따로 확인해야 한다.
+weekend_discount_self:
+  value:
+    multiplier: 0.5      # 전력량요금에만 곱한다
+    hours: [11, 14]      # [시작시, 끝시)
+    seasons: ["spring_fall"]
+    until_year: 2030
+  source: "기능 명세서 F-02 (근거 문서 미확보 — EV 충전 특례할인 고시 확인 필요)"
+  status: unverified

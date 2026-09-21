@@ -1,0 +1,43 @@
+from fastapi import FastAPI
+
+from .api.errors import register_error_handlers
+from .api.routes import (
+    auth,
+    chargers,
+    extensions,
+    health,
+    me,
+    me_favorites,
+    me_plans,
+    me_vehicles,
+    recommend,
+    timeline,
+)
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="EV 충전 최적 시간 추천 API",
+        version="0.1.0",
+        description="한전 현행 전기요금 기준 최저 비용 충전 시간 추천",
+    )
+
+    register_error_handlers(app)
+
+    app.include_router(health.router)
+    app.include_router(timeline.router)
+    app.include_router(recommend.router)
+    app.include_router(me_vehicles.router)
+    app.include_router(me_plans.router)  # F-13 충전 기록. me.router보다 먼저 등록.
+
+    # 계약만 확정된 스텁 (501). 프론트가 /docs를 보고 먼저 붙을 수 있게 한다.
+    app.include_router(chargers.router)
+    app.include_router(auth.router)
+    app.include_router(me.router)
+    app.include_router(me_favorites.router)
+    app.include_router(extensions.router)
+
+    return app
+
+
+app = create_app()
