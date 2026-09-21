@@ -292,15 +292,45 @@ class PlanSummary(BaseModel):
 
 
 class SolarHour(BaseModel):
+    """F-09 시간별 예측.
+
+    ``predicted_mwh``가 optional인 이유는 ``api/solar_service.py`` 머리말에
+    자세히 적었다. 요약하면: 물리 모델이 내놓는 것은 단위면적당 일사량이고,
+    MWh로 바꾸려면 지역 태양광 설비용량(전력거래소 자료)이 필요한데 지금
+    없다. 없는 자료로 숫자를 지어내는 대신 null로 비우고, 실제로 계산되는
+    값(``ghi_wm2``·``output_index``)을 함께 내보낸다.
+    """
+
     hour: int
-    predicted_mwh: float
+    # 구름·강수를 반영한 수평면 전일사량. 이 모델의 실제 출력이다.
+    ghi_wm2: float
+    # 같은 시각의 맑은날 값. 구름이 얼마나 깎았는지 화면에서 바로 보인다.
+    clear_sky_ghi_wm2: float
+    # STC(1000 W/m²) 대비 0~1. 요금 차트에 겹쳐 그릴 때 쓰는 값이다.
+    output_index: float
+    # 설비용량이 설정됐을 때만 채워진다. 기본은 null.
+    predicted_mwh: float | None = None
+    # 기상청 원본 코드. 감쇠가 맞는지 사람이 되짚을 수 있게 그대로 싣는다.
+    sky: str
+    pty: str
 
 
 class SolarForecast(BaseModel):
     region: str
     day: date
+    # 물리 모델이므로 "계산식의 버전"이다 (domain/solar.py의 MODEL_VERSION).
     model_version: str
     hours: list[SolarHour]
+    # 어느 격자·어느 발표를 썼는지. 한 격자가 시도 전체를 대신한다는 사실을
+    # 응답이 숨기지 않게 한다.
+    grid_nx: int
+    grid_ny: int
+    base_date: str
+    base_time: str
+    installed_capacity_mw: float | None = None
+    capacity_source: str | None = None
+    # RecommendResponse.assumptions와 같은 역할 — 이 값을 어떤 전제로 냈는지.
+    assumptions: list[str] = []
 
 
 class ChatRequest(BaseModel):

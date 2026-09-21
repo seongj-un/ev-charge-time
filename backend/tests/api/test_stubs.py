@@ -10,9 +10,13 @@ import pytest
 #
 # 차량(vehicles) 엔드포인트는 F-12로 구현되어 더 이상 스텁이 아니다
 # (tests/api/test_vehicles.py 참고). 주변 충전소도 F-07로 구현됐다
-# (tests/api/test_chargers.py 참고). OpenAPI 등록 확인만 아래에서 계속한다.
+# (tests/api/test_chargers.py 참고). 태양광 발전 예측도 F-09로 구현됐다
+# (tests/api/test_solar_forecast.py 참고). OpenAPI 등록 확인만 아래에서 계속한다.
+#
+# 여기에 남은 스텁만 실제로 호출한다는 점이 중요하다 — 구현된 엔드포인트를
+# 이 목록에 남겨 두면, 개발자 .env에 키가 있을 때 테스트가 진짜 공공 API를
+# 부르게 된다.
 STUB_ENDPOINTS = [
-    ("GET", "/api/solar-forecast?region=전남&day=2026-10-17", "/api/solar-forecast", None),
     ("POST", "/api/chat", "/api/chat", {"message": "내일 출근 전까지 80% 채우려면?"}),
 ]
 
@@ -30,6 +34,7 @@ IMPLEMENTED = [
     "/api/me/plans/summary",
     "/api/me/plans/{plan_id}",
     "/api/chargers",
+    "/api/solar-forecast",
 ]
 
 
