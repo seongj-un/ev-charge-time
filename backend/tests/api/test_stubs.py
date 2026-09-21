@@ -12,9 +12,6 @@ import pytest
 # (tests/api/test_vehicles.py 참고). OpenAPI 등록 확인만 아래에서 계속한다.
 STUB_ENDPOINTS = [
     ("GET", "/api/chargers?lat=35.0&lng=126.7", "/api/chargers", None),
-    ("GET", "/api/me/favorites", "/api/me/favorites", None),
-    ("PUT", "/api/me/favorites/ST-001", "/api/me/favorites/{station_id}", None),
-    ("DELETE", "/api/me/favorites/ST-001", "/api/me/favorites/{station_id}", None),
     ("GET", "/api/solar-forecast?region=전남&day=2026-10-17", "/api/solar-forecast", None),
     ("POST", "/api/chat", "/api/chat", {"message": "내일 출근 전까지 80% 채우려면?"}),
 ]

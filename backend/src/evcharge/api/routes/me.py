@@ -5,14 +5,7 @@ from ...infra.db import get_session
 from ...infra.models import User
 from ...infra.security import verify_password
 from ..auth_deps import clear_session_cookie, current_user
-from ..schemas import (
-    DeleteAccountRequest,
-    StationOut,
-    UserOut,
-    VehicleIn,
-    VehicleOut,
-)
-from ._stub import not_implemented
+from ..schemas import DeleteAccountRequest, UserOut
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -42,16 +35,7 @@ def delete_me(
     return Response(status_code=204)
 
 
-@router.get("/favorites", response_model=list[StationOut])
-def list_favorites():
-    return not_implemented("즐겨찾는 충전소 목록")()
-
-
-@router.put("/favorites/{station_id}", status_code=204)
-def add_favorite(station_id: str):
-    return not_implemented("즐겨찾기 추가")()
-
-
-@router.delete("/favorites/{station_id}", status_code=204)
-def remove_favorite(station_id: str):
-    return not_implemented("즐겨찾기 해제")()
+# /api/me/* 의 나머지는 기능별로 분리되어 있다:
+#   내 차량(F-12)        → routes/me_vehicles.py
+#   충전 기록(F-13)      → routes/me_plans.py
+#   즐겨찾는 충전소(F-14) → routes/me_favorites.py
