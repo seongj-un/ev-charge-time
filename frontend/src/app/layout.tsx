@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
+import { SessionProvider } from "@/components/auth/SessionProvider";
 import { AppShell } from "@/components/shell/AppShell";
 import { SERVICE_NAME } from "@/components/shell/nav";
 
@@ -28,7 +29,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ko">
       <body className="antialiased">
-        <AppShell>{children}</AppShell>
+        <SessionProvider>
+          <AppShell>{children}</AppShell>
+        </SessionProvider>
       </body>
     </html>
   );

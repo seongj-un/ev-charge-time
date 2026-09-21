@@ -63,11 +63,34 @@ export async function apiGet<T>(path: string, query?: Query): Promise<T> {
 }
 
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  return request<T>(path, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  return withBody<T>("POST", path, body);
+}
+
+export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  return withBody<T>("PATCH", path, body);
+}
+
+/** 즐겨찾기 추가처럼 본문 없이 경로만으로 성립하는 PUT도 있다. */
+export async function apiPut<T>(path: string, body?: unknown): Promise<T> {
+  return withBody<T>("PUT", path, body);
+}
+
+/** DELETE /api/me 는 비밀번호 재확인을 본문으로 받는다. 나머지는 본문이 없다. */
+export async function apiDelete<T>(path: string, body?: unknown): Promise<T> {
+  return withBody<T>("DELETE", path, body);
+}
+
+function withBody<T>(method: string, path: string, body?: unknown): Promise<T> {
+  return request<T>(
+    path,
+    body === undefined
+      ? { method }
+      : {
+          method,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+  );
 }
 
 async function request<T>(url: string, init: RequestInit): Promise<T> {

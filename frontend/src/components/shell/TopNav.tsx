@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { ButtonLink } from "@/components/ui/Button";
-
+import { AuthNav } from "./AuthNav";
 import { BoltIcon } from "./icons";
 import { isActive, NAV_ITEMS, SERVICE_NAME } from "./nav";
 
@@ -42,12 +41,7 @@ export function TopNav() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
-          <ButtonLink href="/login" variant="ghost" className="text-sm">
-            로그인
-          </ButtonLink>
-          <ButtonLink href="/signup" variant="dark" className="text-sm">
-            회원가입
-          </ButtonLink>
+          <AuthNav />
         </div>
       </div>
     </header>

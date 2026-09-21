@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { ApiError, apiGet, apiPost, messageFromDetail } from "./client";
+import {
+  ApiError,
+  apiDelete,
+  apiGet,
+  apiPatch,
+  apiPost,
+  apiPut,
+  messageFromDetail,
+} from "./client";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -131,5 +139,62 @@ describe("apiGet", () => {
     await apiGet("/api/timeline", { day: "2026-10-10", public_base_price: undefined });
 
     expect(fetchMock.mock.calls[0][0]).toBe("/api/timeline?day=2026-10-10");
+  });
+});
+
+/*
+ * 204를 돌려주는 엔드포인트가 여럿이다 (로그아웃, 즐겨찾기 추가·해제, 차량·계획 삭제).
+ * 본문이 없는데 json()을 부르면 터지므로, 상태 코드로 먼저 갈라야 한다.
+ */
+describe("본문 없는 응답", () => {
+  test("204면 본문을 읽지 않는다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => new Response(null, { status: 204 })),
+    );
+    await expect(apiDelete("/api/me/favorites/ST-1")).resolves.toBeUndefined();
+  });
+
+  test("PUT도 204를 그대로 넘긴다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => new Response(null, { status: 204 })),
+    );
+    await expect(apiPut("/api/me/favorites/ST-1")).resolves.toBeUndefined();
+  });
+});
+
+describe("apiPatch", () => {
+  test("본문을 JSON으로 보낸다", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ id: "v1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiPatch("/api/me/vehicles/v1", { name: "새 이름" });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body)).toEqual({ name: "새 이름" });
+  });
+});
+
+describe("apiDelete", () => {
+  test("본문이 필요한 삭제도 보낼 수 있다", async () => {
+    // DELETE /api/me 는 비밀번호 재확인을 본문으로 받는다.
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiDelete("/api/me", { password: "password123" });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.method).toBe("DELETE");
+    expect(JSON.parse(init.body)).toEqual({ password: "password123" });
   });
 });

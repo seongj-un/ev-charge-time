@@ -85,3 +85,73 @@ export type RecommendResponse = {
   assumptions: string[];
   unverified_tariff_items: string[];
 };
+
+// ── 인증·사용자 데이터 (F-11 ~ F-14) ─────────────────────────────────────
+
+export type User = {
+  id: string;
+  email: string;
+  nickname: string | null;
+  created_at: string | null;
+};
+
+export type VehicleInput = {
+  name: string;
+  battery_kwh: number;
+  charger_kw: number;
+  mode: Mode;
+  is_default: boolean;
+};
+
+export type Vehicle = VehicleInput & { id: string };
+
+export type Charger = {
+  charger_id: string;
+  type: string;
+  capacity_kw: number;
+  status: string;
+  status_updated_at: string | null;
+};
+
+/**
+ * 충전소.
+ *
+ * ⚠️ 이 모양은 곧 바뀐다 (백엔드 세션 tropicbird-5a, 2026-09-21).
+ * 지금은 즐겨찾기와 /api/chargers가 한 모델을 공유해서 전 필드가 선택이지만,
+ * 즐겨찾기 전용 모델로 분리 중이고 /api/chargers는 전 필드 필수로 돌아간다.
+ * **분리가 끝나기 전에는 이 타입에 기대는 화면을 만들지 않는다.**
+ */
+export type Station = {
+  station_id: string;
+  name: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  distance_m: number | null;
+  operator: string | null;
+  available_hours: string | null;
+  /** 로그인 시 true/false, 게스트는 null */
+  is_favorite: boolean | null;
+  chargers: Charger[];
+};
+
+export type SavedPlan = {
+  id: string;
+  created_at: string;
+  request: RecommendRequest;
+  result: RecommendResponse;
+  /** 계산에 쓴 요금 설정 버전. 저장 당시 값이며 재계산하지 않는다. */
+  tariff_version: string;
+};
+
+export type SavedPlanPage = {
+  items: SavedPlan[];
+  next_cursor: string | null;
+};
+
+export type PlanSummary = {
+  /** "YYYY-MM" */
+  month: string;
+  count: number;
+  total_savings_won: number;
+};
