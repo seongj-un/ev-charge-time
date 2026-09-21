@@ -32,7 +32,7 @@ describe("messageFromDetail", () => {
       messageFromDetail([
         { loc: ["body", "soc_target"], msg: "soc_target은 soc_now보다 커야 합니다.", type: "value_error" },
       ]),
-    ).toBe("soc_target: soc_target은 soc_now보다 커야 합니다.");
+    ).toBe("목표 충전량: soc_target은 soc_now보다 커야 합니다.");
   });
 
   test("검증 실패가 여러 건이면 줄바꿈으로 잇는다", () => {
@@ -41,7 +41,7 @@ describe("messageFromDetail", () => {
         { loc: ["body", "soc_now"], msg: "0 이상이어야 합니다", type: "value_error" },
         { loc: ["body", "charger_kw"], msg: "0보다 커야 합니다", type: "value_error" },
       ]),
-    ).toBe("soc_now: 0 이상이어야 합니다\ncharger_kw: 0보다 커야 합니다");
+    ).toBe("현재 충전량: 0 이상이어야 합니다\n충전기 출력: 0보다 커야 합니다");
   });
 
   test("모양을 못 알아보면 일반 문장으로 돌아간다", () => {
@@ -260,5 +260,84 @@ describe("백엔드가 죽었을 때", () => {
     const error = await apiGet("/api/me").catch((e: unknown) => e);
     expect((error as ApiError).unreachable).toBe(false);
     expect((error as ApiError).needsLogin).toBe(true);
+  });
+});
+
+/*
+ * 422 배열은 FastAPI가 만드는 필드별 오류다. loc과 msg를 그대로 이으면
+ * "battery_kwh: Input should be greater than 0" 같은 영어 기술 문구가 화면에 뜬다.
+ * 화면마다 이걸 풀면 같은 번역이 네 군데 생기므로 여기서 한 번에 우리말로 만든다.
+ */
+describe("필드 검증 실패를 우리말로", () => {
+  test("필드 이름을 화면에 쓰는 말로 바꾼다", () => {
+    expect(
+      messageFromDetail([
+        { type: "greater_than", loc: ["body", "battery_kwh"], msg: "Input should be greater than 0", ctx: { gt: 0 } },
+      ]),
+    ).toBe("배터리 용량: 0보다 커야 해요.");
+  });
+
+  test("여러 건은 줄바꿈으로 잇는다", () => {
+    expect(
+      messageFromDetail([
+        { type: "greater_than", loc: ["body", "charger_kw"], msg: "x", ctx: { gt: 0 } },
+        { type: "missing", loc: ["body", "deadline"], msg: "Field required" },
+      ]),
+    ).toBe("충전기 출력: 0보다 커야 해요.\n완료 시각: 값이 필요해요.");
+  });
+
+  test("범위 조건은 경계값을 그대로 말한다", () => {
+    expect(
+      messageFromDetail([
+        { type: "less_than_equal", loc: ["body", "soc_target"], msg: "x", ctx: { le: 100 } },
+      ]),
+    ).toBe("목표 충전량: 100 이하여야 해요.");
+    expect(
+      messageFromDetail([
+        { type: "string_too_short", loc: ["body", "password"], msg: "x", ctx: { min_length: 8 } },
+      ]),
+    ).toBe("비밀번호: 8자 이상이어야 해요.");
+  });
+
+  /*
+   * 백엔드가 직접 던진 ValueError는 이미 우리말이다. pydantic이 앞에 붙이는
+   * "Value error, "만 떼고 그대로 쓴다 — 우리가 다시 쓰면 뜻이 흐려진다.
+   */
+  test("백엔드가 쓴 우리말 메시지는 그대로 살린다", () => {
+    expect(
+      messageFromDetail([
+        {
+          type: "value_error",
+          loc: ["body", "soc_target"],
+          msg: "Value error, soc_target은 soc_now보다 커야 합니다.",
+        },
+      ]),
+    ).toBe("목표 충전량: soc_target은 soc_now보다 커야 합니다.");
+  });
+
+  test("모르는 필드는 원래 이름을 남긴다", () => {
+    // 백엔드가 새 필드를 추가해도 화면이 빈 문장을 내놓지 않아야 한다.
+    expect(
+      messageFromDetail([
+        { type: "missing", loc: ["body", "brand_new_field"], msg: "Field required" },
+      ]),
+    ).toBe("brand_new_field: 값이 필요해요.");
+  });
+
+  test("모르는 검증 종류는 백엔드 문장을 그대로 쓴다", () => {
+    expect(
+      messageFromDetail([
+        { type: "some_future_rule", loc: ["body", "email"], msg: "must be reachable" },
+      ]),
+    ).toBe("이메일: must be reachable");
+  });
+
+  test("본문이 아닌 곳의 오류도 필드를 밝힌다", () => {
+    // 쿼리 파라미터 오류는 loc이 ["query", "month"]로 온다.
+    expect(
+      messageFromDetail([
+        { type: "string_pattern_mismatch", loc: ["query", "month"], msg: "x" },
+      ]),
+    ).toContain("월");
   });
 });

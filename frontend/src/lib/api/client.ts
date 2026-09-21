@@ -11,7 +11,74 @@ type ValidationItem = {
   loc?: (string | number)[];
   msg?: string;
   type?: string;
+  /** 경계값 등 검증 종류별 부가 정보 (gt, le, min_length …) */
+  ctx?: Record<string, unknown>;
 };
+
+/**
+ * 필드 이름 → 화면에 쓰는 말.
+ *
+ * 백엔드 필드명을 그대로 보여주면 "battery_kwh"가 화면에 뜬다. 여기 없는 필드는
+ * 원래 이름을 남긴다 — 백엔드가 새 필드를 추가해도 빈 문장을 내놓지 않는다.
+ */
+const FIELD_LABEL: Record<string, string> = {
+  battery_kwh: "배터리 용량",
+  charger_kw: "충전기 출력",
+  soc_now: "현재 충전량",
+  soc_target: "목표 충전량",
+  earliest_start: "충전 시작 가능 시각",
+  deadline: "완료 시각",
+  mode: "충전 방식",
+  efficiency: "효율",
+  public_base_price: "공공 급속 단가",
+  vehicle_id: "차량",
+  email: "이메일",
+  password: "비밀번호",
+  nickname: "닉네임",
+  name: "별칭",
+  is_default: "기본 차량 여부",
+  month: "월",
+  day: "날짜",
+  limit: "개수",
+  cursor: "페이지 커서",
+  lat: "위도",
+  lng: "경도",
+  radius_m: "반경",
+};
+
+/**
+ * pydantic 검증 종류 → 우리말 문장.
+ *
+ * 모르는 종류는 백엔드가 준 msg를 그대로 쓴다. 번역표를 다 채우려 들면 백엔드가
+ * 규칙을 하나 추가할 때마다 화면이 빈 문장을 내놓는다.
+ */
+function ruleMessage(item: ValidationItem): string {
+  const ctx = item.ctx ?? {};
+  const raw = item.msg ?? "값이 올바르지 않습니다";
+
+  switch (item.type) {
+    case "missing":
+      return "값이 필요해요.";
+    case "greater_than":
+      return `${ctx.gt}보다 커야 해요.`;
+    case "greater_than_equal":
+      return `${ctx.ge} 이상이어야 해요.`;
+    case "less_than":
+      return `${ctx.lt}보다 작아야 해요.`;
+    case "less_than_equal":
+      return `${ctx.le} 이하여야 해요.`;
+    case "string_too_short":
+      return `${ctx.min_length}자 이상이어야 해요.`;
+    case "string_too_long":
+      return `${ctx.max_length}자 이하여야 해요.`;
+    case "value_error":
+      // 백엔드가 던진 ValueError는 이미 우리말이다. pydantic이 앞에 붙이는
+      // "Value error, "만 떼고 그대로 쓴다 — 다시 쓰면 뜻이 흐려진다.
+      return raw.replace(/^Value error,\s*/, "");
+    default:
+      return raw;
+  }
+}
 
 const CONNECTION_FAILED =
   "서버에 연결하지 못했습니다. 백엔드가 실행 중인지 확인하세요.";
@@ -56,8 +123,10 @@ export function messageFromDetail(detail: unknown): string {
   if (Array.isArray(detail)) {
     const lines = (detail as ValidationItem[])
       .map((item) => {
-        const field = item.loc?.filter((part) => part !== "body").join(".");
-        const message = item.msg ?? "값이 올바르지 않습니다";
+        // loc의 첫 칸은 값이 어디서 왔는지(body·query·path)라 사용자에겐 뜻이 없다.
+        const path = (item.loc ?? []).slice(1).join(".");
+        const field = FIELD_LABEL[path] ?? path;
+        const message = ruleMessage(item);
         return field ? `${field}: ${message}` : message;
       })
       .filter(Boolean);
