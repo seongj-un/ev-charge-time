@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from .api.errors import register_error_handlers
-from .api.routes import health, timeline
+from .api.routes import health, recommend, timeline
 
 
 def create_app() -> FastAPI:
@@ -15,6 +15,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(timeline.router)
+    app.include_router(recommend.router)
 
     return app
 
