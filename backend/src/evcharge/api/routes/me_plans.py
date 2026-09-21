@@ -38,6 +38,7 @@ _MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 def list_plans(
     limit: int = Query(default=20, ge=1, le=100),
     cursor: str | None = None,
+    month: str | None = Query(default=None),
     user: User = Depends(current_user),
     session: DbSession = Depends(get_session),
 ) -> SavedPlanPage:
@@ -47,8 +48,18 @@ def list_plans(
     ``has_more``를 빈 슬라이스 전에 계산한 뒤 ``rows[-1]``을 해서 IndexError →
     500을 냈다(라이브 서버에서 재현됨). 상한도 함께 거는 이유는
     ``?limit=999999``가 DB를 통째로 긁어오는 것을 막기 위해서다.
+
+    ``month``(``"YYYY-MM"``, 2번 수정)는 ``/plans/summary``가 쓰는
+    ``_month_bounds``를 그대로 재사용한다 — 프론트가 이 필터 없이 커서로 받아
+    직접 거르면, 그 달 기록이 아직 안 넘어온 다음 페이지에 있어 화면에서
+    누락되는 문제가 생겨서 서버가 먼저 걸러야 한다. 안 주면(``None``) 기존과
+    완전히 동일하게 전체를 반환한다.
     """
     query = select(SavedPlan).where(SavedPlan.user_id == user.id)
+
+    if month is not None:
+        start, end = _month_bounds(month)
+        query = query.where(SavedPlan.created_at >= start, SavedPlan.created_at < end)
 
     if cursor is not None:
         cursor_created_at, cursor_id = _decode_cursor(cursor)

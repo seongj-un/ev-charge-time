@@ -360,3 +360,108 @@ def test_pagination_with_tied_created_at_visits_each_row_exactly_once(
 
     assert sorted(seen) == sorted(ids)
     assert len(seen) == len(set(seen))
+
+
+# ── 2번: /plans month 필터 ──────────────────────────────────────────────
+
+
+def test_list_plans_filters_by_month(client, db_session, auth_user):
+    """9월·10월 기록을 섞어 넣으면 ``?month=2026-10``은 10월 것만 줘야 한다."""
+    sep_id = str(uuid.uuid4())
+    oct_id = str(uuid.uuid4())
+    db_session.add(
+        _raw_plan(auth_user.id, datetime(2026, 9, 15, 12, 0, tzinfo=KST), plan_id=sep_id)
+    )
+    db_session.add(
+        _raw_plan(auth_user.id, datetime(2026, 10, 15, 12, 0, tzinfo=KST), plan_id=oct_id)
+    )
+    db_session.commit()
+
+    response = client.get("/api/me/plans", params={"month": "2026-10"})
+
+    assert response.status_code == 200
+    ids = [item["id"] for item in response.json()["items"]]
+    assert ids == [oct_id]
+
+
+def test_list_plans_month_boundary_is_kst_not_utc(client, db_session, auth_user):
+    """summary와 같은 경계 계산을 재사용하므로 여기도 KST 기준이어야 한다:
+    2026-10-01 00:30 KST(= 2026-09-30 15:30 UTC)는 10월로 잡혀야 한다."""
+    row_id = str(uuid.uuid4())
+    db_session.add(
+        _raw_plan(auth_user.id, datetime(2026, 10, 1, 0, 30, tzinfo=KST), plan_id=row_id)
+    )
+    db_session.commit()
+
+    oct_items = client.get("/api/me/plans", params={"month": "2026-10"}).json()["items"]
+    sep_items = client.get("/api/me/plans", params={"month": "2026-09"}).json()["items"]
+
+    assert [item["id"] for item in oct_items] == [row_id]
+    assert sep_items == []
+
+
+def test_list_plans_without_month_is_unchanged(client, db_session, auth_user):
+    """``month``를 안 주면 지금과 완전히 동일하게 전체 최신순이어야 한다."""
+    sep_id = str(uuid.uuid4())
+    oct_id = str(uuid.uuid4())
+    db_session.add(
+        _raw_plan(auth_user.id, datetime(2026, 9, 15, 12, 0, tzinfo=KST), plan_id=sep_id)
+    )
+    db_session.add(
+        _raw_plan(auth_user.id, datetime(2026, 10, 15, 12, 0, tzinfo=KST), plan_id=oct_id)
+    )
+    db_session.commit()
+
+    response = client.get("/api/me/plans")
+
+    ids = [item["id"] for item in response.json()["items"]]
+    assert ids == [oct_id, sep_id]
+
+
+def test_list_plans_month_and_limit_paginate_without_missing_or_duplicating(
+    client, db_session, auth_user
+):
+    """month로 거른 뒤 그 안에서 커서로 끝까지 넘겼을 때, 그 달 기록이 빠짐없이
+    정확히 한 번씩 나와야 한다 — 다른 달 기록은 몇 건이 있든 섞이면 안 된다."""
+    oct_ids = [str(uuid.uuid4()) for _ in range(5)]
+    for i, plan_id in enumerate(oct_ids):
+        db_session.add(
+            _raw_plan(
+                auth_user.id,
+                datetime(2026, 10, i + 1, 12, 0, tzinfo=KST),
+                plan_id=plan_id,
+            )
+        )
+    # 다른 달 기록도 섞어서 month 필터가 새는지 확인한다.
+    for i in range(3):
+        db_session.add(
+            _raw_plan(
+                auth_user.id,
+                datetime(2026, 9, i + 1, 12, 0, tzinfo=KST),
+            )
+        )
+    db_session.commit()
+
+    seen: list[str] = []
+    cursor = None
+    for _ in range(10):
+        params = {"month": "2026-10", "limit": 2}
+        if cursor is not None:
+            params["cursor"] = cursor
+        page = client.get("/api/me/plans", params=params).json()
+        seen.extend(item["id"] for item in page["items"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+
+    assert sorted(seen) == sorted(oct_ids)
+    assert len(seen) == len(set(seen))
+
+
+@pytest.mark.parametrize(
+    "month", ["26-10", "2026-2", "2026/10", "2026-13", "not-a-month", ""]
+)
+def test_list_plans_invalid_month_format_is_422(client, auth_user, month):
+    """summary(B-3)와 같은 검증을 재사용하므로 같은 값들이 422여야 한다."""
+    response = client.get("/api/me/plans", params={"month": month})
+    assert response.status_code == 422
