@@ -10,6 +10,7 @@ import hashlib
 import secrets
 
 from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHash, VerifyMismatchError
 
 _hasher = PasswordHasher()
 
@@ -20,10 +21,15 @@ def hash_password(raw: str) -> str:
 
 
 def verify_password(raw: str, hashed: str) -> bool:
-    """평문이 저장된 해시와 일치하면 True. 형식이 잘못된 해시도 예외 없이 False."""
+    """평문이 저장된 해시와 일치하면 True. 형식이 잘못된 해시도 예외 없이 False.
+
+    예외는 "비밀번호 불일치"(VerifyMismatchError)와 "해시 형식이 잘못됨"(InvalidHash)
+    만 잡는다. bare except Exception이면 인자 타입 오류나 argon2 내부 오류까지
+    전부 조용히 "틀림"으로 삼켜서 진짜 문제를 숨기게 된다.
+    """
     try:
         return _hasher.verify(hashed, raw)
-    except Exception:
+    except (VerifyMismatchError, InvalidHash):
         return False
 
 

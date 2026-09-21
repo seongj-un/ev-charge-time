@@ -4,6 +4,10 @@
 이메일은 상태코드·본문이 완전히 같아야 한다 (API 명세서 3장).
 """
 
+import statistics
+import time
+import uuid
+
 from evcharge.settings import get_settings
 
 EMAIL = "signup-flow@example.com"
@@ -154,3 +158,61 @@ def test_delete_account_success_frees_the_email_for_reuse(client):
 
     again = signup(client, email=email)
     assert again.status_code == 201
+
+
+def test_login_timing_does_not_leak_whether_the_email_is_registered(client):
+    """Finding 1 회귀 테스트 (Critical).
+
+    고치기 전 코드는 ``user is None or not verify_password(...)``가 단락 평가돼
+    가입되지 않은 이메일이면 Argon2 검증을 통째로 건너뛰었다. 리뷰어 실측으로
+    검증 경로(~30ms) vs 스킵 경로(~0.0001ms)가 약 25만 배 차이났다 — 상태
+    코드·본문이 같아도 응답 시간만 재면 가입 여부를 열거할 수 있었다는 뜻이다.
+
+    표본 하나로는 시스템 노이즈에 흔들리므로 여러 표본을 뽑아 중앙값을 비교한다.
+    표본마다 새 계정/새 이메일을 쓰는 이유: 같은 계정에 반복해서 틀린 비밀번호를
+    보내면 5회째부터 잠금(429)으로 분기가 바뀌어 verify_password 자체를 다시
+    스킵하게 되므로, 측정하려는 신호가 오염된다.
+
+    HTTP 왕복 전체를 재므로 DB 조회·TestClient 오버헤드가 두 경로 모두에 깔리는
+    바닥값으로 깔린다 — 그래서 실측 배율은 raw verify_password 단독 비교(~25만
+    배)보다 작다. 실측(이 저장소 기준): 고치기 전 중앙값 비율 ~9배(등록된
+    이메일 ~37ms vs 미등록 ~4ms), 고친 뒤 ~1배(둘 다 인자 해시 비용에 지배됨).
+    임계값(3배)은 그 사이 넉넉한 자리에 잡아서, 버그는 확실히 잡되 정상 지터에는
+    흔들리지 않게 했다.
+    """
+    samples = 10
+    registered_times: list[float] = []
+    unknown_times: list[float] = []
+
+    for i in range(samples):
+        email = f"timing-registered-{i}-{uuid.uuid4().hex[:8]}@example.com"
+        signup(client, email=email)
+        client.cookies.clear()
+
+        start = time.perf_counter()
+        response = login(client, email=email, password="totally-wrong-password")
+        registered_times.append(time.perf_counter() - start)
+        assert response.status_code == 401
+
+        client.cookies.clear()
+
+    for i in range(samples):
+        email = f"timing-unknown-{i}-{uuid.uuid4().hex[:8]}@example.com"
+
+        start = time.perf_counter()
+        response = login(client, email=email, password="whatever-password")
+        unknown_times.append(time.perf_counter() - start)
+        assert response.status_code == 401
+
+    median_registered = statistics.median(registered_times)
+    median_unknown = statistics.median(unknown_times)
+
+    slower = max(median_registered, median_unknown)
+    faster = max(min(median_registered, median_unknown), 1e-9)
+    ratio = slower / faster
+
+    assert ratio < 3, (
+        "로그인 응답 시간이 자릿수 단위로 벌어졌다 — 가입 여부가 타이밍으로 샌다 "
+        f"(registered={median_registered * 1000:.3f}ms, "
+        f"unknown={median_unknown * 1000:.3f}ms, ratio={ratio:.1f}x)"
+    )

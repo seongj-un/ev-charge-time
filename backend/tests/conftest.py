@@ -126,15 +126,32 @@ def db_session(test_engine: Engine) -> Iterator[DbSession]:
 
 
 @pytest.fixture
-def client(db_session: DbSession) -> Iterator[TestClient]:
+def client(request: pytest.FixtureRequest) -> Iterator[TestClient]:
     """DB를 쓰는 라우터도 테스트에서는 같은 트랜잭션(db_session)을 보게 오버라이드.
 
-    라우터가 커밋한 것도 테스트 쪽 ``db_session``으로 바로 보이고, 테스트가
-    끝나면 db_session fixture가 통째로 롤백한다 — 이후 요청 헬퍼(로그인 등)를
-    얹기 쉽도록 client와 db_session이 같은 트랜잭션을 공유하게 설계했다.
+    예전에는 이 fixture가 인자로 ``db_session``을 직접 받아서, ``client``를 쓰는
+    테스트는 전부 (실제로 DB를 건드리는지와 무관하게) ``test_engine``의 접속
+    시도를 강제로 거쳐 Postgres가 없으면 스킵됐다. ``/health``·``/api/timeline``·
+    ``/api/recommend``·스텁 라우터는 애초에 ``get_session``에 의존하지 않으므로
+    이 요구가 불필요했다.
+
+    그래서 여기서는 ``get_session``을 즉시 db_session으로 바꿔치기하지 않고,
+    실제로 그 의존성을 요청하는 핸들러가 호출될 때만
+    ``request.getfixturevalue("db_session")``으로 지연 평가한다. DB를 쓰지 않는
+    요청은 이 클로저 자체가 안 불리니 Postgres 유무와 무관하게 돌고, DB를 쓰는
+    요청에서 처음 호출되는 순간 ``db_session``(→ ``test_engine``)이 그제서야
+    연결을 시도해 없으면 그 테스트만 스킵된다. ``getfixturevalue``는 pytest가
+    캐시해 주므로 같은 테스트 안에서 여러 요청이 같은 세션(=같은 트랜잭션)을
+    계속 보게 된다 — 라우터가 커밋한 것도 테스트 쪽 ``db_session``으로 바로
+    보이고, 테스트가 끝나면 db_session fixture가 통째로 롤백하는 기존 설계는
+    그대로 유지된다.
     """
     app = create_app()
-    app.dependency_overrides[get_session] = lambda: db_session
+
+    def _lazy_db_session() -> Iterator[DbSession]:
+        yield request.getfixturevalue("db_session")
+
+    app.dependency_overrides[get_session] = _lazy_db_session
     try:
         yield TestClient(app)
     finally:

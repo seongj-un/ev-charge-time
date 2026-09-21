@@ -124,7 +124,11 @@ class LoginAttempt(Base):
     __tablename__ = "login_attempts"
 
     email: Mapped[str] = mapped_column(String(320), primary_key=True)
-    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # server_default도 둔다: ORM의 default=0은 SQLAlchemy를 거친 INSERT에만 적용되고,
+    # raw INSERT(마이그레이션 스크립트, 다른 도구 등)는 우회해 NOT NULL을 위반할 수 있다.
+    failed_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     locked_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
