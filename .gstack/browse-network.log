@@ -1431,3 +1431,4 @@
 [2026-09-21T08:22:05.248Z] GET http://localhost:3000/_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_hmr-client_ts_1mojsay._.js → 304 (3ms, ?B)
 [2026-09-21T08:22:05.265Z] GET http://localhost:3000/api/me → 500 (9ms, 32B)
 [2026-09-21T08:22:05.266Z] GET http://localhost:3000/api/me → 500 (2ms, 32B)
+[2026-09-21T08:25:05.541Z] GET http://localhost:3000/me → pending (?ms, ?B)

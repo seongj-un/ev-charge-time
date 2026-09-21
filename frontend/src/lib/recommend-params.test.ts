@@ -4,6 +4,7 @@ import {
   defaultForm,
   fromSearchParams,
   toRecommendRequest,
+  toSavePlanRequest,
   toSearchParams,
   type RecommendForm,
 } from "./recommend-params";
@@ -101,5 +102,42 @@ describe("defaultForm", () => {
   test("아침 8시를 지났으면 다음날 8시로 넘어간다", () => {
     const form = defaultForm(new Date(2026, 9, 8, 8, 30));
     expect(form.deadline).toBe("2026-10-09T08:00");
+  });
+});
+
+/*
+ * 차량을 골라 추천받았으면 그 사실을 저장까지 들고 가야 한다. 안 그러면
+ * SavedPlan.vehicle_name이 항상 null이라 기록 화면이 "어느 차로 세운 계획인지"를
+ * 영영 모른다. 그런데 추천 요청에까지 실으면 안 된다 — vehicle_id가 붙은 요청은
+ * 로그인을 요구해서, 결과 URL을 공유받은 사람이 401을 맞는다.
+ */
+describe("vehicle_id", () => {
+  const WITH_VEHICLE: RecommendForm = { ...FORM, vehicleId: "v1" };
+
+  test("URL에 실려 왕복한다", () => {
+    expect(fromSearchParams(toSearchParams(WITH_VEHICLE))).toEqual(WITH_VEHICLE);
+  });
+
+  test("차량을 안 골랐으면 URL을 더럽히지 않는다", () => {
+    expect(toSearchParams(FORM).has("vehicle_id")).toBe(false);
+    expect(fromSearchParams(toSearchParams(FORM))).toEqual(FORM);
+  });
+
+  test("추천 요청에는 싣지 않는다", () => {
+    // 게스트가 결과 링크를 열어도 401이 나지 않아야 한다.
+    expect(toRecommendRequest(WITH_VEHICLE)).not.toHaveProperty("vehicle_id");
+    // 값은 이미 폼에 복사돼 있으므로 추천 결과는 똑같이 나온다.
+    expect(toRecommendRequest(WITH_VEHICLE)).toEqual(toRecommendRequest(FORM));
+  });
+
+  test("저장 요청에는 싣는다", () => {
+    expect(toSavePlanRequest(WITH_VEHICLE)).toMatchObject({
+      vehicle_id: "v1",
+      battery_kwh: 70,
+    });
+  });
+
+  test("차량을 안 골랐으면 저장 요청에도 없다", () => {
+    expect(toSavePlanRequest(FORM)).not.toHaveProperty("vehicle_id");
   });
 });

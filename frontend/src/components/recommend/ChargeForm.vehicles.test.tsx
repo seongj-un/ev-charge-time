@@ -195,3 +195,29 @@ describe("차량 불러오기", () => {
     expect(screen.getByRole("button", { name: "최적 시간 찾기" })).toBeEnabled();
   });
 });
+
+describe("고른 차량을 결과까지 들고 간다", () => {
+  test("차량을 골랐으면 URL에 vehicle_id가 실린다", async () => {
+    const { user } = setup();
+    await waitFor(() => expect(vehicleSelect()).toBeEnabled());
+
+    await user.click(screen.getByRole("button", { name: "최적 시간 찾기" }));
+
+    await waitFor(() => expect(push).toHaveBeenCalled());
+    const target = String(push.mock.calls[0][0]);
+    // 저장할 때 vehicle_name을 받으려면 이게 결과 화면까지 살아 있어야 한다.
+    expect(new URLSearchParams(target.split("?")[1]).get("vehicle_id")).toBe("v1");
+  });
+
+  test("직접 입력이면 vehicle_id를 싣지 않는다", async () => {
+    const { user } = setup();
+    await waitFor(() => expect(vehicleSelect()).toBeEnabled());
+    await user.selectOptions(vehicleSelect(), "");
+
+    await user.click(screen.getByRole("button", { name: "최적 시간 찾기" }));
+
+    await waitFor(() => expect(push).toHaveBeenCalled());
+    const target = String(push.mock.calls[0][0]);
+    expect(new URLSearchParams(target.split("?")[1]).has("vehicle_id")).toBe(false);
+  });
+});

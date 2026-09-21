@@ -114,14 +114,36 @@ export type Charger = {
 };
 
 /**
- * 충전소.
+ * 충전소 (F-07 `GET /api/chargers`).
  *
- * ⚠️ 이 모양은 곧 바뀐다 (백엔드 세션 tropicbird-5a, 2026-09-21).
- * 지금은 즐겨찾기와 /api/chargers가 한 모델을 공유해서 전 필드가 선택이지만,
- * 즐겨찾기 전용 모델로 분리 중이고 /api/chargers는 전 필드 필수로 돌아간다.
- * **분리가 끝나기 전에는 이 타입에 기대는 화면을 만들지 않는다.**
+ * 이 경로는 캐시가 항상 차 있으므로 캐시 유래 필드가 전부 채워져 온다.
+ * 즐겨찾기는 보장이 달라서 FavoriteStation으로 따로 둔다 (API 명세서 7-4).
  */
 export type Station = {
+  station_id: string;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  distance_m: number;
+  operator: string;
+  available_hours: string;
+  /** 로그인 시 true/false, 게스트는 null */
+  is_favorite: boolean | null;
+  chargers: Charger[];
+};
+
+/**
+ * 즐겨찾는 충전소 (F-14 `GET /api/me/favorites`).
+ *
+ * 즐겨찾기는 station_id만으로 성립한다. 이름·주소는 F-07이 채우는 공유 캐시에서
+ * 오는데, F-07이 아직 501이라 **캐시 미적중이 예외가 아니라 기본 상태**다.
+ *
+ * 미적중이면 빈 문자열·0·빈 배열이 아니라 전부 null이다. chargers도 []가 아니라
+ * null인데, []는 "충전기가 0대인 충전소"고 null은 "아직 못 불러왔다"라서
+ * 화면이 다르게 표시해야 하기 때문이다 (API 명세서 7-4).
+ */
+export type FavoriteStation = {
   station_id: string;
   name: string | null;
   address: string | null;
@@ -130,9 +152,8 @@ export type Station = {
   distance_m: number | null;
   operator: string | null;
   available_hours: string | null;
-  /** 로그인 시 true/false, 게스트는 null */
   is_favorite: boolean | null;
-  chargers: Charger[];
+  chargers: Charger[] | null;
 };
 
 export type SavedPlan = {
@@ -142,6 +163,8 @@ export type SavedPlan = {
   result: RecommendResponse;
   /** 계산에 쓴 요금 설정 버전. 저장 당시 값이며 재계산하지 않는다. */
   tariff_version: string;
+  /** 저장 시점 차량 이름 스냅샷. 직접 입력했으면 null (API 명세서 7-3). */
+  vehicle_name: string | null;
 };
 
 export type SavedPlanPage = {

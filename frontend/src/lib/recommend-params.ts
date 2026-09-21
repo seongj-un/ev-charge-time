@@ -20,12 +20,20 @@ export type RecommendForm = {
   earliestStart: string;
   deadline: string;
   mode: Mode;
+  /**
+   * 고른 차량. 저장할 때만 쓴다.
+   *
+   * 추천 요청에는 싣지 않는다 — vehicle_id가 붙은 요청은 로그인을 요구해서,
+   * 결과 URL을 공유받은 사람이 401을 맞는다. 값은 이미 폼에 복사돼 있으므로
+   * 추천 결과는 똑같이 나온다.
+   */
+  vehicleId?: string;
 };
 
 const MODES: Mode[] = ["self_low", "self_high", "public_fast"];
 
 export function toSearchParams(form: RecommendForm): URLSearchParams {
-  return new URLSearchParams({
+  const params = new URLSearchParams({
     battery_kwh: String(form.batteryKwh),
     charger_kw: String(form.chargerKw),
     soc_now: String(form.socNow),
@@ -34,6 +42,8 @@ export function toSearchParams(form: RecommendForm): URLSearchParams {
     deadline: form.deadline,
     mode: form.mode,
   });
+  if (form.vehicleId) params.set("vehicle_id", form.vehicleId);
+  return params;
 }
 
 /** 쿼리를 읽는다. 하나라도 모양이 안 맞으면 null — 반쪽짜리 조건으로 요청하지 않는다. */
@@ -60,7 +70,17 @@ export function fromSearchParams(
     return null;
   }
 
-  return { batteryKwh, chargerKw, socNow, socTarget, earliestStart, deadline, mode };
+  const vehicleId = params.get("vehicle_id");
+  return {
+    batteryKwh,
+    chargerKw,
+    socNow,
+    socTarget,
+    earliestStart,
+    deadline,
+    mode,
+    ...(vehicleId ? { vehicleId } : {}),
+  };
 }
 
 /**
@@ -80,6 +100,19 @@ export function toRecommendRequest(form: RecommendForm): RecommendRequest {
     deadline: form.deadline,
     mode: form.mode,
   };
+}
+
+/**
+ * 저장 요청. 추천 요청과 같은 모양에 vehicle_id만 더 얹는다.
+ *
+ * 이걸 안 보내면 SavedPlan.vehicle_name이 항상 null이라, 충전 기록이
+ * "어느 차로 세운 계획인지"를 영영 모른다 (API 명세서 7-3).
+ */
+export function toSavePlanRequest(
+  form: RecommendForm,
+): RecommendRequest & { vehicle_id?: string } {
+  const request = toRecommendRequest(form);
+  return form.vehicleId ? { ...request, vehicle_id: form.vehicleId } : request;
 }
 
 /** 처음 열었을 때 채워 둘 값. 디자인의 예시(70 kWh · 7 kW · 30% → 60%)를 따른다. */

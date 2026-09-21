@@ -64,6 +64,7 @@ function plan(overrides: Partial<SavedPlan> & { id: string }): SavedPlan {
       unverified_tariff_items: [],
     },
     tariff_version: "2026.1-draft",
+    vehicle_name: null,
     ...overrides,
   };
 }

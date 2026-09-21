@@ -184,7 +184,13 @@ export function ChargeForm() {
   const vehicleLinkLabel = loggedIn ? (canPickVehicle ? "차량 관리" : "차량 추가") : "로그인";
 
   // 칸이 일곱 개뿐이라 렌더마다 다시 검사해도 된다. 대신 고치는 즉시 오류가 사라진다.
-  const { errors, form } = validate(conditions);
+  const { errors, form: validated } = validate(conditions);
+  /*
+   * 고른 차량을 결과 화면까지 들고 간다. 저장할 때 vehicle_id를 보내야
+   * SavedPlan.vehicle_name이 채워지고, 그래야 충전 기록이 "어느 차로 세운
+   * 계획인지"를 안다. 추천 요청에는 안 실린다 (recommend-params 참고).
+   */
+  const form = validated && vehicleId ? { ...validated, vehicleId } : validated;
   const shown: Errors = submitted ? errors : {};
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

@@ -7,6 +7,7 @@ import type {
   RecommendResponse,
   SavedPlan,
   SavedPlanPage,
+  FavoriteStation,
   Station,
   TimelineResponse,
   User,
@@ -90,11 +91,14 @@ export function deleteVehicle(id: string): Promise<void> {
 
 // ── 충전 기록 (F-13) ────────────────────────────────────────────────────
 
+/** month는 "YYYY-MM" (선택). limit은 1~100이며 범위 밖은 422 (API 명세서 7-3). */
 export function fetchPlans(params?: {
+  month?: string;
   limit?: number;
   cursor?: string;
 }): Promise<SavedPlanPage> {
   return apiGet<SavedPlanPage>("/api/me/plans", {
+    month: params?.month,
     limit: params?.limit,
     cursor: params?.cursor,
   });
@@ -108,8 +112,13 @@ export function fetchPlanSummary(month: string): Promise<PlanSummary> {
 /**
  * 계획 저장. 본문은 추천 요청과 같은 모양이고, **서버가 다시 계산해서** 저장한다.
  * 클라이언트가 계산한 결과는 쓰지 않으므로 응답의 result를 화면에 써야 한다.
+ *
+ * vehicle_id를 함께 보내면 응답의 vehicle_name에 저장 시점 차량 이름이 박힌다.
+ * 안 보내면 항상 null이라 기록 화면이 "어느 차로 세운 계획인지"를 영영 모른다.
  */
-export function savePlan(request: RecommendRequest): Promise<SavedPlan> {
+export function savePlan(
+  request: RecommendRequest & { vehicle_id?: string },
+): Promise<SavedPlan> {
   return apiPost<SavedPlan>("/api/me/plans", request);
 }
 
@@ -142,10 +151,10 @@ export function fetchStations(params: {
  * 즐겨찾는 충전소.
  *
  * 이름·주소는 F-07이 채우는 공유 캐시에서 온다. F-07이 501인 지금은
- * station_id만 채워져 돌아온다 — 화면이 그 사실을 감추면 안 된다.
+ * station_id만 채워지고 나머지는 null로 돌아온다 — 화면이 그 사실을 감추면 안 된다.
  */
-export function fetchFavorites(): Promise<Station[]> {
-  return apiGet<Station[]>("/api/me/favorites");
+export function fetchFavorites(): Promise<FavoriteStation[]> {
+  return apiGet<FavoriteStation[]>("/api/me/favorites");
 }
 
 /** 멱등: 이미 즐겨찾기한 곳을 다시 불러도 204. */
