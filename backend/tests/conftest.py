@@ -92,6 +92,27 @@ def _ensure_test_database() -> None:
         pass
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _never_call_the_real_llm() -> None:
+    """테스트 세션 전체에서 ``GEMINI_API_KEY``를 비운다 (F-10).
+
+    ``DATABASE_URL``을 테스트 DB로 돌려놓는 위 픽스처와 같은 성격의 안전장치다.
+    개발자 ``.env``에 진짜 Gemini 키가 들어 있으면, ``POST /api/chat``을
+    부르면서 ``llm_client`` 오버라이드를 깜빡한 테스트가 **진짜 API를 호출한다**
+    — 돈이 나가고, 느리고, 무료 티어의 분당·일일 할당량을 조용히 깎는다.
+    키를 비워 두면 그런 테스트는 실제 호출 대신 501을 받아 바로 드러난다.
+
+    빈 환경변수가 ``.env`` 값을 덮는 것은 pydantic-settings의 우선순위
+    (환경변수 > dotenv)라 실측으로 확인했다.
+
+    F-10을 검증하는 테스트는 ``gemini_api_key``/``llm_client`` **의존성**을
+    오버라이드해서 "키 있음 + 가짜 클라이언트" 상태를 직접 만든다 — 설정이
+    아니라 의존성을 바꾸므로 이 픽스처와 충돌하지 않는다
+    (``tests/api/test_chargers.py``의 ``_api_key_configured``와 같은 방식).
+    """
+    os.environ["GEMINI_API_KEY"] = ""
+
+
 @pytest.fixture(scope="session")
 def test_engine() -> Iterator[Engine]:
     """테스트 DB에 붙는 세션 스코프 engine. 스키마는 세션당 한 번만 만든다."""

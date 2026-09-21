@@ -10,10 +10,12 @@ import pytest
 #
 # 차량(vehicles) 엔드포인트는 F-12로 구현되어 더 이상 스텁이 아니다
 # (tests/api/test_vehicles.py 참고). 주변 충전소도 F-07로 구현됐다
-# (tests/api/test_chargers.py 참고). OpenAPI 등록 확인만 아래에서 계속한다.
+# (tests/api/test_chargers.py 참고). 자연어 질의(/api/chat)도 F-10으로
+# 구현됐다 (tests/api/test_chat.py 참고) — 키가 없을 때 501을 내는 것은
+# 이제 "스텁"이 아니라 그 엔드포인트의 계약이라, 그쪽 테스트가 검증한다.
+# OpenAPI 등록 확인만 아래에서 계속한다.
 STUB_ENDPOINTS = [
     ("GET", "/api/solar-forecast?region=전남&day=2026-10-17", "/api/solar-forecast", None),
-    ("POST", "/api/chat", "/api/chat", {"message": "내일 출근 전까지 80% 채우려면?"}),
 ]
 
 IMPLEMENTED = [
@@ -30,6 +32,7 @@ IMPLEMENTED = [
     "/api/me/plans/summary",
     "/api/me/plans/{plan_id}",
     "/api/chargers",
+    "/api/chat",
 ]
 
 
