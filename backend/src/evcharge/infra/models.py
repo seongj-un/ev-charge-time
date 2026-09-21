@@ -163,6 +163,19 @@ class ChargerCache(Base):
     # 전 사용자 공유 캐시. 사용자가 늘어도 공공 API 호출량은 그대로 (F-07)
     station_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    # 좌표는 data JSONB 안에도 들어 있지만 컬럼으로 한 번 더 꺼내 둔다.
+    # 반경 조회의 1차 필터(바운딩 박스)가 매 요청 JSONB 캐스팅을 하면 인덱스를
+    # 못 타고 3만 건을 통째로 훑는다 — saved_plans.charge_start를 뽑았던 것과
+    # 같은 이유다. 아래 복합 인덱스가 그 범위 비교를 받는다.
+    #
+    # nullable인 이유: 좌표 없는 행이 정상적으로 존재한다. 수집기는 좌표가
+    # 없는 충전소를 캐시에 넣지 않지만, 캐시 행을 직접 만드는 다른 경로(테스트
+    # 픽스처 등)가 좌표를 모를 수 있다. 그런 행은 반경 조회에 잡히지 않을 뿐
+    # 즐겨찾기 조회(F-14)에서는 그대로 쓰인다.
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lng: Mapped[float | None] = mapped_column(Float, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    __table_args__ = (Index("ix_charger_cache_lat_lng", "lat", "lng"),)

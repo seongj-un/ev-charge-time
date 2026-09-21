@@ -27,28 +27,44 @@ def _unauthorized() -> HTTPException:
     return HTTPException(status_code=401, detail="로그인이 필요합니다.")
 
 
-def current_user(
-    request: Request, session: DbSession = Depends(get_session)
-) -> User:
-    """세션 쿠키로 로그인한 사용자를 찾는다. 없거나·잘못됐거나·만료면 401."""
+def _session_user(request: Request, session: DbSession) -> User | None:
+    """세션 쿠키가 가리키는 사용자. 없거나·잘못됐거나·만료면 None."""
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
-        raise _unauthorized()
+        return None
 
     db_session_row = session.scalar(
         select(SessionModel).where(SessionModel.token_hash == hash_token(token))
     )
     if db_session_row is None:
-        raise _unauthorized()
+        return None
 
     if db_session_row.expires_at < datetime.now(KST):
-        raise _unauthorized()
+        return None
 
-    user = session.get(User, db_session_row.user_id)
+    return session.get(User, db_session_row.user_id)
+
+
+def current_user(
+    request: Request, session: DbSession = Depends(get_session)
+) -> User:
+    """세션 쿠키로 로그인한 사용자를 찾는다. 없거나·잘못됐거나·만료면 401."""
+    user = _session_user(request, session)
     if user is None:
         raise _unauthorized()
-
     return user
+
+
+def optional_user(
+    request: Request, session: DbSession = Depends(get_session)
+) -> User | None:
+    """로그인했으면 사용자, 게스트면 None. **401을 던지지 않는다.**
+
+    게스트도 볼 수 있지만 로그인하면 내용이 달라지는 엔드포인트용이다 — F-07
+    주변 충전소의 ``is_favorite``은 로그인 시 true/false, 게스트는 null이다
+    (명세 2-4). ``current_user``를 쓰면 게스트가 401로 튕겨 목록 자체를 못 본다.
+    """
+    return _session_user(request, session)
 
 
 def set_session_cookie(response: Response, token: str) -> None:
