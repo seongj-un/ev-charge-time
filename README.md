@@ -34,9 +34,13 @@ uv run uvicorn evcharge.main:app --reload
 | `/api/auth/*` | F-11 회원가입·로그인 | 구현 |
 | `/api/me/*` | F-12·F-13·F-14 사용자 데이터 | 구현 |
 | `GET /api/solar-forecast` | F-09 태양광 예측 | 501 스텁 |
-| `POST /api/chat` | F-10 자연어 질의 | 501 스텁 |
+| `POST /api/chat` | F-10 자연어 질의 | 구현 (키 필요) |
 
 스텁도 경로·메서드·스키마는 명세대로 선언돼 있어 `/docs`에서 전체 계약을 볼 수 있다.
+
+`POST /api/chat`은 `GEMINI_API_KEY`가 비어 있으면 501을 낸다 —
+`GET /api/chargers`가 `CHARGER_API_KEY` 없이 501인 것과 같은 규칙이다.
+키 없이도 나머지 기능은 전부 돈다.
 
 ## 충전소 캐시 수집 (F-07)
 
@@ -63,6 +67,45 @@ uv run python -m evcharge.sync --states --period 5   # 최근 5분 변경분만
 - 충전기 상태(`stat`)와 종류(`chgerType`)는 **원문 코드 그대로** 내보낸다.
   공식 활용가이드를 아직 확보하지 못했고(실제 데이터에 문서에 없는 `9`가
   5.3% 있다), 추정 매핑은 '사용 가능'이라 적힌 자리로 사용자를 보낸다.
+
+## 자연어 질의 켜기 (F-10)
+
+`POST /api/chat`은 Google Gemini **무료 티어**를 쓴다. 켜는 데 필요한 것은 키 하나다.
+
+1. <https://aistudio.google.com/apikey> 에서 "Create API key" (신용카드 불필요).
+2. `backend/.env`에 넣는다:
+
+   ```
+   GEMINI_API_KEY=<발급받은 키>
+   ```
+
+3. 서버를 다시 띄운다. 끝이다 — 모델 ID(`GEMINI_MODEL`)와 호출 제한은
+   기본값이 있고, 바꾸고 싶을 때만 건드리면 된다 (`.env.example` 참고).
+
+`chat_rate_limits` 테이블이 필요하므로 마이그레이션을 아직 안 돌렸다면:
+
+```bash
+cd backend && uv run alembic upgrade head
+```
+
+동작 방식에서 알아둘 것:
+
+- **모델은 조건 추출에만 쓴다. 답변 문장은 서버가 쓴다.** 금액·시각은
+  `compute_recommendation`의 계산 결과를 그대로 넣는다 — 모델이 숫자를 지어낼
+  자리를 아예 두지 않기 위해서다. 질문 하나당 API 호출은 정확히 1회다.
+- 모델이 낸 값은 필드마다 범위까지 확인하고, 통과하지 못하면 **고치지 않고
+  버린다.** 그 항목은 `missing_fields`가 되어 사용자에게 되묻는다 (150%를
+  100%로 "고쳐" 주지 않는다).
+- 로그인한 사용자에게 **기본 차량**이 있으면 `battery_kwh`·`charger_kw`·`mode`를
+  거기서 채운다 (F-12). 기본 차량이 아닌 차는 쓰지 않는다.
+- 사용자별 호출 제한은 기본 **60분당 20회**, 초과 시 429. 카운터는 UPSERT
+  한 문장으로 원자적으로 올린다 — 병렬 요청으로 우회되지 않는 것을
+  `tests/api/test_chat_rate_limit_race.py`가 실제 동시 요청으로 검증한다.
+- 실패한 호출도 할당량을 깎는다. 안 그러면 계속 실패시켜 제한을 무료로 우회할 수 있다.
+
+테스트는 **절대 실제 API를 부르지 않는다.** `tests/conftest.py`가 테스트 세션
+동안 `GEMINI_API_KEY`를 비워 두고(개발자 `.env`에 진짜 키가 있어도), 가짜
+클라이언트를 autouse로 꽂는다.
 
 ## 요금 값의 출처와 확인 상태
 
@@ -94,9 +137,11 @@ backend/src/evcharge/
 │   ├── planner.py    최저 비용 구간 탐색         (F-03, F-04)
 │   └── geo.py        거리·바운딩 박스            (F-07)
 ├── api/        라우터·스키마·에러 변환
+│   └── chat_service.py   질문 → 조건 추출 → 문장  (F-10)
 ├── infra/      SQLAlchemy 세션과 모델
 │   ├── charger_api.py    공공 충전소 API 호출     (F-07)
-│   └── charger_sync.py   응답 → 공유 캐시         (F-07)
+│   ├── charger_sync.py   응답 → 공유 캐시         (F-07)
+│   └── llm.py            Gemini 호출기            (F-10)
 └── sync.py     `python -m evcharge.sync` 수집 진입점
 backend/config/  tariff.yaml · holidays.yaml
 ```
