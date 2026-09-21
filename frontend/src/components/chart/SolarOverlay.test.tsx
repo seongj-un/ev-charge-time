@@ -35,9 +35,17 @@ const CLEAR_DAY: SolarHour[] = [
   hour(21, 0),
 ];
 
+/*
+ * 2026-09-21 20:00 발표 응답에서 그대로 옮긴 세 줄.
+ *
+ * 길이를 가정하지 않는다 — 지역이 늘거나 전제가 추가되면 서버가 줄을 더 싣는다.
+ * 그래서 컴포넌트는 배열을 순회만 하고, 이 상수는 문구를 검사하는 게 아니라
+ * "서버가 준 줄이 빠짐없이 나오는지"를 확인하는 데 쓴다.
+ */
 const ASSUMPTIONS = [
-  "전남 전체를 5km 격자 한 칸(nx=51, ny=67)으로 대신함",
-  "설비용량 자료가 없어 지역 발전량(MWh)은 계산하지 않음",
+  "전남 전체를 기상청 5km 격자 한 칸(nx=57, ny=71)의 예보로 대신합니다.",
+  "기상청 단기예보 20260921 2000 발표를 사용했습니다.",
+  "지역 태양광 설비용량 자료가 없어 predicted_mwh는 비워 둡니다. 일사량(ghi_wm2)과 STC 대비 지수(output_index)는 그대로 유효합니다.",
 ];
 
 describe("SolarOverlay", () => {
@@ -78,11 +86,22 @@ describe("SolarOverlay", () => {
    * 없다. 안 보여주면 정밀한 지역 예측이라고 읽는다 — unverified_tariff_items와
    * 같은 성격이라 같은 방식으로 다룬다.
    */
-  test("전제를 화면에 그대로 보여준다", () => {
+  test("전제를 한 줄도 빠뜨리지 않고 보여준다", () => {
     render(<SolarOverlay hours={CLEAR_DAY} columns={[12]} assumptions={ASSUMPTIONS} />);
     const note = screen.getByRole("note");
-    expect(within(note).getByText(/5km 격자 한 칸/)).toBeInTheDocument();
-    expect(within(note).getByText(/설비용량 자료가 없어/)).toBeInTheDocument();
+    expect(within(note).getAllByRole("listitem")).toHaveLength(ASSUMPTIONS.length);
+    for (const line of ASSUMPTIONS) {
+      expect(within(note).getByText(new RegExp(escapeRegExp(line)))).toBeInTheDocument();
+    }
+  });
+
+  /*
+   * 발표 회차 줄이 빠지면 안 된다. 예보는 하루 8번만 갱신돼서 화면의 값이 몇
+   * 시간 전 발표일 수 있고, 사용자는 그걸 알아야 "왜 창밖과 다르지"를 납득한다.
+   */
+  test("어느 발표를 썼는지 보여준다", () => {
+    render(<SolarOverlay hours={CLEAR_DAY} columns={[12]} assumptions={ASSUMPTIONS} />);
+    expect(within(screen.getByRole("note")).getByText(/20260921 2000 발표/)).toBeInTheDocument();
   });
 
   test("전제가 없으면 빈 상자를 만들지 않는다", () => {
@@ -98,3 +117,7 @@ describe("SolarOverlay", () => {
     ).toBeInTheDocument();
   });
 });
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

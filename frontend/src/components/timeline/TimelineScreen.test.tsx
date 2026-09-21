@@ -233,7 +233,10 @@ describe("태양광 겹쳐 보기", () => {
     base_time: "0500",
     installed_capacity_mw: null,
     capacity_source: null,
-    assumptions: ["전남 전체를 5km 격자 한 칸으로 대신함"],
+    assumptions: [
+      "전남 전체를 기상청 5km 격자 한 칸(nx=57, ny=71)의 예보로 대신합니다.",
+      "기상청 단기예보 20260921 2000 발표를 사용했습니다.",
+    ],
     hours: [
       { hour: 12, ghi_wm2: 811, clear_sky_ghi_wm2: 1000, output_index: 0.811,
         predicted_mwh: null, sky: "1", pty: "0" },
@@ -265,7 +268,8 @@ describe("태양광 겹쳐 보기", () => {
     await waitFor(() =>
       expect(urls.some((url) => url.includes("day=2026-10-10"))).toBe(true),
     );
-    expect(await screen.findByText(/5km 격자 한 칸/)).toBeInTheDocument();
+    expect(await screen.findByText(/nx=57, ny=71/)).toBeInTheDocument();
+    expect(screen.getByText(/20260921 2000 발표/)).toBeInTheDocument();
   });
 
   /* 켤 수 없으면 켜진 척하지 않는다 — 빈 오버레이가 "해가 없다"로 읽힌다. */
