@@ -21,7 +21,7 @@ type ValidationItem = {
  * 백엔드 필드명을 그대로 보여주면 "battery_kwh"가 화면에 뜬다. 여기 없는 필드는
  * 원래 이름을 남긴다 — 백엔드가 새 필드를 추가해도 빈 문장을 내놓지 않는다.
  */
-const FIELD_LABEL: Record<string, string> = {
+export const FIELD_LABEL: Record<string, string> = {
   battery_kwh: "배터리 용량",
   charger_kw: "충전기 출력",
   soc_now: "현재 충전량",
@@ -98,11 +98,26 @@ export class ApiError extends Error {
    */
   readonly unreachable: boolean;
 
-  constructor(status: number, message: string, unreachable = false) {
+  /**
+   * 429의 `Retry-After` (초). 서버가 안 줬거나 못 읽으면 null.
+   *
+   * null과 0을 구분하는 게 요점이다. 0이면 화면은 "지금 다시"로 읽고 곧바로
+   * 재시도하는데, 그건 또 429이고 그 호출도 무료 티어 할당량을 깎는다.
+   * 모르면 모른다고 두고 화면이 "잠시 후"라고만 말하게 한다.
+   */
+  readonly retryAfterSeconds: number | null;
+
+  constructor(
+    status: number,
+    message: string,
+    unreachable = false,
+    retryAfterSeconds: number | null = null,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.unreachable = unreachable;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 
   /** 501 스텁 — 계약은 있으나 아직 구현되지 않은 엔드포인트 */
@@ -201,6 +216,7 @@ async function request<T>(url: string, init: RequestInit): Promise<T> {
       response.status,
       gatewayFailure ? CONNECTION_FAILED : messageFromDetail(detail),
       gatewayFailure,
+      response.status === 429 ? retryAfterSeconds(response) : null,
     );
   }
 
@@ -209,6 +225,21 @@ async function request<T>(url: string, init: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+/**
+ * `Retry-After` 헤더 → 초.
+ *
+ * 표준은 초와 HTTP-date 둘 다 허용하지만 백엔드는 초만 보낸다. 날짜 형식이
+ * 오면 읽지 않고 null로 둔다 — 반쯤 해석해서 엉뚱한 시각을 화면에 적느니
+ * 모른다고 하는 편이 낫다.
+ */
+function retryAfterSeconds(response: Response): number | null {
+  const raw = response.headers.get("retry-after");
+  if (raw === null) return null;
+  const seconds = Number(raw.trim());
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return Math.ceil(seconds);
 }
 
 async function readDetail(response: Response): Promise<unknown> {

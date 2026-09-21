@@ -1,5 +1,5 @@
 /**
- * 셸에 쓰는 아이콘. 다섯 개뿐이라 아이콘 라이브러리를 들이지 않았다.
+ * 셸에 쓰는 아이콘. 몇 개뿐이라 아이콘 라이브러리를 들이지 않았다.
  * 전부 24×24 좌표계에 선 굵기 1.8로 맞춰 두면 나란히 놓았을 때 무게가 같다.
  */
 type IconProps = { className?: string };
@@ -50,6 +50,12 @@ export const PersonIcon = ({ className }: IconProps) => (
   <Svg className={className}>
     <circle cx="12" cy="8.2" r="3.6" {...stroke} />
     <path d="M4.8 20.4c.7-3.7 3.6-5.8 7.2-5.8s6.5 2.1 7.2 5.8" {...stroke} />
+  </Svg>
+);
+
+export const ChatIcon = ({ className }: IconProps) => (
+  <Svg className={className}>
+    <path d="M20.5 12.4c0 4-3.8 7.2-8.5 7.2a9.8 9.8 0 0 1-2.6-.35L4.5 20.9l1.3-3.5a6.9 6.9 0 0 1-2.3-5c0-4 3.8-7.2 8.5-7.2s8.5 3.2 8.5 7.2z" {...stroke} />
   </Svg>
 );
 

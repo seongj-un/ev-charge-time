@@ -225,3 +225,33 @@ export type SolarForecast = {
   /** 이 값을 어떤 전제로 냈는지. 화면에 그대로 보여준다. */
   assumptions: string[];
 };
+
+// ── 자연어 질의 (F-10) ──────────────────────────────────────────────────
+
+/**
+ * 대화 이력 한 턴.
+ *
+ * 백엔드는 `role`이 `"assistant"`인지만 보고 나머지는 전부 사용자로 친다.
+ * `content`가 비면 그 턴을 조용히 버리고, **최근 6턴만** 쓰며 각 턴을
+ * 500자에서 자른다 (`chat_service._history_lines`). 모양이 틀려도 400이
+ * 아니라 그 턴만 버려지므로, 이력이 실제로 이어지는지는 눈으로 확인해야 한다.
+ */
+export type ChatTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type ChatResponse = {
+  answer: string;
+  /**
+   * 조건이 다 모였을 때만 채워진다.
+   *
+   * ⚠️ **이 숫자는 모델이 쓴 게 아니다.** 모델은 질문에서 조건만 뽑고,
+   * 금액과 시각은 서버가 `compute_recommendation`으로 계산한다 (API 명세서
+   * 7-8). 화면도 answer 문장이 아니라 이 객체의 값을 숫자로 보여줘야 한다 —
+   * 문장과 숫자가 어긋나면 믿을 것은 이쪽이다.
+   */
+  recommendation: RecommendResponse | null;
+  /** 되물어야 할 항목. 있으면 recommendation은 null이다. */
+  missing_fields: string[];
+};

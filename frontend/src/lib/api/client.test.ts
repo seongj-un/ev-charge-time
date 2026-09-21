@@ -389,3 +389,55 @@ describe("백엔드가 새로 거르는 입력", () => {
     ).toBe("닉네임: 50자 이하여야 해요.");
   });
 });
+
+/*
+ * 429의 Retry-After.
+ *
+ * 서버는 창이 언제 풀리는지 알고 있고 헤더에 초로 실어 보낸다. 그걸 버리면
+ * 화면은 "잠시 후"밖에 말하지 못하고, 사용자는 언제 풀리는지 모른 채 계속
+ * 누른다 — 그 호출도 무료 티어 할당량을 깎는다.
+ */
+describe("Retry-After", () => {
+  function reject(status: number, detail: string, headers?: Record<string, string>) {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail }), { status, headers }),
+    );
+  }
+
+  test("초를 숫자로 싣는다", async () => {
+    reject(429, "질문 횟수 제한을 초과했습니다.", { "retry-after": "1725" });
+    const error = await apiPost("/api/chat", { message: "안녕" }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(429);
+    expect((error as ApiError).retryAfterSeconds).toBe(1725);
+  });
+
+  test("헤더가 없으면 null이다 — 0으로 두면 '지금 다시'가 된다", async () => {
+    reject(429, "질문 횟수 제한을 초과했습니다.");
+    const error = (await apiPost("/api/chat", {}).catch((e: unknown) => e)) as ApiError;
+    expect(error.retryAfterSeconds).toBeNull();
+  });
+
+  /* HTTP-date 형식도 표준이지만 백엔드는 초만 보낸다. 못 읽으면 지어내지 않는다. */
+  test("읽을 수 없는 값은 null이다", async () => {
+    reject(429, "제한", { "retry-after": "Wed, 21 Oct 2026 07:28:00 GMT" });
+    const error = (await apiPost("/api/chat", {}).catch((e: unknown) => e)) as ApiError;
+    expect(error.retryAfterSeconds).toBeNull();
+  });
+
+  test("음수나 0은 받지 않는다", async () => {
+    reject(429, "제한", { "retry-after": "0" });
+    const error = (await apiPost("/api/chat", {}).catch((e: unknown) => e)) as ApiError;
+    expect(error.retryAfterSeconds).toBeNull();
+  });
+
+  test("429가 아닌 오류에는 붙지 않는다", async () => {
+    reject(503, "지금은 질문에 답할 수 없습니다.");
+    const error = (await apiPost("/api/chat", {}).catch((e: unknown) => e)) as ApiError;
+    expect(error.status).toBe(503);
+    expect(error.retryAfterSeconds).toBeNull();
+    // detail이 있는 5xx는 연결 실패가 아니다 — 백엔드가 살아서 답한 것이다.
+    expect(error.unreachable).toBe(false);
+    expect(error.message).toBe("지금은 질문에 답할 수 없습니다.");
+  });
+});
