@@ -13,13 +13,24 @@ type ValidationItem = {
   type?: string;
 };
 
+const CONNECTION_FAILED =
+  "서버에 연결하지 못했습니다. 백엔드가 실행 중인지 확인하세요.";
+
 export class ApiError extends Error {
   readonly status: number;
+  /**
+   * 서버의 답이 아니라 서버에 닿지 못한 것.
+   *
+   * 이걸 401과 구분해야 하는 이유: 백엔드가 꺼졌을 때 "로그인하세요"가 뜨면
+   * 사용자는 로그인을 시도하고 또 실패한다. 원인을 영영 모른다.
+   */
+  readonly unreachable: boolean;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, unreachable = false) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.unreachable = unreachable;
   }
 
   /** 501 스텁 — 계약은 있으나 아직 구현되지 않은 엔드포인트 */
@@ -98,13 +109,25 @@ async function request<T>(url: string, init: RequestInit): Promise<T> {
   try {
     response = await fetch(url, { ...init, credentials: "include" });
   } catch {
-    // 백엔드가 안 떠 있을 때가 대부분이다. 원래 메시지("fetch failed")는
-    // 사용자에게 아무것도 알려주지 않으니 무엇을 해야 하는지로 바꿔 준다.
-    throw new ApiError(0, "서버에 연결하지 못했습니다. 백엔드가 실행 중인지 확인하세요.");
+    // 원래 메시지("fetch failed")는 사용자에게 아무것도 알려주지 않는다.
+    throw new ApiError(0, CONNECTION_FAILED, true);
   }
 
   if (!response.ok) {
-    throw new ApiError(response.status, messageFromDetail(await readDetail(response)));
+    const detail = await readDetail(response);
+    /*
+     * 백엔드가 꺼져도 브라우저 fetch는 성공한다. 죽은 건 업스트림이고, 사이에 있는
+     * Next rewrite 프록시가 500 + 평문 "Internal Server Error"를 돌려주기 때문이다.
+     * 그래서 detail을 못 읽은 5xx는 연결 실패로 본다. detail이 있으면 백엔드가
+     * 살아서 답한 것이므로 그 메시지를 살린다 — 연결 문제로 둔갑시키면
+     * "백엔드를 켜세요"라는 엉뚱한 안내를 하게 된다.
+     */
+    const gatewayFailure = response.status >= 500 && detail === undefined;
+    throw new ApiError(
+      response.status,
+      gatewayFailure ? CONNECTION_FAILED : messageFromDetail(detail),
+      gatewayFailure,
+    );
   }
 
   if (response.status === 204) {

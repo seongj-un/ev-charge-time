@@ -50,9 +50,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .catch((error: unknown) => {
         if (!alive) return;
         setUser(null);
-        // status 0은 서버에 닿지 못한 것이다. 이걸 손님으로 처리하면
-        // 백엔드가 꺼졌을 때 "로그인하세요"가 떠서 원인을 영영 못 찾는다.
-        setStatus(error instanceof ApiError && error.status === 0 ? "unreachable" : "anonymous");
+        /*
+         * 401만 "손님"이다. 나머지는 전부 "판단할 수 없음"이다.
+         *
+         * 401이 아닌 것을 손님으로 처리하면, 백엔드가 꺼졌을 때(Next rewrite 프록시가
+         * 500을 돌려준다) "로그인하세요"가 떠서 사용자가 로그인을 시도하고 또 실패한다.
+         * 원인을 영영 못 찾는다.
+         */
+        const isAnonymous = error instanceof ApiError && error.status === 401;
+        setStatus(isAnonymous ? "anonymous" : "unreachable");
       });
     return () => {
       alive = false;

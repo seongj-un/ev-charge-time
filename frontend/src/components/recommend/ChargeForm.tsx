@@ -4,13 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, type FormEvent } from "react";
 
+import { useSession, type SessionStatus } from "@/components/auth/SessionProvider";
 import { Button } from "@/components/ui/Button";
 import { Field, SelectField } from "@/components/ui/Field";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import { MODE_LABEL, type Mode } from "@/lib/api/types";
+import { MODE_LABEL, type Mode, type Vehicle } from "@/lib/api/types";
 import { estimateHours, requiredEnergyKwh } from "@/lib/charging";
 import { formatDuration, formatKwh } from "@/lib/format";
 import { defaultForm, toSearchParams, type RecommendForm } from "@/lib/recommend-params";
+
+import { useMyVehicles } from "./useMyVehicles";
 
 /**
  * 충전 조건 입력 폼.
@@ -84,12 +87,55 @@ function useDefaultTimes(): RecommendForm | null {
   return useSyncExternalStore(NEVER_CHANGES, readNow, () => null);
 }
 
+/** "출퇴근 차 · 77 kWh · 11 kW (기본)" */
+function vehicleOptionLabel(vehicle: Vehicle): string {
+  const spec = `${vehicle.battery_kwh} kWh · ${vehicle.charger_kw} kW`;
+  return vehicle.is_default
+    ? `${vehicle.name} · ${spec} (기본)`
+    : `${vehicle.name} · ${spec}`;
+}
+
+/**
+ * 차량 칸 아래 안내.
+ *
+ * 손님에게 "로그인 후 불러옵니다"라고만 하면 그다음 할 일을 모른다. 상태마다
+ * 지금 할 수 있는 일을 적는다.
+ */
+function vehicleHintFor(
+  status: SessionStatus,
+  count: number,
+  loaded: boolean,
+): string {
+  if (status === "unreachable") {
+    return "서버에 연결하지 못해 저장한 차량을 불러오지 못했어요. 값을 직접 입력하면 추천은 그대로 받을 수 있어요.";
+  }
+  if (status !== "authenticated") {
+    return "로그인하면 저장한 차량을 불러와요. 로그인 없이 값을 직접 입력해도 추천은 받을 수 있어요.";
+  }
+  if (!loaded) return "저장한 차량을 불러오는 중이에요.";
+  if (count === 0) {
+    return "저장한 차량이 아직 없어요. 차량을 추가하면 다음부터 값이 자동으로 채워져요.";
+  }
+  return "차량을 고르면 배터리 용량·충전기 출력·충전 방식이 채워져요.";
+}
+
 export function ChargeForm() {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(initialDraft);
   /** 제출을 한 번이라도 눌렀는지. 누르기 전에는 빨간 글씨를 띄우지 않는다. */
   const [submitted, setSubmitted] = useState(false);
   const defaults = useDefaultTimes();
+
+  const { status } = useSession();
+  const { vehicles, loaded: vehiclesLoaded } = useMyVehicles();
+  const [vehicleId, setVehicleId] = useState("");
+  /**
+   * 차량 값이 실린 칸을 사용자가 건드렸는지.
+   *
+   * 차량 목록은 마운트 뒤에 도착한다. 그 사이 이미 고쳐 둔 값을 기본 차량으로
+   * 덮어쓰면 방금 친 숫자가 눈앞에서 바뀐다.
+   */
+  const [specTouched, setSpecTouched] = useState(false);
 
   const conditions: Conditions = {
     ...draft,
@@ -99,6 +145,43 @@ export function ChargeForm() {
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
+
+  /** 차량이 정해 주는 칸을 직접 고치면, 그 뒤로는 기본 차량이 끼어들지 않는다. */
+  const setSpec = <K extends keyof Draft>(key: K, value: Draft[K]) => {
+    setSpecTouched(true);
+    set(key, value);
+  };
+
+  function applyVehicle(vehicle: Vehicle) {
+    setDraft((prev) => ({
+      ...prev,
+      batteryKwh: String(vehicle.battery_kwh),
+      chargerKw: String(vehicle.charger_kw),
+      mode: vehicle.mode,
+    }));
+  }
+
+  function pickVehicle(id: string) {
+    setVehicleId(id);
+    setSpecTouched(true);
+    const vehicle = vehicles.find((candidate) => candidate.id === id);
+    // 직접 입력으로 되돌릴 때 칸을 비우지 않는다. 고른 차의 값에서 조금만
+    // 고쳐 쓰는 경우가 흔한데, 비우면 처음부터 다시 쳐야 한다.
+    if (vehicle) applyVehicle(vehicle);
+  }
+
+  // 기본 차량을 처음 한 번만 채운다. 사용자가 이미 손댔으면 끼어들지 않는다.
+  const defaultVehicle = vehicles.find((vehicle) => vehicle.is_default);
+  if (defaultVehicle && vehicleId === "" && !specTouched) {
+    setVehicleId(defaultVehicle.id);
+    applyVehicle(defaultVehicle);
+  }
+
+  const canPickVehicle = vehicles.length > 0;
+  const vehicleHint = vehicleHintFor(status, vehicles.length, vehiclesLoaded);
+  const loggedIn = status === "authenticated";
+  const vehicleLinkHref = loggedIn ? "/me/vehicles" : `/login?next=${encodeURIComponent("/recommend")}`;
+  const vehicleLinkLabel = loggedIn ? (canPickVehicle ? "차량 관리" : "차량 추가") : "로그인";
 
   // 칸이 일곱 개뿐이라 렌더마다 다시 검사해도 된다. 대신 고치는 즉시 오류가 사라진다.
   const { errors, form } = validate(conditions);
@@ -128,19 +211,25 @@ export function ChargeForm() {
       <div className="relative">
         <SelectField
           label="내 차량"
-          defaultValue=""
-          disabled
+          value={vehicleId}
+          onChange={(event) => pickVehicle(event.target.value)}
+          disabled={!canPickVehicle}
           /* 못 누르는 칸이 눌리는 칸처럼 보이면 안 된다. 공유 컴포넌트는 못 고치니 여기서 입힌다. */
-          className="[&_select]:cursor-not-allowed [&_select]:text-ink-3"
-          hint="로그인 후 저장한 차량을 불러옵니다. 지금은 배터리 용량과 충전기 출력을 직접 입력해 주세요."
+          className={canPickVehicle ? "" : "[&_select]:cursor-not-allowed [&_select]:text-ink-3"}
+          hint={vehicleHint}
         >
           <option value="">차량 정보 직접 입력</option>
+          {vehicles.map((vehicle) => (
+            <option key={vehicle.id} value={vehicle.id}>
+              {vehicleOptionLabel(vehicle)}
+            </option>
+          ))}
         </SelectField>
         <Link
-          href="/me"
+          href={vehicleLinkHref}
           className="absolute right-0 top-0 text-sm font-bold text-brand underline underline-offset-4 hover:text-brand/80"
         >
-          차량 관리
+          {vehicleLinkLabel}
         </Link>
       </div>
 
@@ -154,7 +243,7 @@ export function ChargeForm() {
           suffix="kWh"
           inputMode="decimal"
           value={conditions.batteryKwh}
-          onChange={(event) => set("batteryKwh", event.target.value)}
+          onChange={(event) => setSpec("batteryKwh", event.target.value)}
           error={shown.batteryKwh}
         />
         <Field
@@ -162,7 +251,7 @@ export function ChargeForm() {
           suffix="kW"
           inputMode="decimal"
           value={conditions.chargerKw}
-          onChange={(event) => set("chargerKw", event.target.value)}
+          onChange={(event) => setSpec("chargerKw", event.target.value)}
           error={shown.chargerKw}
         />
       </div>
@@ -173,7 +262,7 @@ export function ChargeForm() {
         label="충전 방식"
         value={conditions.mode}
         options={MODE_OPTIONS}
-        onChange={(mode) => set("mode", mode)}
+        onChange={(mode) => setSpec("mode", mode)}
       />
 
       {/* 모바일 시안은 이 네 칸만 흰 카드로 묶는다. 데스크톱은 바깥 카드 하나뿐이라 배경을 지운다. */}

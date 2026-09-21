@@ -6,6 +6,8 @@ import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import { SessionProvider } from "@/components/auth/SessionProvider";
+
 import { ChargeForm } from "./ChargeForm";
 
 /*
@@ -24,6 +26,7 @@ vi.mock("next/navigation", () => ({
 
 const SUBMIT = "최적 시간 찾기";
 
+
 async function retype(user: UserEvent, label: string, value: string) {
   const input = screen.getByLabelText(label);
   await user.clear(input);
@@ -35,9 +38,36 @@ function setTime(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 
+/*
+ * 이 파일은 폼 자체(요약·검증·URL)만 본다. 차량 불러오기는 세션이 필요하고
+ * ChargeForm.vehicles.test.tsx가 따로 맡으므로, 여기서는 손님으로 고정해
+ * 차량 요청이 아예 안 나가게 둔다.
+ */
+function stubAnonymous() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ detail: "로그인이 필요합니다." }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+    ),
+  );
+}
+
+function Form() {
+  return (
+    <SessionProvider>
+      <ChargeForm />
+    </SessionProvider>
+  );
+}
+
 function setup() {
+  stubAnonymous();
   const user = userEvent.setup();
-  render(<ChargeForm />);
+  render(<Form />);
   return user;
 }
 
@@ -204,7 +234,8 @@ describe("ChargeForm", () => {
        * 같을 수가 없으니, 첫 렌더에 그 값을 쓰면 hydration이 깨진다. 눈으로는 잘 안
        * 보이고 콘솔 경고로만 남아서, 실제로 서버 HTML을 만들어 붙여 보고 확인한다.
        */
-      const html = renderToString(<ChargeForm />);
+      stubAnonymous();
+      const html = renderToString(<Form />);
       // 서버 HTML에 시각이 박혀 있으면 안 된다 — 박히는 순간 클라이언트 값과 어긋난다.
       expect(html).not.toMatch(/value="\d{4}-\d{2}-\d{2}T/);
 
@@ -217,7 +248,7 @@ describe("ChargeForm", () => {
         .spyOn(console, "error")
         .mockImplementation((...args: unknown[]) => void complaints.push(args));
 
-      const root = await act(async () => hydrateRoot(container, <ChargeForm />));
+      const root = await act(async () => hydrateRoot(container, <Form />));
 
       consoleError.mockRestore();
       expect(complaints).toEqual([]);
@@ -233,11 +264,11 @@ describe("ChargeForm", () => {
       expect(start.value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
     });
 
-    test("차량 선택은 아직 막혀 있고, 직접 입력하라고 알려준다", () => {
+    test("손님에게는 차량 선택이 막혀 있고, 직접 입력해도 된다고 알려준다", () => {
       setup();
-      // 백엔드 /api/me/vehicles가 501이다. 가짜 차량 목록을 넣지 않는다.
+      // 가짜 차량 목록을 넣지 않는다. 로그인해야 실제 차량이 온다.
       expect(screen.getByLabelText("내 차량")).toBeDisabled();
-      expect(screen.getByText(/로그인 후 저장한 차량/)).toBeInTheDocument();
+      expect(screen.getByText(/로그인 없이 값을 직접 입력해도/)).toBeInTheDocument();
     });
   });
 });

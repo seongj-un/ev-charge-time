@@ -139,3 +139,39 @@ describe("SessionProvider", () => {
     expect(() => render(<Probe />)).toThrow(/SessionProvider/);
   });
 });
+
+/*
+ * 백엔드가 꺼지면 Next rewrite 프록시가 500을 돌려준다 — fetch는 성공한다.
+ * "401만 손님"으로 판정하지 않으면 그 500이 손님으로 둔갑해서, 백엔드가 죽은
+ * 화면에 "로그인이 필요해요"가 뜬다. 사용자는 로그인을 시도하고 또 실패한다.
+ */
+describe("손님과 연결 실패를 가르는 기준", () => {
+  test("프록시가 준 500은 손님이 아니다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        async () => new Response("Internal Server Error", { status: 500 }),
+      ),
+    );
+    renderProbe();
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("unreachable"));
+  });
+
+  test("500 말고 다른 뜻밖의 상태도 손님으로 단정하지 않는다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => new Response("nope", { status: 502 })),
+    );
+    renderProbe();
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("unreachable"));
+  });
+
+  test("401만 손님이다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => json({ detail: "로그인이 필요합니다." }, 401)),
+    );
+    renderProbe();
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+  });
+});

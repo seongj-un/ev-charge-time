@@ -198,3 +198,67 @@ describe("apiDelete", () => {
     expect(JSON.parse(init.body)).toEqual({ password: "password123" });
   });
 });
+
+/*
+ * 백엔드가 꺼지면 브라우저 fetch는 성공한다. 죽은 건 업스트림이고, 그 사이에 있는
+ * Next의 rewrite 프록시가 500 + 평문 "Internal Server Error"를 돌려주기 때문이다.
+ * 그래서 "서버에 닿지 못했다"를 status 0으로만 판정하면 프록시 환경에서 절대 안 잡힌다.
+ */
+describe("백엔드가 죽었을 때", () => {
+  test("프록시가 준 500 평문은 연결 실패로 읽는다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        async () => new Response("Internal Server Error", { status: 500 }),
+      ),
+    );
+
+    const error = await apiGet("/api/me").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).message).toContain("서버에 연결하지 못했습니다");
+    expect((error as ApiError).unreachable).toBe(true);
+  });
+
+  test("fetch 자체가 터진 경우도 연결 실패다", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+
+    const error = await apiGet("/api/me").catch((e: unknown) => e);
+    expect((error as ApiError).unreachable).toBe(true);
+  });
+
+  test("서버가 제대로 답한 500은 그 메시지를 살린다", async () => {
+    // 백엔드가 살아 있고 진짜 서버 오류를 낸 경우다. 연결 문제로 둔갑시키면
+    // "백엔드를 켜세요"라는 엉뚱한 안내를 하게 된다.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        async () =>
+          new Response(JSON.stringify({ detail: "요금표를 읽지 못했습니다." }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    const error = await apiGet("/api/me").catch((e: unknown) => e);
+    expect((error as ApiError).message).toBe("요금표를 읽지 못했습니다.");
+    expect((error as ApiError).unreachable).toBe(false);
+  });
+
+  test("401은 연결 실패가 아니다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        async () =>
+          new Response(JSON.stringify({ detail: "로그인이 필요합니다." }), {
+            status: 401,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    const error = await apiGet("/api/me").catch((e: unknown) => e);
+    expect((error as ApiError).unreachable).toBe(false);
+    expect((error as ApiError).needsLogin).toBe(true);
+  });
+});
