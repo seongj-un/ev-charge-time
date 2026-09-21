@@ -8,3 +8,7 @@ class TariffConfigError(DomainError):
 
 class TariffNotConfiguredError(DomainError):
     """계산에 필요한 요금 값이 설정에 없다."""
+
+
+class InsufficientTimeError(DomainError):
+    """충전에 필요한 시간이 가능한 시간보다 길다."""
