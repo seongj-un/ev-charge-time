@@ -13,6 +13,10 @@ READ COMMITTED에서 두 요청이 같은 실패 카운트를 동시에 읽으�
 프로덕션과 똑같이 새 커넥션을 여는 진짜 경로를 그대로 태운다. 그 위에 여러
 OS 스레드로 동시에 로그인 실패를 보내 진짜 경합을 유도한다.
 
+(A-3) 이 패턴은 ``tests/conftest.py``의 ``concurrent`` 픽스처(``ConcurrentRequests``)로
+승격됐다. B-2(즐겨찾기 PUT 경쟁)도 같은 픽스처를 재사용한다 — 매번 스레드
+코드를 다시 짜지 않는다.
+
 동시 요청 수를 ``settings.login_max_attempts``와 똑같이 맞춘 이유: 그보다 많이
 보내면, 잠금이 걸린 *이후에* 시작되는 요청이 잠금 여부를 먼저 읽고 429로
 분기해(카운터를 증가시키지 않고) 빠지는 경로가 섞여 들어가 "최종 카운터 값"의
@@ -23,19 +27,14 @@ OS 스레드로 동시에 로그인 실패를 보내 진짜 경합을 유도한�
 
 from __future__ import annotations
 
-import threading
 import uuid
-
-from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session as DbSession
 
 from evcharge.infra.models import LoginAttempt, User
 from evcharge.infra.security import hash_password
-from evcharge.main import create_app
 from evcharge.settings import get_settings
 
 
-def test_concurrent_failed_logins_increment_the_counter_atomically(test_engine):
+def test_concurrent_failed_logins_increment_the_counter_atomically(concurrent):
     settings = get_settings()
     concurrency = settings.login_max_attempts
     email = f"lockout-race-{uuid.uuid4().hex}@example.com"
@@ -43,7 +42,7 @@ def test_concurrent_failed_logins_increment_the_counter_atomically(test_engine):
     # 실제 커넥션으로 직접 커밋 — db_session(SAVEPOINT) 픽스처를 쓰지 않는다.
     # 동시에 여는 요청들의 세션과 이 세션이 서로 다른 진짜 트랜잭션이어야
     # 경쟁을 재현할 수 있다.
-    setup_session = DbSession(bind=test_engine)
+    setup_session = concurrent.session()
     try:
         setup_session.add(
             User(
@@ -61,32 +60,14 @@ def test_concurrent_failed_logins_increment_the_counter_atomically(test_engine):
     finally:
         setup_session.close()
 
-    # get_session 오버라이드가 없는 진짜 앱 — 요청마다 infra.db.get_session()이
-    # 새 커넥션을 연다(conftest의 client 픽스처처럼 세션을 공유하지 않는다).
-    app = create_app()
-
-    results: list[int] = []
-    results_lock = threading.Lock()
-
-    def attempt_login() -> None:
-        # 스레드마다 자기 TestClient를 써서 쿠키 저장소 등 클라이언트 쪽 상태를
-        # 공유하지 않게 한다 — 서버 쪽 동시성만 측정하고 싶다.
-        thread_client = TestClient(app)
-        response = thread_client.post(
+    def attempt_login(client):
+        return client.post(
             "/api/auth/login",
             json={"email": email, "password": "wrong-password"},
-        )
-        with results_lock:
-            results.append(response.status_code)
-
-    threads = [threading.Thread(target=attempt_login) for _ in range(concurrency)]
+        ).status_code
 
     try:
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=15)
-            assert not t.is_alive(), "로그인 요청 스레드가 제한 시간 안에 끝나지 않았다"
+        results = concurrent.run(attempt_login, count=concurrency)
 
         assert results == [401] * concurrency, (
             f"동시 로그인 실패 {concurrency}건 중 일부가 401이 아니다: {results}. "
@@ -94,7 +75,7 @@ def test_concurrent_failed_logins_increment_the_counter_atomically(test_engine):
             "429가 섞였다면 카운터가 예상보다 먼저 임계값에 도달했다는 뜻이다."
         )
 
-        verify_session = DbSession(bind=test_engine)
+        verify_session = concurrent.session()
         try:
             attempt = verify_session.get(LoginAttempt, email)
         finally:
@@ -111,7 +92,7 @@ def test_concurrent_failed_logins_increment_the_counter_atomically(test_engine):
             "failed_count가 login_max_attempts에 도달했는데 잠기지 않았다."
         )
     finally:
-        cleanup_session = DbSession(bind=test_engine)
+        cleanup_session = concurrent.session()
         try:
             cleanup_session.query(LoginAttempt).filter_by(email=email).delete()
             cleanup_session.query(User).filter_by(email=email).delete()

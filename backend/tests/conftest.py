@@ -17,10 +17,14 @@ conftest를 거치지 않는 다른 모듈의 자체 fixture
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from typing import TypeVar
 from urllib.parse import urlsplit, urlunsplit
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
@@ -29,6 +33,8 @@ from sqlalchemy.orm import Session as DbSession
 from evcharge.infra.db import Base, get_session
 from evcharge.main import create_app
 from evcharge.settings import get_settings
+
+_T = TypeVar("_T")
 
 _SKIP_MSG = "PostgreSQL이 떠 있지 않습니다 (docker compose up -d db)"
 _TEST_DB_NAME = "evcharge_test"
@@ -156,3 +162,71 @@ def client(request: pytest.FixtureRequest) -> Iterator[TestClient]:
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
+
+
+@dataclass
+class ConcurrentRequests:
+    """진짜 동시 요청을 재현하는 헬퍼(A-3).
+
+    ``client``/``db_session``은 테스트 하나당 커넥션 하나를 SAVEPOINT로 감싸
+    공유하는 구조라, 여러 요청을 보내도 실제로는 같은 커넥션·같은 트랜잭션을
+    순차적으로 타므로 진짜 경쟁(서로 다른 커넥션이 동시에 같은 행을 읽고 쓰는
+    상황)을 재현할 수 없다. 잠금 경쟁(로그인 실패 카운터) 검증을 위해 처음
+    만들었던 패턴 — ``get_session`` 오버라이드가 없는 진짜 앱을 만들어 요청마다
+    프로덕션과 똑같이 새 커넥션을 열게 하고, 그 위에 여러 OS 스레드로 동시에
+    요청을 보내는 것 — 을 여기로 승격해서 재사용 가능하게 한다.
+    """
+
+    app: FastAPI
+    engine: Engine
+
+    def client(self) -> TestClient:
+        """독립 쿠키 저장소를 가진 새 ``TestClient``. 스레드마다 하나씩 써야
+        한다 — 같은 클라이언트를 여러 스레드가 공유하면 쿠키 jar가 섞인다."""
+        return TestClient(self.app)
+
+    def session(self) -> DbSession:
+        """``get_session`` 오버라이드 없이, 셋업·검증·정리용으로 직접 여는
+        진짜 커넥션 세션. ``db_session``(SAVEPOINT) 픽스처를 거치지 않으므로
+        여기서 커밋한 것은 테스트가 끝나도 자동으로 롤백되지 않는다 — 호출자가
+        직접 지워야 한다."""
+        return DbSession(bind=self.engine)
+
+    def run(
+        self, fn: Callable[[TestClient], _T], count: int, timeout: float = 15.0
+    ) -> list[_T]:
+        """``fn``을 ``count``개의 진짜 스레드에서, 스레드마다 독립 클라이언트로
+        동시에 실행하고 결과를 모아 돌려준다(완료 순서 — 요청 자체가 서로
+        무순서로 겹치는 것이 목적이므로 호출 순서를 보장하지 않는다)."""
+        results: list[_T] = []
+        errors: list[BaseException] = []
+        lock = threading.Lock()
+
+        def _worker() -> None:
+            try:
+                result = fn(self.client())
+            except BaseException as exc:  # noqa: BLE001 - 스레드 예외를 메인으로 옮기려는 의도
+                with lock:
+                    errors.append(exc)
+                return
+            with lock:
+                results.append(result)
+
+        threads = [threading.Thread(target=_worker) for _ in range(count)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=timeout)
+            assert not t.is_alive(), "동시 요청 스레드가 제한 시간 안에 끝나지 않았다"
+
+        if errors:
+            raise errors[0]
+
+        return results
+
+
+@pytest.fixture
+def concurrent(test_engine: Engine) -> ConcurrentRequests:
+    """``get_session`` 오버라이드가 없는 진짜 앱 + 진짜 엔진으로 동시 요청을
+    보낼 수 있게 해주는 픽스처. 사용법은 ``ConcurrentRequests`` 참고."""
+    return ConcurrentRequests(app=create_app(), engine=test_engine)

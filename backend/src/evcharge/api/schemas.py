@@ -1,15 +1,29 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
 
 from ..domain.pricing import KST
 
 Mode = Literal["self_low", "self_high", "public_fast"]
 Band = Literal["light", "middle", "peak"]
 Season = Literal["summer", "spring_fall", "winter"]
+
+
+def _to_kst_isoformat(value: datetime) -> str:
+    """DB/도메인에서 어떤 tzinfo로 오든, 응답 시각은 항상 +09:00으로 (API 명세서 1장)."""
+    return value.astimezone(KST).isoformat()
+
+
+# A-2: KST 직렬화 공용 처리. datetime 필드를 가진 응답 스키마마다 개별
+# field_serializer를 따로 붙이던 것(UserOut.created_at, SavedPlanOut.created_at이
+# 서로 모르는 채 같은 버그를 두 번 고쳤다)을 타입 별칭 하나로 대체한다.
+# 필드 타입을 KstDatetime으로 선언하기만 하면 자동으로 +09:00이 보장되고,
+# `KstDatetime | None`으로도 그대로 조합된다 (None은 이 직렬화기를 타지 않고
+# 그대로 null로 나간다).
+KstDatetime = Annotated[datetime, PlainSerializer(_to_kst_isoformat, return_type=str)]
 
 
 class HealthResponse(BaseModel):
@@ -65,16 +79,14 @@ class RecommendRequest(BaseModel):
 
 
 class ChargePlanOut(BaseModel):
-    start: datetime
-    end: datetime
+    # 도메인이 이미 KST aware datetime을 넘기므로 astimezone(KST)는 사실상
+    # no-op이지만, 공용 KstDatetime을 그대로 써서 "응답의 datetime은 항상
+    # +09:00" 규칙을 여기서도 따로 기억하지 않게 한다.
+    start: KstDatetime
+    end: KstDatetime
     energy_kwh: float
     cost_won: int
     discounted_kwh: float
-
-    @field_serializer("start", "end")
-    def _as_kst(self, value: datetime) -> str:
-        """응답 시각은 항상 +09:00을 달고 나간다 (API 명세서 1장)."""
-        return value.astimezone(KST).isoformat()
 
 
 class RecommendResponse(BaseModel):
@@ -108,12 +120,7 @@ class UserOut(BaseModel):
     id: str
     email: str
     nickname: str | None = None
-    created_at: datetime | None = None
-
-    @field_serializer("created_at")
-    def _as_kst(self, value: datetime | None) -> str | None:
-        """응답 시각은 항상 +09:00을 달고 나간다 (API 명세서 1장)."""
-        return None if value is None else value.astimezone(KST).isoformat()
+    created_at: KstDatetime | None = None
 
 
 class VehicleIn(BaseModel):
@@ -128,20 +135,58 @@ class VehicleOut(VehicleIn):
     id: str
 
 
+class VehicleUpdate(BaseModel):
+    """PATCH 전용(C-2): 보낸 필드만 반영하는 부분 갱신.
+
+    ``VehicleIn``을 그대로 재사용하면 ``is_default``·``mode``에 기본값이 있어서,
+    예를 들어 이름만 바꾸려고 ``is_default``를 빼고 보내면 그 기본값(False)이
+    실려서 기존 기본 차량이 조용히 해제됐다. 전 필드를 optional로 두고
+    라우터가 ``exclude_unset=True``로 실제로 실린 필드만 골라 반영한다.
+    """
+
+    name: str | None = None
+    battery_kwh: float | None = Field(default=None, gt=0)
+    charger_kw: float | None = Field(default=None, gt=0)
+    mode: Mode | None = None
+    is_default: bool | None = None
+
+
 class ChargerOut(BaseModel):
     charger_id: str
     type: str
     capacity_kw: float
     status: str
-    status_updated_at: datetime | None = None
+    status_updated_at: KstDatetime | None = None
 
 
-class StationOut(BaseModel):
+class StationBase(BaseModel):
+    """F-07(주변 충전소)과 F-14(즐겨찾기 목록)가 실제로 공유하는 것만 (C-1)."""
+
     station_id: str
-    # F-07(주변 충전소 조회)이 채우는 캐시 파생 필드. F-14 즐겨찾기 목록은
-    # charger_cache에 아직 없는 station_id도 유효하게 보여줘야 하므로
-    # (즐겨찾기 자체는 station_id만으로 성립), 전부 선택 필드로 둔다 — 캐시가
-    # 없으면 station_id만 채우고 나머지는 비운 채 응답한다.
+    is_favorite: bool | None = None
+
+
+class StationOut(StationBase):
+    """F-07 주변 충전소 조회 응답. 캐시(charger_cache)가 항상 채워져 있는
+    경로라 이 필드들은 전부 필수다 — F-14가 캐시 미적중을 표현하려고 예전에
+    전부 optional로 완화했던 것을 원래 계약으로 되돌린다(C-1)."""
+
+    name: str
+    address: str
+    lat: float
+    lng: float
+    distance_m: int
+    operator: str
+    available_hours: str
+    chargers: list[ChargerOut] = Field(default_factory=list)
+
+
+class FavoriteStationOut(StationBase):
+    """F-14 즐겨찾기 목록 응답. charger_cache에 아직 없는 station_id도
+    즐겨찾기 자체는 station_id만으로 유효하게 성립하므로, 캐시 유래 필드는
+    전부 optional이다 — 캐시 미적중이면 빈 문자열/0이 아니라 None(JSON null)이
+    나간다. F-07이 구현되어 캐시가 채워지면 값이 실린다(C-1)."""
+
     name: str | None = None
     address: str | None = None
     lat: float | None = None
@@ -149,21 +194,15 @@ class StationOut(BaseModel):
     distance_m: int | None = None
     operator: str | None = None
     available_hours: str | None = None
-    is_favorite: bool | None = None
     chargers: list[ChargerOut] = Field(default_factory=list)
 
 
 class SavedPlanOut(BaseModel):
     id: str
-    created_at: datetime
+    created_at: KstDatetime
     request: RecommendRequest
     result: RecommendResponse
     tariff_version: str
-
-    @field_serializer("created_at")
-    def _as_kst(self, value: datetime) -> str:
-        """DB(TIMESTAMPTZ)에서 온 값이 어떤 tzinfo든 응답은 항상 +09:00으로 (API 명세서 1장)."""
-        return value.astimezone(KST).isoformat()
 
 
 class SavedPlanPage(BaseModel):
