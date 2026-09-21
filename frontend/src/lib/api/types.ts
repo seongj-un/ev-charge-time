@@ -185,3 +185,43 @@ export type PlanSummary = {
   count: number;
   total_savings_won: number;
 };
+
+// ── 태양광 발전 예측 (F-09) ─────────────────────────────────────────────
+
+export type SolarHour = {
+  hour: number;
+  /** 구름·강수를 반영한 수평면 전일사량 (W/m²). 모델의 실제 출력. */
+  ghi_wm2: number;
+  /** 같은 시각의 맑은날 값. 구름이 얼마나 깎았는지 보여준다. */
+  clear_sky_ghi_wm2: number;
+  /** STC(1000 W/m²) 대비 0~1. **차트에 겹칠 값은 이것이다.** */
+  output_index: number;
+  /**
+   * 지역 발전량(MWh).
+   *
+   * ⚠️ **지금은 항상 null이다.** 물리 모델이 내는 건 단위면적당 일사량이고,
+   * MWh로 바꾸려면 지역 태양광 설비용량 자료가 필요한데 없다. 없는 자료로
+   * 숫자를 지어내지 않기로 했다 (API 명세서 7-8). 이 값을 기대하는 코드를
+   * 만들지 마라 — 설비용량이 들어오면 API 변경 없이 채워진다.
+   */
+  predicted_mwh: number | null;
+  /** 기상청 원본 코드. 감쇠가 맞는지 사람이 되짚을 수 있게 그대로 싣는다. */
+  sky: string;
+  pty: string;
+};
+
+export type SolarForecast = {
+  region: string;
+  day: string;
+  model_version: string;
+  hours: SolarHour[];
+  /** 어느 격자를 썼는지. 한 격자가 시도 전체를 대신한다는 사실을 숨기지 않는다. */
+  grid_nx: number;
+  grid_ny: number;
+  base_date: string;
+  base_time: string;
+  installed_capacity_mw: number | null;
+  capacity_source: string | null;
+  /** 이 값을 어떤 전제로 냈는지. 화면에 그대로 보여준다. */
+  assumptions: string[];
+};

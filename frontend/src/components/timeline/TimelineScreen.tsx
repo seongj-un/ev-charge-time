@@ -3,14 +3,20 @@
 import { useEffect, useState } from "react";
 
 import { BandLegend, PriceBarChart } from "@/components/chart/PriceBarChart";
+import { SolarOverlay } from "@/components/chart/SolarOverlay";
 import { PageContainer } from "@/components/shell/AppShell";
 import { Badge } from "@/components/ui/Badge";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { ApiError } from "@/lib/api/client";
-import { fetchHealth, fetchTimeline } from "@/lib/api/endpoints";
-import { MODE_LABEL, type Mode, type TimelineResponse } from "@/lib/api/types";
+import { fetchHealth, fetchSolarForecast, fetchTimeline } from "@/lib/api/endpoints";
+import {
+  MODE_LABEL,
+  type Mode,
+  type SolarForecast,
+  type TimelineResponse,
+} from "@/lib/api/types";
 import { unverifiedNotice } from "@/lib/tariff";
 
 import { DayStepper } from "./DayStepper";
@@ -47,6 +53,9 @@ type Load =
   | { status: "error"; message: string };
 
 const MARKER_LABEL = "최저 단가";
+
+/** 대회가 빛가람(나주)이라 전남으로 고정한다. 지역 선택을 넣으면 상태로 올린다. */
+const SOLAR_REGION = "전남";
 
 export function TimelineScreen({
   initialDay,
@@ -94,6 +103,45 @@ export function TimelineScreen({
    * "잠정치다"라고 단정하면 그것도 근거 없는 말이다.
    */
   const [tariffNote, setTariffNote] = useState<string | null>(null);
+
+  /**
+   * 태양광 예측. 버튼을 켤 때만 부른다 — 기상청 호출이라 늘 받아둘 이유가 없다.
+   *
+   * 지역은 지금 전남으로 고정한다. 대회가 빛가람(나주)이고 화면에 지역 선택이
+   * 없다. 선택을 넣게 되면 이 상수를 상태로 올리면 된다.
+   */
+  const [solarOn, setSolarOn] = useState(false);
+  const [solar, setSolar] = useState<SolarForecast | null>(null);
+  const [solarFailed, setSolarFailed] = useState(false);
+
+  useEffect(() => {
+    if (!solarOn || day === null) return;
+    let alive = true;
+    fetchSolarForecast({ region: SOLAR_REGION, day })
+      .then((forecast) => {
+        if (alive) setSolar(forecast);
+      })
+      .catch(() => {
+        // 켤 수 없으면 켜진 척하지 않는다 — 빈 오버레이가 "해가 없다"로 읽힌다.
+        if (!alive) return;
+        setSolar(null);
+        setSolarFailed(true);
+        setSolarOn(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [solarOn, day]);
+
+  /*
+   * 버튼 상태는 저장하지 않고 파생시킨다. 따로 들고 있으면 세 상태가 어긋나는
+   * 경우(켜졌는데 loading, 꺼졌는데 ready 같은)를 손으로 막아야 한다.
+   */
+  const solarState: "ready" | "loading" | "unavailable" = solarFailed
+    ? "unavailable"
+    : solarOn && solar === null
+      ? "loading"
+      : "ready";
 
   useEffect(() => {
     let alive = true;
@@ -240,6 +288,14 @@ export function TimelineScreen({
                 labelEvery={isDesktop ? 1 : 6}
                 plotHeight={isDesktop ? 360 : 190}
               />
+              {solarOn && solar ? (
+                <SolarOverlay
+                  className="mt-4"
+                  hours={solar.hours}
+                  columns={hours.map((item) => item.hour)}
+                  assumptions={solar.assumptions}
+                />
+              ) : null}
               <BandLegend
                 keys={presentBandKeys(hours)}
                 markers={[{ label: MARKER_LABEL, tone: "ink" }]}
@@ -251,7 +307,11 @@ export function TimelineScreen({
           )}
 
           <div className="mt-6 hidden lg:block">
-            <SolarOverlayButton />
+            <SolarOverlayButton
+              on={solarOn}
+              state={solarState}
+              onToggle={() => setSolarOn((value) => !value)}
+            />
           </div>
         </Card>
 
@@ -281,7 +341,11 @@ export function TimelineScreen({
 
         {/* 모바일에서는 맨 아래. 데스크톱 자리는 차트 카드 안이라 여기선 숨긴다. */}
         <div className="lg:hidden">
-          <SolarOverlayButton />
+          <SolarOverlayButton
+            on={solarOn}
+            state={solarState}
+            onToggle={() => setSolarOn((value) => !value)}
+          />
         </div>
       </div>
     </PageContainer>
