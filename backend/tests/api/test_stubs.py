@@ -9,9 +9,9 @@ import pytest
 # 제대로 달렸는지 확인할 수 없다.
 #
 # 차량(vehicles) 엔드포인트는 F-12로 구현되어 더 이상 스텁이 아니다
-# (tests/api/test_vehicles.py 참고). OpenAPI 등록 확인만 아래에서 계속한다.
+# (tests/api/test_vehicles.py 참고). 주변 충전소도 F-07로 구현됐다
+# (tests/api/test_chargers.py 참고). OpenAPI 등록 확인만 아래에서 계속한다.
 STUB_ENDPOINTS = [
-    ("GET", "/api/chargers?lat=35.0&lng=126.7", "/api/chargers", None),
     ("GET", "/api/solar-forecast?region=전남&day=2026-10-17", "/api/solar-forecast", None),
     ("POST", "/api/chat", "/api/chat", {"message": "내일 출근 전까지 80% 채우려면?"}),
 ]
@@ -29,6 +29,7 @@ IMPLEMENTED = [
     "/api/me/plans",
     "/api/me/plans/summary",
     "/api/me/plans/{plan_id}",
+    "/api/chargers",
 ]
 
 
