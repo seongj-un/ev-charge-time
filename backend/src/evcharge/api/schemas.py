@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -75,6 +75,29 @@ class TimelineResponse(BaseModel):
     hours: list[HourPriceOut]
 
 
+# I-4: 탐색 구간 상한. 인증 없이 도달 가능한 POST /api/recommend가 구간에
+# 상한이 없어 리뷰어 실측으로 9년 구간(스키마가 연도 9999도 그대로 받는다)
+# = 12.6초/265MB/후보 315,533개를 냈다 — curl 한 줄로 워커를 수 분간 묶고
+# OOM까지 갈 수 있는 DoS였다.
+#
+# 도메인(planner)이 아니라 여기(스키마)에 두는 이유: 이 상한은 "이 계산이
+# 수학적으로 틀렸다"는 도메인 규칙이 아니라 "이 값을 HTTP로 노출하는 서비스를
+# 무제한 계산으로부터 보호한다"는 API 경계의 정책이다. 도메인은 HTTP도,
+# 인증 여부도, 무엇이 "정상적인 사용"인지도 모른다 — 9년 구간도 수학적으로는
+# 정확히 계산해낸다(그냥 느릴 뿐). 반대로 soc_target/soc_now 순서나
+# deadline/earliest_start 순서 같은, "입력 자체의 앞뒤가 맞는지"는 같은
+# _check_ranges에서 이미 스키마가 보고 있다 — 도메인(ChargeRequest)은 그런
+# 정합성을 스스로 검증하지 않고 받은 그대로 계산한다. 이 상한도 같은 성격의
+# "입력이 서비스가 감당할 범위인지" 검사라 같은 자리에 둔다.
+#
+# 값(14일) 근거: 기능 명세 시나리오 A(퇴근 후 귀가 → 다음날 출근 전)와 주말
+# 낮 구간이 실제 용례의 전부다 — 며칠을 넘는 "계획"은 이 서비스가 답하려는
+# 질문이 아니다. 그래도 여행 중 숙소에 며칠 머무는 것 같은 정당한 장기 사용을
+# 막지 않도록 넉넉히 14일로 잡았다. 리뷰어 실측 기준 90일 구간(0.35초/8,573
+# 후보)에도 크게 못 미쳐 부하 걱정 없이 여유가 있다.
+MAX_REQUEST_SPAN = timedelta(days=14)
+
+
 class RecommendRequest(BaseModel):
     battery_kwh: float | None = Field(default=None, gt=0)
     soc_now: float = Field(ge=0, lt=100)
@@ -104,6 +127,11 @@ class RecommendRequest(BaseModel):
             raise ValueError("soc_target은 soc_now보다 커야 합니다.")
         if self.deadline <= self.earliest_start:
             raise ValueError("deadline은 earliest_start보다 뒤여야 합니다.")
+        if self.deadline - self.earliest_start > MAX_REQUEST_SPAN:
+            raise ValueError(
+                f"earliest_start와 deadline 사이는 {MAX_REQUEST_SPAN.days}일을 "
+                "넘을 수 없습니다."
+            )
         return self
 
 

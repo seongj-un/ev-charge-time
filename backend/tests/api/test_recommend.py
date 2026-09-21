@@ -96,6 +96,40 @@ def test_vehicle_id_requires_login(client):
     assert response.status_code == 401
 
 
+# ── I-4: 요청 기간 상한 ──────────────────────────────────────────────────
+#
+# 리뷰어 실측: 9년 구간 = 12.6초/265MB/후보 315,533개, 인증이 필요 없는
+# POST /api/recommend에서. 상한값(14일) 근거는 fix-batch-5-report.md 참고 —
+# 이 서비스의 실제 용례(퇴근 후 귀가 → 다음날 출근, 주말 낮 구간)는 며칠을
+# 넘지 않지만, 정당한 사용(예: 여행 중 숙소에 며칠 머물며 미리 계획)을 막지
+# 않도록 여유를 뒀다.
+
+
+def test_span_at_the_cap_boundary_is_200(client):
+    response = post(
+        client,
+        earliest_start="2026-10-01T00:00",
+        deadline="2026-10-15T00:00",  # earliest_start로부터 정확히 14일
+    )
+    assert response.status_code == 200
+
+
+def test_span_one_minute_over_the_cap_is_422(client):
+    response = post(
+        client,
+        earliest_start="2026-10-01T00:00",
+        deadline="2026-10-15T00:01",  # 14일 + 1분
+    )
+    assert response.status_code == 422
+
+
+def test_extreme_span_is_rejected_immediately_not_computed(client):
+    """9999년 deadline(스키마가 그대로 받던 값)도 계산 없이 즉시 422여야
+    한다 — 계산이 시작되면 그 자체로 리소스 소모(DoS)가 이미 일어난 것."""
+    response = post(client, earliest_start="2026-01-01T00:00", deadline="9999-12-31T00:00")
+    assert response.status_code == 422
+
+
 def test_guest_recommend_never_opens_a_db_session(monkeypatch):
     """vehicle_id가 없는 게스트 요청은 DB 세션을 아예 열지 않아야 한다.
 
