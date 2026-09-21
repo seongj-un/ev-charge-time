@@ -109,8 +109,10 @@ export function PriceBarChart({
                 }}
               />
               {hovered === index ? (
+                // 같은 내용이 버튼의 접근명에 이미 들어 있다. 두 번 읽히지 않게 숨긴다.
                 <div
-                  role="presentation"
+                  aria-hidden
+                  data-chart-tooltip
                   className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-ink px-2.5 py-1.5 text-xs font-bold text-white shadow-lg"
                 >
                   <span className="tnum">{column.hour}시</span> ·{" "}

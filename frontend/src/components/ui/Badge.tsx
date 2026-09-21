@@ -2,6 +2,11 @@ import type { ReactNode } from "react";
 
 /**
  * 알약 배지. 부하구간(경부하 등)과 충전기 상태(사용 가능 등)에 같은 모양을 쓴다.
+ *
+ * ⚠️ `className="hidden lg:..."`로 숨으려 하면 안 숨는다 — Tailwind v4 출력에서
+ * `.inline-flex`가 `.hidden`보다 뒤에 있어 이긴다. 래퍼로 감싸라:
+ *     <span className="hidden lg:block"><Badge … /></span>
+ * Button.tsx에 같은 설명이 더 길게 적혀 있다.
  */
 type Tone = "ok" | "warn" | "off" | "ink" | "outline";
 

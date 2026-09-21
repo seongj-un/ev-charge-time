@@ -24,6 +24,19 @@ const SIZE: Record<Size, string> = {
   lg: "h-14 px-6 text-base",
 };
 
+/*
+ * ⚠️ 이 버튼을 `className="hidden lg:..."`로 숨기려 하면 안 숨겨진다.
+ *
+ * Tailwind v4가 내보내는 CSS에서 `.hidden`이 `.inline-flex`보다 앞에 나온다.
+ * 특정도가 같으니 뒤에 있는 `.inline-flex`가 이긴다. class 속성의 순서는
+ * 아무 상관이 없다 — 출력 CSS의 순서가 정한다.
+ *
+ * 숨기려면 표시 속성을 다투지 않는 래퍼로 감싼다:
+ *     <div className="hidden lg:block"><ButtonLink … /></div>
+ *
+ * 반대 방향(`lg:hidden`)은 변형이 뒤에 나오므로 그냥 동작한다.
+ * Badge도 같은 이유로 같은 함정이 있다.
+ */
 const BASE =
   "inline-flex items-center justify-center gap-2 rounded-pill font-bold transition-colors " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand " +

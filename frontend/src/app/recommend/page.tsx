@@ -1,0 +1,61 @@
+import type { Metadata } from "next";
+
+import { ChargeForm } from "@/components/recommend/ChargeForm";
+import { PageContainer } from "@/components/shell/AppShell";
+import { BoltIcon } from "@/components/shell/icons";
+import { SERVICE_NAME } from "@/components/shell/nav";
+import { Card } from "@/components/ui/Card";
+
+export const metadata: Metadata = {
+  title: "충전 시간 추천",
+  description:
+    "배터리 용량과 충전기 출력, 원하는 충전량과 시간대를 넣으면 가장 싼 충전 시각을 찾아드립니다.",
+};
+
+/** 데스크톱 시안(p-15)의 오른쪽 안내 카드. 모바일 시안에는 없어서 lg에서만 띄운다. */
+const GUIDES = [
+  {
+    title: "이렇게 찾아요",
+    body: "시작 가능 시각부터 완료 시각 사이에서, 계절·요일·시간대 요금과 주말 할인을 따져 가장 싼 구간을 골라요.",
+  },
+  {
+    title: "계산 가정",
+    body: "충전 출력은 일정하고, 한 번에 이어서 충전한다고 봐요. 기본요금은 빼고 계산해요.",
+  },
+];
+
+export default function RecommendPage() {
+  return (
+    <PageContainer className="pb-6">
+      {/* 모바일에는 상단 내비가 없다(탭바가 대신한다). 그래서 로고를 화면이 직접 단다. */}
+      <p className="flex items-center gap-2 text-sm font-bold text-ink lg:hidden">
+        <BoltIcon className="size-5 text-brand" />
+        {SERVICE_NAME}
+      </p>
+
+      {/*
+       * 데스크톱에서는 카드 제목 "충전 조건 입력"이 눈에 보이는 머리글이지만,
+       * 화면 전체의 이름은 여전히 이 문장이다. 지우지 않고 sr-only로 남겨
+       * 어느 폭에서든 h1이 하나씩 있게 한다.
+       */}
+      <h1 className="mt-3 text-[28px] font-bold leading-[1.25] tracking-tight lg:sr-only lg:mt-0">
+        언제 충전하면
+        <br />
+        가장 쌀까요?
+      </h1>
+
+      <div className="mt-6 lg:mt-0 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">
+        <ChargeForm />
+
+        <aside className="hidden lg:flex lg:flex-col lg:gap-4">
+          {GUIDES.map((guide) => (
+            <Card key={guide.title} tone="sunken" className="p-5">
+              <h2 className="text-sm font-bold text-ink">{guide.title}</h2>
+              <p className="mt-2 text-sm leading-relaxed text-ink-2">{guide.body}</p>
+            </Card>
+          ))}
+        </aside>
+      </div>
+    </PageContainer>
+  );
+}

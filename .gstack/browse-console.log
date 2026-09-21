@@ -1,0 +1,75 @@
+[2026-09-21T07:56:44.551Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-09-21T07:56:44.597Z] [log] [HMR] connected
+[2026-09-21T07:56:50.216Z] [log] [Fast Refresh] rebuilding
+[2026-09-21T07:56:50.286Z] [log] [Fast Refresh] done in 19ms
+[2026-09-21T07:56:50.320Z] [log] [Fast Refresh] done in 19ms
+[2026-09-21T07:56:55.696Z] [log] [Fast Refresh] rebuilding
+[2026-09-21T07:56:55.751Z] [log] [Fast Refresh] done in 17ms
+[2026-09-21T07:56:55.805Z] [log] [Fast Refresh] done in 17ms
+[2026-09-21T07:56:58.221Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-09-21T07:56:58.226Z] [log] [HMR] connected
+[2026-09-21T07:57:09.936Z] [log] [Fast Refresh] rebuilding
+[2026-09-21T07:57:09.986Z] [log] [Fast Refresh] done in 5ms
+[2026-09-21T07:57:10.048Z] [log] [Fast Refresh] done in 5ms
+[2026-09-21T07:57:10.079Z] [log] [Fast Refresh] done in 5ms
+[2026-09-21T07:57:12.166Z] [log] [Fast Refresh] done in 5ms
+[2026-09-21T07:57:12.247Z] [log] [Fast Refresh] done in 5ms
+[2026-09-21T07:57:12.322Z] [log] [Fast Refresh] done in 5ms
+[2026-09-21T07:57:12.364Z] [log] [Fast Refresh] done in 5ms
+[2026-09-21T07:57:12.617Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-09-21T07:57:12.622Z] [log] [HMR] connected
+[2026-09-21T07:57:17.848Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-09-21T07:57:17.855Z] [log] [HMR] connected
+[2026-09-21T07:57:20.980Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-09-21T07:57:20.992Z] [log] [HMR] connected
+[2026-09-21T07:57:21.011Z] [error] Failed to load resource: the server responded with a status of 422 (Unprocessable Content)
+[2026-09-21T07:57:21.012Z] [error] Failed to load resource: the server responded with a status of 422 (Unprocessable Content)
+[2026-09-21T07:57:49.363Z] [log] [Fast Refresh] rebuilding
+[2026-09-21T07:57:49.365Z] [log] [Fast Refresh] done in 21ms
+[2026-09-21T07:57:49.415Z] [log] [Fast Refresh] done in 21ms
+[2026-09-21T07:57:49.437Z] [error] Failed to load resource: the server responded with a status of 422 (Unprocessable Content)
+[2026-09-21T07:57:49.476Z] [log] [Fast Refresh] done in 21ms
+[2026-09-21T07:57:49.477Z] [error] Failed to load resource: the server responded with a status of 422 (Unprocessable Content)
+[2026-09-21T07:57:49.537Z] [log] [Fast Refresh] done in 21ms
+[2026-09-21T07:57:49.577Z] [log] [Fast Refresh] done in 21ms
+[2026-09-21T07:57:49.630Z] [log] [Fast Refresh] done in 21ms
+[2026-09-21T07:57:49.828Z] [log] [Fast Refresh] done in 21ms
+[2026-09-21T07:57:50.002Z] [log] [Fast Refresh] done in 21ms
+[2026-09-21T07:57:52.174Z] [log] [Fast Refresh] rebuilding
+[2026-09-21T07:57:52.182Z] [log] [Fast Refresh] done in 18ms
+[2026-09-21T07:57:52.265Z] [log] [Fast Refresh] done in 18ms
+[2026-09-21T07:57:52.270Z] [error] Failed to load resource: the server responded with a status of 422 (Unprocessable Content)
+[2026-09-21T07:57:52.326Z] [log] [Fast Refresh] done in 18ms
+[2026-09-21T07:57:52.377Z] [log] [Fast Refresh] done in 18ms
+[2026-09-21T07:57:52.449Z] [log] [Fast Refresh] done in 18ms
+[2026-09-21T07:57:52.993Z] [log] [Fast Refresh] done in 18ms
+[2026-09-21T07:57:54.148Z] [log] [Fast Refresh] done in 18ms
+[2026-09-21T07:57:58.283Z] [log] [Fast Refresh] done in 18ms
+[2026-09-21T07:57:58.361Z] [log] [Fast Refresh] done in 18ms
+[2026-09-21T07:57:58.411Z] [log] [Fast Refresh] done in 18ms
+[2026-09-21T07:57:58.703Z] [log] [Fast Refresh] done in 18ms
+[2026-09-21T07:58:13.037Z] [log] [Fast Refresh] rebuilding
+[2026-09-21T07:58:13.044Z] [log] [Fast Refresh] done in 13ms
+[2026-09-21T07:58:13.366Z] [log] [Fast Refresh] done in 13ms
+[2026-09-21T07:58:13.447Z] [log] [Fast Refresh] done in 13ms
+[2026-09-21T07:58:13.547Z] [error] Failed to load resource: the server responded with a status of 422 (Unprocessable Content)
+[2026-09-21T07:58:13.603Z] [log] [Fast Refresh] done in 13ms
+[2026-09-21T07:58:15.657Z] [log] [Fast Refresh] rebuilding
+[2026-09-21T07:58:15.728Z] [log] [Fast Refresh] done in 3ms
+[2026-09-21T07:58:15.756Z] [error] Failed to load resource: the server responded with a status of 422 (Unprocessable Content)
+[2026-09-21T07:58:35.483Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-09-21T07:58:35.503Z] [log] [HMR] connected
+[2026-09-21T07:58:38.918Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-09-21T07:58:38.925Z] [log] [HMR] connected
+[2026-09-21T07:58:51.793Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-09-21T07:58:52.794Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-09-21T07:58:53.795Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-09-21T07:58:54.796Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-09-21T07:58:55.798Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-09-21T07:59:00.799Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-09-21T07:59:05.802Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-09-21T07:59:10.804Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-09-21T07:59:15.807Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-09-21T07:59:20.811Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-09-21T07:59:25.814Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-09-21T07:59:30.815Z] [error] WebSocket connection to 'ws://localhost:3117/_next/hmr?id=rWvwUTlgoCd2_z3k3OsaF' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
