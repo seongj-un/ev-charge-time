@@ -3,7 +3,15 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    EmailStr,
+    Field,
+    PlainSerializer,
+    field_validator,
+    model_validator,
+)
 
 from ..domain.pricing import KST
 
@@ -24,6 +32,27 @@ def _to_kst_isoformat(value: datetime) -> str:
 # `KstDatetime | None`으로도 그대로 조합된다 (None은 이 직렬화기를 타지 않고
 # 그대로 null로 나간다).
 KstDatetime = Annotated[datetime, PlainSerializer(_to_kst_isoformat, return_type=str)]
+
+
+def _normalize_email(value: str) -> str:
+    """앞뒤 공백을 지우고 소문자로 통일한다.
+
+    이메일 로컬파트는 RFC상 대소문자를 구분할 수 있지만, 이 서비스는
+    "같은 사람이 두 번 가입되는" 문제를 막는 게 우선이라 통째로 소문자로
+    다룬다(I-3). 가입(중복 확인·저장)과 로그인(조회) 양쪽이 이 타입을 함께
+    써야 한다 — 한쪽만 정규화하면 기존 계정에 로그인이 안 된다.
+    """
+    return value.strip().lower()
+
+
+# I-3: 이메일 형식 검증(F-11) + 소문자 정규화를 한 타입으로 묶는다.
+# BeforeValidator가 EmailStr 검증보다 먼저 돌아 "정규화 → 형식 검증" 순서를
+# 보장한다 — 거꾸로 하면 "Mixed@Example.COM "처럼 정규화 후에야 유효해지는
+# 입력을 정규화 전 형식으로 먼저 튕겨낼 수 있다. max_length=320은
+# infra/models.py의 users.email 컬럼(varchar(320))과 맞춘다(I-2).
+NormalizedEmail = Annotated[
+    EmailStr, BeforeValidator(_normalize_email), Field(max_length=320)
+]
 
 
 class HealthResponse(BaseModel):
@@ -102,17 +131,21 @@ class RecommendResponse(BaseModel):
 
 
 class SignupRequest(BaseModel):
-    # max_length는 infra/models.py의 컬럼 정의와 맞춘다(I-2) — users.email은
-    # varchar(320), users.nickname은 varchar(50). 여기서 막지 않으면 길이
+    # NormalizedEmail이 형식 검증(EmailStr) + 소문자 정규화 + 길이 제한을
+    # 한 번에 한다(I-3, I-2). nickname의 max_length는 infra/models.py의
+    # users.nickname(varchar(50))과 맞춘다(I-2) — 여기서 막지 않으면 길이
     # 초과 입력이 그대로 DB까지 내려가 DataError(→ errors.py의 2차 안전망)가
     # 되는데, 그건 500을 422로 바꿔줄 뿐 진짜 1차 방어선은 아니다.
-    email: str = Field(max_length=320)
+    email: NormalizedEmail
     password: str = Field(min_length=8)
     nickname: str | None = Field(default=None, max_length=50)
 
 
 class LoginRequest(BaseModel):
-    email: str
+    # 가입 때와 같은 정규화를 거쳐야 한다(I-3) — 한쪽만 정규화하면
+    # "Mixed@Example.COM"으로 가입한 사람이 "mixed@example.com"으로 로그인할
+    # 때 다른 문자열로 조회되어 실패한다.
+    email: NormalizedEmail
     password: str
 
 

@@ -215,6 +215,44 @@ def test_signup_email_over_column_length_is_422(client):
     assert response.status_code == 422
 
 
+# ── I-3: 이메일 정규화·검증 ─────────────────────────────────────────────
+#
+# 리뷰어 실측: ``Mixed@Example.COM``으로 가입한 뒤 ``mixed@example.com``으로
+# 또 가입하면 둘 다 201(계정이 두 개가 되어, 다음 로그인이 빈 계정에 붙는다).
+# ``""``·``"not-an-email"``도 그대로 가입됐다. 기능 명세 F-11이 "검증: 이메일
+# 형식"을 요구한다.
+
+
+def test_signup_email_case_variant_of_existing_account_is_409(client):
+    assert signup(client, email="Mixed4c1bed@Example.COM").status_code == 201
+
+    response = signup(client, email="mixed4c1bed@example.com")
+
+    assert response.status_code == 409
+
+
+def test_signup_uppercase_then_login_lowercase_succeeds(client):
+    """대문자로 가입해도(iOS 자동 대문자 등) 소문자로 로그인되어야 한다 —
+    저장·조회 양쪽이 같은 정규화를 거쳐야 새 빈 계정이 생기지 않는다."""
+    signup(client, email="Upper4c1bed@Example.COM", password="password123")
+    client.cookies.clear()
+
+    response = login(client, email="upper4c1bed@example.com", password="password123")
+
+    assert response.status_code == 200
+    assert response.json()["email"] == "upper4c1bed@example.com"
+
+
+def test_signup_invalid_email_format_is_422(client):
+    response = signup(client, email="not-an-email")
+    assert response.status_code == 422
+
+
+def test_signup_empty_email_is_422(client):
+    response = signup(client, email="")
+    assert response.status_code == 422
+
+
 def test_login_timing_does_not_leak_whether_the_email_is_registered(client):
     """Finding 1 회귀 테스트 (Critical).
 
