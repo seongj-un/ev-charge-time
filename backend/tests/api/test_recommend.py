@@ -1,4 +1,7 @@
 import pytest
+from fastapi.testclient import TestClient
+
+from evcharge.main import create_app
 
 SPEC_EXAMPLE = {
     "battery_kwh": 70,
@@ -91,3 +94,26 @@ def test_battery_and_charger_are_required_without_a_vehicle(client):
 def test_vehicle_id_requires_login(client):
     response = post(client, vehicle_id="v_01")
     assert response.status_code == 401
+
+
+def test_guest_recommend_never_opens_a_db_session(monkeypatch):
+    """vehicle_id가 없는 게스트 요청은 DB 세션을 아예 열지 않아야 한다.
+
+    ``conftest.client``는 ``get_session``을 테스트용으로 오버라이드해 버려서
+    (``app.dependency_overrides``) 실제 ``get_sessionmaker`` 호출 여부를 가리므로
+    여기서는 오버라이드가 없는 순수 ``create_app()``을 직접 써서 프로덕션과
+    같은 의존성 해석 경로를 그대로 탄다. ``get_sessionmaker``가 호출되면 즉시
+    실패시켜서, guest 경로가 DB 커넥션 풀에 손도 대지 않는다는 것을 Postgres
+    유무와 무관하게 증명한다(1번 수정). 수정 전에는 ``Depends(get_session)``이
+    매 요청마다 무조건 해석돼 이 테스트가 (AssertionError로) 실패했다.
+    """
+
+    def _fail(*args, **kwargs):
+        raise AssertionError("guest 요청인데 DB 세션을 열려고 했다")
+
+    monkeypatch.setattr("evcharge.infra.db.get_sessionmaker", _fail)
+
+    raw_client = TestClient(create_app())
+    response = post(raw_client)
+
+    assert response.status_code == 200
