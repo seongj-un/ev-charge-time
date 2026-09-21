@@ -148,6 +148,35 @@ def test_favorites_are_scoped_to_user(client, db_session):
     assert body == []
 
 
+# ── C-1(Critical): DELETE가 다른 사용자의 즐겨찾기를 지우면 안 된다 ────────
+#
+# 최종 전체 리뷰가 실제로 확인했다: ``me_favorites.py:112``의
+# ``FavoriteStation.user_id == user.id`` 술어를 지워도 188개 스위트가 그대로
+# 통과했다 — 기존 목록 스코핑 테스트(위)는 DELETE 경로를 전혀 건드리지 않기
+# 때문이다. 이 술어가 빠지면 station_id만 알면(공개 정보) 로그인한 아무나
+# 남의 즐겨찾기를 지울 수 있다 — 읽기가 아니라 파괴라 C-1 중에서도 가장
+# 심각하다.
+
+
+def test_delete_favorite_by_other_user_does_not_remove_owners_favorite(
+    client, db_session
+):
+    owner = _make_user(db_session, email="owner-del@example.com")
+    intruder = _make_user(db_session, email="intruder-del@example.com")
+
+    _login(client, db_session, owner)
+    client.put("/api/me/favorites/ST-INTRUDE")
+
+    _login(client, db_session, intruder)
+    response = client.delete("/api/me/favorites/ST-INTRUDE")
+    # 멱등 API라 "내 것이 아님"과 "애초에 없음"을 구분하지 않는다 — 둘 다 204.
+    assert response.status_code == 204
+
+    _login(client, db_session, owner)
+    body = client.get("/api/me/favorites").json()
+    assert [favorite["station_id"] for favorite in body] == ["ST-INTRUDE"]
+
+
 def test_unauthenticated_list_is_401(client):
     assert client.get("/api/me/favorites").status_code == 401
 

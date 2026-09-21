@@ -274,6 +274,53 @@ def test_unauthenticated_requests_are_401(client):
     assert client.delete("/api/me/plans/some-id").status_code == 401
 
 
+# ── C-1(Critical): 목록/요약이 다른 사용자 기록을 섞으면 안 된다 ──────────
+#
+# 최종 전체 리뷰가 실제로 확인했다: me_plans.py의 ``SavedPlan.user_id ==
+# user.id`` 술어 두 곳(목록·요약)을 지워도 이 파일의 나머지 테스트는 전부
+# 통과한 채 188개 스위트가 그대로 초록색이었다 — 기존 테스트가 전부 "사용자
+# 한 명만 존재하는" 트랜잭션 안에서 돌아서, 술어가 있으나 없으나 결과가
+# 같았기 때문이다. 아래 두 테스트는 다른 사용자의 행을 일부러 심어서 그
+# 술어가 실제로 일하는지를 확인한다.
+
+
+def test_plans_list_excludes_other_users_plans(client, db_session, auth_user):
+    """다른 사용자가 저장한 계획이 내 목록(필터 없음/``month`` 필터 둘 다)에
+    나오면 안 된다. ``me_plans.py:69``의 ``user_id`` 술어가 지켜야 하는 것."""
+    other_user = make_user(db_session, email="other-list@example.com")
+    db_session.add(
+        _raw_plan(other_user.id, datetime(2026, 10, 5, 12, 0, tzinfo=KST))
+    )
+    db_session.commit()
+
+    unfiltered = client.get("/api/me/plans").json()
+    assert unfiltered["items"] == []
+
+    filtered = client.get("/api/me/plans", params={"month": "2026-10"}).json()
+    assert filtered["items"] == []
+
+
+def test_plans_summary_excludes_other_users_plans(client, db_session, auth_user):
+    """``/plans/summary``의 건수·합계가 다른 사용자의 행을 세면 안 된다.
+    ``me_plans.py:123``의 ``user_id`` 술어가 지켜야 하는 것."""
+    other_user = make_user(db_session, email="other-summary@example.com")
+    db_session.add(
+        _raw_plan(
+            other_user.id,
+            datetime(2026, 10, 5, 12, 0, tzinfo=KST),
+            savings_won=999999,
+        )
+    )
+    db_session.commit()
+
+    summary = client.get(
+        "/api/me/plans/summary", params={"month": "2026-10"}
+    ).json()
+
+    assert summary["count"] == 0
+    assert summary["total_savings_won"] == 0
+
+
 # ── B-1: limit 하한/상한 경계값 ──────────────────────────────────────────
 
 
