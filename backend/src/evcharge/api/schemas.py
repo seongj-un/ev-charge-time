@@ -151,6 +151,11 @@ class SavedPlanOut(BaseModel):
     result: RecommendResponse
     tariff_version: str
 
+    @field_serializer("created_at")
+    def _as_kst(self, value: datetime) -> str:
+        """DB(TIMESTAMPTZ)에서 온 값이 어떤 tzinfo든 응답은 항상 +09:00으로 (API 명세서 1장)."""
+        return value.astimezone(KST).isoformat()
+
 
 class SavedPlanPage(BaseModel):
     items: list[SavedPlanOut]

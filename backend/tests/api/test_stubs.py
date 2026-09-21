@@ -22,11 +22,6 @@ STUB_ENDPOINTS = [
     ("POST", "/api/me/vehicles", "/api/me/vehicles", VEHICLE),
     ("PATCH", "/api/me/vehicles/v_01", "/api/me/vehicles/{vehicle_id}", VEHICLE),
     ("DELETE", "/api/me/vehicles/v_01", "/api/me/vehicles/{vehicle_id}", None),
-    ("GET", "/api/me/plans", "/api/me/plans", None),
-    ("GET", "/api/me/plans/summary?month=2026-10", "/api/me/plans/summary", None),
-    ("GET", "/api/me/plans/p_01", "/api/me/plans/{plan_id}", None),
-    ("POST", "/api/me/plans", "/api/me/plans", None),
-    ("DELETE", "/api/me/plans/p_01", "/api/me/plans/{plan_id}", None),
     ("GET", "/api/me/favorites", "/api/me/favorites", None),
     ("PUT", "/api/me/favorites/ST-001", "/api/me/favorites/{station_id}", None),
     ("DELETE", "/api/me/favorites/ST-001", "/api/me/favorites/{station_id}", None),
@@ -34,7 +29,14 @@ STUB_ENDPOINTS = [
     ("POST", "/api/chat", "/api/chat", {"message": "내일 출근 전까지 80% 채우려면?"}),
 ]
 
-IMPLEMENTED = ["/health", "/api/timeline", "/api/recommend"]
+IMPLEMENTED = [
+    "/health",
+    "/api/timeline",
+    "/api/recommend",
+    "/api/me/plans",
+    "/api/me/plans/summary",
+    "/api/me/plans/{plan_id}",
+]
 
 
 @pytest.mark.parametrize(

@@ -2,9 +2,6 @@ from fastapi import APIRouter
 
 from ..schemas import (
     DeleteAccountRequest,
-    PlanSummary,
-    SavedPlanOut,
-    SavedPlanPage,
     StationOut,
     UserOut,
     VehicleIn,
@@ -47,32 +44,6 @@ def update_vehicle(vehicle_id: str, payload: VehicleIn):
 @router.delete("/vehicles/{vehicle_id}", status_code=204)
 def delete_vehicle(vehicle_id: str):
     return not_implemented("차량 삭제")()
-
-
-@router.get("/plans", response_model=SavedPlanPage)
-def list_plans(limit: int = 20, cursor: str | None = None):
-    return not_implemented("충전 기록 목록")()
-
-
-@router.get("/plans/summary", response_model=PlanSummary)
-def plans_summary(month: str):
-    return not_implemented("월별 절감액 합계")()
-
-
-@router.get("/plans/{plan_id}", response_model=SavedPlanOut)
-def read_plan(plan_id: str):
-    return not_implemented("충전 기록 상세")()
-
-
-@router.post("/plans", response_model=SavedPlanOut, status_code=201)
-def create_plan():
-    """F-13. 서버가 다시 계산해 조건·결과를 저장한다 (클라이언트 결과는 쓰지 않음)."""
-    return not_implemented("충전 기록 저장")()
-
-
-@router.delete("/plans/{plan_id}", status_code=204)
-def delete_plan(plan_id: str):
-    return not_implemented("충전 기록 삭제")()
 
 
 @router.get("/favorites", response_model=list[StationOut])
