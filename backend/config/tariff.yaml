@@ -1,0 +1,99 @@
+# 2026년 개편 전기요금 기준 요금 설정.
+#
+# 주의: value가 잠정치인 항목은 status를 unverified로 둔다. 한전 공식 요금표를
+# 확보하면 value와 source, status만 고치면 되고 코드는 건드리지 않는다.
+# 잠정치는 둔각 숫자(60/110/180)나 0.0만 쓴다 — 그럴듯한 숫자를 지어내면
+# 그대로 진짜 값 행세를 하기 때문이다.
+
+version: "2026.1-draft"
+
+# ── 계절 구분 (기능 명세서 F-02) ──────────────────────────────────────────
+seasons:
+  value:
+    summer: [6, 7, 8]
+    spring_fall: [3, 4, 5, 9, 10]
+    winter: [11, 12, 1, 2]
+  source: "기능 명세서 F-02"
+  status: verified
+
+# ── 평일 시간대별 부하구간 ────────────────────────────────────────────────
+# [시작시, 끝시) 반열린 구간. 일요일·공휴일은 하루 전체 경부하, 토요일은
+# 이 표에서 peak만 middle로 강등한다 (판정은 domain/calendar.py).
+time_bands:
+  value:
+    spring_fall:
+      light: [[22, 24], [0, 8]]
+      middle: [[8, 15], [21, 22]]
+      peak: [[15, 21]]
+    summer:
+      light: [[22, 24], [0, 8]]
+      middle: [[8, 15], [21, 22]]
+      peak: [[15, 21]]
+    winter:
+      light: [[22, 24], [0, 8]]
+      middle: [[8, 9], [12, 16], [19, 22]]
+      peak: [[9, 12], [16, 19]]
+  source: "기능 명세서 F-02 (계산값 — 한전 공식 요금표로 확인 필요)"
+  status: unverified
+
+# ── 전력량요금 (원/kWh, 자가소비용) ──────────────────────────────────────
+energy_charge:
+  self_low:
+    value:
+      spring_fall: {light: 60.0, middle: 110.0, peak: 180.0}
+      summer: {light: 60.0, middle: 110.0, peak: 180.0}
+      winter: {light: 60.0, middle: 110.0, peak: 180.0}
+    source: "잠정치 — 한전 공식 요금표 미확보"
+    status: unverified
+  self_high:
+    value:
+      spring_fall: {light: 50.0, middle: 100.0, peak: 170.0}
+      summer: {light: 50.0, middle: 100.0, peak: 170.0}
+      winter: {light: 50.0, middle: 100.0, peak: 170.0}
+    source: "잠정치 — 한전 공식 요금표 미확보"
+    status: unverified
+
+# ── kWh당 가산 항목 ──────────────────────────────────────────────────────
+adders:
+  climate_env_per_kwh:
+    value: 0.0
+    source: "한전 전기요금표 (미확보)"
+    status: unverified
+  fuel_adjustment_per_kwh:
+    value: 0.0
+    source: "한전 전기요금표 (미확보)"
+    status: unverified
+
+# ── 세금·기금 ────────────────────────────────────────────────────────────
+vat_rate:
+  value: 0.1
+  source: "부가가치세법 — 10%"
+  status: verified
+
+power_fund_rate:
+  value: 0.037
+  source: "전력산업기반기금 요율 (미확인)"
+  status: unverified
+
+# ── 공공 급속 ────────────────────────────────────────────────────────────
+public_fast:
+  base_price_per_kwh:
+    value: 0.0
+    source: "사업자별 상이 — 요청 또는 설정으로 주입"
+    status: unverified
+  weekend_discount:
+    value:
+      saturday: 48.6
+      sunday_holiday: 42.7
+    source: "기능 명세서 F-02 (확인 필요)"
+    status: unverified
+
+# ── 봄·가을 주말 할인 (자가소비용) ───────────────────────────────────────
+weekend_discount_self:
+  value:
+    multiplier: 0.5      # 전력량요금에만 곱한다
+    hours: [11, 14]      # [시작시, 끝시)
+    seasons: ["spring_fall"]
+    until_year: 2030
+  source: "기능 명세서 F-02 (확인 필요)"
+  status: unverified
