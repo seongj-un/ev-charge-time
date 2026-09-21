@@ -7,7 +7,10 @@
 저장한 계획은 "계획"이지 실제 충전 기록이 아니다: 저장할 때 서버가 직접
 ``recommend_service.compute_recommendation``으로 다시 계산해서 조건(request)과
 결과(result)를 함께 저장하고, 조회할 때는 저장된 JSON을 그대로 돌려준다
-(요금이 바뀌어도 재계산하지 않는다).
+(요금이 바뀌어도 재계산하지 않는다). vehicle_id로 저장했으면 그 시점 차량
+이름도 ``vehicle_name``에 스냅샷으로 함께 저장한다(3번 수정) — tariff_version과
+같은 이유로, 차량이 나중에 지워지거나 이름이 바뀌어도 "그때 무엇으로
+계획했는지"는 남아야 한다.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ from ..auth_deps import current_user
 from ..deps import get_tariff
 from ..recommend_service import compute_recommendation
 from ..schemas import PlanSummary, RecommendRequest, SavedPlanOut, SavedPlanPage
+from ..vehicle_resolution import resolve_vehicle_defaults
 
 router = APIRouter(prefix="/api/me", tags=["me", "plans"])
 
@@ -128,7 +132,15 @@ def create_plan(
     user: User = Depends(current_user),
     session: DbSession = Depends(get_session),
 ) -> SavedPlanOut:
-    """서버가 다시 계산해 조건·결과를 저장한다. 클라이언트가 보낸 결과는 쓰지 않는다."""
+    """서버가 다시 계산해 조건·결과를 저장한다. 클라이언트가 보낸 결과는 쓰지 않는다.
+
+    vehicle_id 해석은 ``/api/recommend``와 같은 ``resolve_vehicle_defaults``를
+    쓴다(3번 수정) — 이 엔드포인트는 이미 로그인을 요구하므로(``current_user``
+    의존성) 세션을 vehicle_id 유무로 조건부로 열 필요가 없어 1번 수정과
+    부딪히지 않는다.
+    """
+    payload, vehicle_name = resolve_vehicle_defaults(payload, user, session)
+
     tariff = get_tariff()
     result = compute_recommendation(payload, tariff=tariff)
 
@@ -138,6 +150,7 @@ def create_plan(
         request=payload.model_dump(mode="json"),
         result=result.model_dump(mode="json"),
         tariff_version=tariff.version,
+        vehicle_name=vehicle_name,
         created_at=datetime.now(KST),
     )
     session.add(row)
@@ -149,6 +162,7 @@ def create_plan(
         request=payload,
         result=result,
         tariff_version=row.tariff_version,
+        vehicle_name=row.vehicle_name,
     )
 
 
@@ -178,6 +192,7 @@ def _to_saved_plan_out(row: SavedPlan) -> SavedPlanOut:
         request=row.request,
         result=row.result,
         tariff_version=row.tariff_version,
+        vehicle_name=row.vehicle_name,
     )
 
 

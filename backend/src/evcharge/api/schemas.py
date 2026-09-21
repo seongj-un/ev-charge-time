@@ -203,6 +203,9 @@ class SavedPlanOut(BaseModel):
     request: RecommendRequest
     result: RecommendResponse
     tariff_version: str
+    # 저장 당시 차량 이름 스냅샷(3번 수정). 직접 입력이면 null — 빈 문자열이
+    # 아니다. 프론트가 ``vehicle_name ?? 조건폴백``으로 분기한다.
+    vehicle_name: str | None = None
 
 
 class SavedPlanPage(BaseModel):

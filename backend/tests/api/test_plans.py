@@ -465,3 +465,58 @@ def test_list_plans_invalid_month_format_is_422(client, auth_user, month):
     """summary(B-3)와 같은 검증을 재사용하므로 같은 값들이 422여야 한다."""
     response = client.get("/api/me/plans", params={"month": month})
     assert response.status_code == 422
+
+
+# ── 3번: saved_plans.vehicle_name 스냅샷 ─────────────────────────────────
+
+VEHICLE = {"name": "출퇴근 차", "battery_kwh": 70, "charger_kw": 7}
+
+
+def test_create_plan_without_vehicle_id_has_null_vehicle_name(client, auth_user):
+    """직접 입력이면 vehicle_name은 빈 문자열이 아니라 null이어야 한다."""
+    response = post_plan(client)
+
+    assert response.status_code == 201
+    assert response.json()["vehicle_name"] is None
+
+
+def test_create_plan_with_vehicle_id_snapshots_vehicle_name(client, auth_user):
+    vehicle = client.post("/api/me/vehicles", json=VEHICLE).json()
+
+    response = post_plan(client, battery_kwh=None, charger_kw=None, vehicle_id=vehicle["id"])
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["vehicle_name"] == VEHICLE["name"]
+    # 차량 기본값(battery_kwh)이 실제로 병합돼 계산에 쓰였는지도 함께 확인.
+    assert body["request"]["battery_kwh"] == VEHICLE["battery_kwh"]
+
+
+def test_saved_plan_vehicle_name_survives_vehicle_deletion(client, auth_user):
+    """차량을 지워도 저장된 계획의 vehicle_name 스냅샷은 그대로 남아야 한다."""
+    vehicle = client.post("/api/me/vehicles", json=VEHICLE).json()
+    created = post_plan(client, battery_kwh=None, charger_kw=None, vehicle_id=vehicle["id"]).json()
+
+    assert client.delete(f"/api/me/vehicles/{vehicle['id']}").status_code == 204
+
+    detail = client.get(f"/api/me/plans/{created['id']}").json()
+    assert detail["vehicle_name"] == VEHICLE["name"]
+
+    listing = client.get("/api/me/plans").json()
+    assert listing["items"][0]["vehicle_name"] == VEHICLE["name"]
+
+
+def test_create_plan_with_unknown_vehicle_id_is_404(client, auth_user):
+    response = post_plan(client, vehicle_id="does-not-exist")
+    assert response.status_code == 404
+
+
+def test_create_plan_with_another_users_vehicle_id_is_404(client, db_session, auth_user):
+    other_user = make_user(db_session, email="other-plans-vehicle@example.com")
+    login_as(client, db_session, other_user)
+    other_vehicle = client.post("/api/me/vehicles", json=VEHICLE).json()
+
+    login_as(client, db_session, auth_user)
+    response = post_plan(client, vehicle_id=other_vehicle["id"])
+
+    assert response.status_code == 404

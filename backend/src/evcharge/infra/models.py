@@ -84,6 +84,11 @@ class SavedPlan(Base):
     result: Mapped[dict] = mapped_column(JSONB, nullable=False)
     # 저장 당시 요금 설정 버전. 요금이 바뀌어도 재계산하지 않는다 (F-13)
     tariff_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    # 저장 당시 차량 이름 스냅샷 (3번 수정). tariff_version과 같은 이유로
+    # nullable로 둔다 — vehicle_id로 저장했으면 그 시점 이름을, 직접 입력이면
+    # None을 담는다. 차량이 나중에 지워지거나 이름이 바뀌어도 "그때 무엇으로
+    # 계획했는지"는 이 스냅샷에 그대로 남아야 한다(FK가 아니라 이름 문자열인 이유).
+    vehicle_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = _now()
 
 
