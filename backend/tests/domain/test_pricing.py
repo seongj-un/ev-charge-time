@@ -88,3 +88,38 @@ def test_self_high_is_cheaper_than_self_low(tariff, holidays):
     high = price_at(at(2026, 10, 16, 16), "self_high", tariff, holidays)
 
     assert high.price_per_kwh < low.price_per_kwh
+
+
+# ── 사용자에게 보이는 오류에 개발자용 문구를 섞지 않는다 ──────────────────────
+#
+# 공공 급속 단가가 없을 때 나던 문구가 이랬다:
+#
+#   "공공 급속 단가가 없습니다. public_base_price를 보내거나
+#    config/tariff.yaml의 public_fast.base_price_per_kwh를 채우세요."
+#
+# 이 문장은 422의 detail로 **화면에 그대로 뜬다.** 기본 차량을 공공 급속으로
+# 저장해 둔 계정이 질문하기를 쓰면 바로 이 화면을 본다 — 실제로 그렇게 발견했다.
+# 파일 경로와 설정 키를 사용자에게 보여 주는 것도 문제지만, 더 큰 문제는
+# **읽는 사람이 고칠 수 없는 일을 시킨다**는 것이다.
+
+_DEVELOPER_ONLY = (
+    "tariff.yaml",
+    "config/",
+    "public_fast.",
+    "base_price_per_kwh",
+    "public_base_price",
+)
+
+
+def test_the_public_fast_error_does_not_leak_developer_instructions(tariff, holidays):
+    """단가 없이 공공 급속을 계산하면 오류가 나되, 그 문구는 사용자 말이어야 한다."""
+    with pytest.raises(TariffNotConfiguredError) as caught:
+        price_at(datetime(2026, 10, 7, 14, tzinfo=KST), "public_fast", tariff, holidays)
+
+    message = str(caught.value)
+    for token in _DEVELOPER_ONLY:
+        assert token not in message, (
+            f"사용자에게 보이는 오류에 개발자용 표현 {token!r}이 들어 있다: {message!r}"
+        )
+    # 그러면서도 무엇을 해야 하는지는 말해야 한다.
+    assert "단가" in message

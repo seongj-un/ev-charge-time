@@ -84,9 +84,15 @@ def _public_fast_price(
     if base is None:
         base = tariff.get_optional("public_fast.base_price_per_kwh") or None
     if not base:
+        # 이 문장은 **사용자 화면에 그대로 뜬다** (422의 detail). 그래서 파일
+        # 경로나 설정 키를 적지 않는다 — 읽는 사람이 고칠 수 없는 것을 시키는
+        # 안내는 안내가 아니다. 공공 급속은 충전사업자가 단가를 각자 정해서
+        # 하나의 공식 값이 없고(그래서 이 항목이 unverified다), 사용자가 할 수
+        # 있는 일은 충전기에 적힌 단가를 넣거나 자가 충전으로 바꾸는 것뿐이다.
         raise TariffNotConfiguredError(
-            "공공 급속 단가가 없습니다. public_base_price를 보내거나 "
-            "config/tariff.yaml의 public_fast.base_price_per_kwh를 채우세요."
+            "공공 급속은 충전사업자마다 단가가 달라서 단가를 알려주셔야 계산할 수 "
+            "있어요. 충전기에 적힌 요금(원/kWh)을 입력하거나, 자가 충전기로 "
+            "바꿔서 다시 시도해 주세요."
         )
 
     if not discounted:
