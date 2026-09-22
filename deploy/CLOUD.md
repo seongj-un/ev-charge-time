@@ -145,5 +145,36 @@ docker compose -f docker-compose.prod.yml logs -f caddy    # 인증서 발급 �
 
 **로그인이 되는데 새로고침하면 풀린다** — HTTP인데 `COOKIE_SECURE=true`입니다.
 
+**Caddy만 안 뜨고 "address already in use"** — 443이나 80을 다른 게 물고 있습니다.
+SSH를 443으로 옮겨 둔 상태면 그게 원인입니다 (`sudo ss -tlnp | grep :443`).
+Caddy가 써야 하는 포트이므로 SSH를 비켜 줍니다:
+
+```bash
+sudo rm -f /etc/systemd/system/ssh.socket.d/443.conf
+sudo systemctl daemon-reload && sudo systemctl restart ssh.socket
+```
+
+**`docker compose ps`에서 Caddy의 PORTS 칸만 비어 있다** — 호스트 포트에 안
+묶인 것입니다. `docker-compose.prod.yml`의 caddy 절에 `ports:`가 남아 있는지
+보세요. 충돌을 피하려고 지웠다가 80까지 같이 사라지는 일이 있습니다.
+
+**기관 네트워크에서 서버가 안 보인다** — 배포 문제가 아닐 수 있습니다.
+학교·회사 방화벽이 **알려진 사이트만 통과**시키고 모르는 IP는 버리는 경우가
+있습니다. 구별하는 법:
+
+```bash
+# 내 PC에서 — 다른 곳은 되는데 이 IP만 안 되면 망 문제다
+nc -z -w 5 example.com 80 && echo ok
+nc -z -w 5 <서버IP> 80 && echo ok
+
+# 서버 안에서 — 이게 되면 배포는 성공한 것이다
+curl -s localhost/health
+```
+
+같은 이유로 **SSH도 막힙니다.** 22번이 안 나가면 `nc -z github.com 22`로
+확인하세요. 남의 서버도 막히면 망 탓입니다. 그때는 AWS 콘솔의 **EC2 Instance
+Connect**(브라우저 SSH, 443으로 붙음)로 들어가면 됩니다 — 배포 명령은 거기서
+그대로 돌릴 수 있습니다.
+
 **충전소가 501** — `CHARGER_API_KEY`가 비었습니다. 태양광은 `KMA_API_KEY`,
 질문하기는 `GEMINI_API_KEY`. 키가 없어도 나머지는 전부 돕니다.
