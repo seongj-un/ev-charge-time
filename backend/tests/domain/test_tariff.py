@@ -98,9 +98,10 @@ def test_real_config_unverified_set_is_exactly_what_we_expect():
     (/health와 /api/recommend가 이 목록을 그대로 내보내므로 화면의 "요금 일부
     확인 중" 안내가 여기에 달려 있다.)
 
-    한전 공식 요금표(2023-11-09)를 확보해 시간대·전력량요금·가산항목·세금은
-    verified가 됐다. 남은 셋은 그 문서가 정하지 않는 값들이다:
-    공공 급속 단가는 충전사업자가 정하고, EV 충전 특례할인은 별도 고시다.
+    기후에너지환경부 보도자료 2026-04-14(붙임 3)로 시간대·전력량요금·주말 할인이
+    전부 verified가 됐다. 남은 둘은 그 문서가 말하지 않는 값이다:
+    공공 급속 기준단가는 충전사업자가 각자 정하고, 주말 할인의 일몰 연도는
+    어디에도 적혀 있지 않다(기능 명세서만 2030년이라고 한다).
     """
     from evcharge.settings import get_settings
 
@@ -108,8 +109,7 @@ def test_real_config_unverified_set_is_exactly_what_we_expect():
 
     assert set(unverified) == {
         "public_fast.base_price_per_kwh",
-        "public_fast.weekend_discount",
-        "weekend_discount_self",
+        "weekend_discount_sunset",
     }
 
 
