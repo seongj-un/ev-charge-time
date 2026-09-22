@@ -253,11 +253,24 @@ describe("지역 기준점", () => {
  * 설정을 다시 확인하러 갔다가 그대로 돌아온다.
  */
 describe("위치 차단 안내", () => {
-  test("사이트 권한이 허용인데 실패하면 기기 설정을 가리킨다", () => {
+  test("사이트 권한이 허용인데 실패하면 기기 쪽이라고 말한다", () => {
     const message = geoBlockMessage("granted");
-    expect(message).toMatch(/기기|시스템 설정/);
+    expect(message).toMatch(/기기/);
     // 이미 해 둔 일을 또 시키지 않는다.
     expect(message).not.toMatch(/사이트의 위치 접근을 허용/);
+  });
+
+  /*
+   * 단정하지 않는다.
+   *
+   * 사용자가 macOS 위치 서비스에서 Chrome을 켠 스크린샷을 보내고도 여전히
+   * 실패했다. 그 상태에서 "시스템 설정에서 켜야 해요"라고 지시하면, 앱이
+   * 이미 해 둔 일을 계속 시키는 꼴이 된다. 우리는 기기 안에서 무슨 일이
+   * 벌어지는지 볼 수 없다 — 못 받았다는 사실만 말하고 길을 준다.
+   */
+  test("기기 설정을 이래라저래라 지시하지 않는다", () => {
+    const message = geoBlockMessage("granted");
+    expect(message).not.toMatch(/켜야 해요|허용해 주세요|설정하세요/);
   });
 
   test("사이트 권한이 거부면 주소창을 가리킨다", () => {

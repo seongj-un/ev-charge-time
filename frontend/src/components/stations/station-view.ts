@@ -50,8 +50,14 @@ export type GeoPermission = "granted" | "denied" | "prompt" | "unknown";
 export function geoBlockMessage(permission: GeoPermission): string {
   switch (permission) {
     case "granted":
-      // 사이트는 허용인데 실패했다 = 막는 쪽은 기기다.
-      return "브라우저에서는 위치를 허용했지만 기기가 막고 있어요. macOS는 시스템 설정 › 개인정보 보호 및 보안 › 위치 서비스에서 Chrome을 켜야 해요.";
+      /*
+       * 사이트는 허용인데 실패했다 = 막는 쪽은 기기다. 거기까지는 말할 수
+       * 있지만 **무엇을 켜라고 지시하지는 않는다.** 사용자가 macOS 위치
+       * 서비스에서 Chrome을 켠 화면을 보내고도 여전히 실패했다. 그 상태에서
+       * "설정에서 켜세요"라고 하면 앱이 이미 해 둔 일을 계속 시키는 꼴이다.
+       * 기기 안에서 무슨 일이 벌어지는지 우리는 볼 수 없다.
+       */
+      return "브라우저에서는 위치를 허용했는데도 기기에서 위치를 받지 못했어요.";
     case "denied":
       return "이 사이트의 위치 접근이 차단돼 있어요. 주소창 왼쪽 아이콘에서 허용할 수 있어요.";
     default:
