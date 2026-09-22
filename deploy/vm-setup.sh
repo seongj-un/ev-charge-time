@@ -44,18 +44,27 @@ if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/nu
   ok "firewalld에 80·443 열었습니다"
 else
   # Ubuntu 이미지는 iptables 규칙이 그대로 박혀 있다.
-  for port in 80 443; do
-    if ! sudo iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null; then
-      sudo iptables -I INPUT 6 -p tcp --dport "$port" -m state --state NEW -j ACCEPT
-    fi
-  done
+  # 규칙이 몇 개나 있는지 모른 채 -I INPUT 6 으로 끼워 넣었더니 AWS Ubuntu
+  # AMI에서 "Index of insertion too big"으로 죽었다. 규칙이 6개보다 적었다.
+  # 기본 정책이 ACCEPT면 애초에 필요 없는 절이므로, 막혀 있을 때만 손댄다.
+  policy=$(sudo iptables -S INPUT 2>/dev/null | head -1)
+  if [ "$policy" = "-P INPUT ACCEPT" ]; then
+    ok "INPUT 기본 정책이 ACCEPT입니다 — 손댈 것이 없습니다 (AWS Ubuntu가 이렇습니다)"
+  else
+    for port in 80 443; do
+      if ! sudo iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null; then
+        # 맨 앞에 넣는다. 위치를 숫자로 찍으면 규칙 수에 따라 실패한다.
+        sudo iptables -I INPUT -p tcp --dport "$port" -m state --state NEW -j ACCEPT
+      fi
+    done
+    ok "iptables에 80·443 열었습니다"
+  fi
   if command -v netfilter-persistent >/dev/null 2>&1; then
     sudo netfilter-persistent save >/dev/null
   else
     sudo apt-get install -y iptables-persistent >/dev/null 2>&1 || true
     sudo netfilter-persistent save >/dev/null 2>&1 || warn "규칙을 저장하지 못했습니다 — 재부팅하면 사라질 수 있습니다"
   fi
-  ok "iptables에 80·443 열었습니다"
 fi
 
 warn "클라우드 콘솔에도 80·443 수신 규칙이 필요합니다 (여기서는 못 합니다)"
