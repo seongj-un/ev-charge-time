@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 
 import {
   NAME_MISSING,
-  chargerTypeLabel,
+  speedLabel,
+  speedOf,
   filterStations,
   formatCapacity,
   formatDistance,
@@ -51,11 +52,31 @@ describe("충전기 상태 코드", () => {
   });
 });
 
-describe("충전기 종류", () => {
-  test("자기 뜻을 적어 보낸 값만 옮기고 나머지는 원문을 남긴다", () => {
-    expect(chargerTypeLabel("fast")).toBe("급속");
-    expect(chargerTypeLabel("slow")).toBe("완속");
-    expect(chargerTypeLabel("DC_CHAdeMO")).toBe("DC_CHAdeMO");
+/*
+ * 타입 코드로 급속/완속을 가를 수 없다.
+ *
+ * 실데이터(전남광주 32,835대)에서 type=04가 7~350 kW에 걸쳐 있고
+ * 그중 137대는 50 kW 미만이다. 타입으로 가르면 수백 대가 틀린다.
+ * capacity_kw는 API가 주는 실측값이라 그럴 여지가 없다.
+ */
+describe("충전 속도", () => {
+  test("50 kW를 경계로 가른다", () => {
+    // 실데이터에서 41~49 kW는 한 대도 없다 — 40과 50 사이가 비어 있다.
+    expect(speedOf(50)).toBe("fast");
+    expect(speedOf(100)).toBe("fast");
+    expect(speedOf(40)).toBe("slow");
+    expect(speedOf(7)).toBe("slow");
+  });
+
+  /* 0 kW가 20대 실제로 있다. 완속이라 말하면 없는 사실을 지어내는 것이다. */
+  test("출력을 모르면 속도도 단정하지 않는다", () => {
+    expect(speedOf(0)).toBe("unknown");
+  });
+
+  test("속도 라벨은 출력을 모를 때 지어내지 않는다", () => {
+    expect(speedLabel(100)).toBe("급속");
+    expect(speedLabel(7)).toBe("완속");
+    expect(speedLabel(0)).toBe("출력 정보 없음");
   });
 });
 
@@ -86,6 +107,7 @@ describe("메타 줄", () => {
 });
 
 describe("필터", () => {
+  // 실제 API가 주는 모양: 타입은 "02"·"04" 같은 숫자, 속도는 kW가 말해 준다.
   const fastOnly = station({ station_id: "A", chargers: [FAST_AVAILABLE] });
   const slowOnly = station({ station_id: "B", chargers: [SLOW_CHARGING] });
   const unknownOnly = station({ station_id: "C", chargers: [UNKNOWN_STATUS] });
@@ -95,13 +117,41 @@ describe("필터", () => {
     expect(filterStations(all, { type: "all", availableOnly: false })).toHaveLength(3);
   });
 
-  test("급속은 급속 충전기가 있는 곳만 남긴다", () => {
+  test("급속은 50 kW 이상 충전기가 있는 곳만 남긴다", () => {
     const kept = filterStations([fastOnly, slowOnly], { type: "fast", availableOnly: false });
     expect(kept.map((item) => item.station_id)).toEqual(["A"]);
   });
 
+  test("완속은 50 kW 미만만 남긴다", () => {
+    const kept = filterStations([fastOnly, slowOnly], { type: "slow", availableOnly: false });
+    expect(kept.map((item) => item.station_id)).toEqual(["B"]);
+  });
+
+  /*
+   * 타입 코드는 속도를 정하지 못한다. type=04가 7 kW일 수도 있고
+   * type=02가 50 kW일 수도 있다 — 둘 다 실데이터에 있는 조합이다.
+   */
+  test("타입 코드가 아니라 출력으로 가른다", () => {
+    const misleading = station({
+      station_id: "D",
+      chargers: [{ ...FAST_AVAILABLE, type: "04", capacity_kw: 7 }],
+    });
+    expect(filterStations([misleading], { type: "fast", availableOnly: false })).toHaveLength(0);
+    expect(filterStations([misleading], { type: "slow", availableOnly: false })).toHaveLength(1);
+  });
+
+  test("출력을 모르는 충전기는 급속에도 완속에도 안 끼운다", () => {
+    const noCapacity = station({
+      station_id: "E",
+      chargers: [{ ...FAST_AVAILABLE, capacity_kw: 0 }],
+    });
+    expect(filterStations([noCapacity], { type: "fast", availableOnly: false })).toHaveLength(0);
+    expect(filterStations([noCapacity], { type: "slow", availableOnly: false })).toHaveLength(0);
+    expect(filterStations([noCapacity], { type: "all", availableOnly: false })).toHaveLength(1);
+  });
+
   /** 모르는 코드를 '사용 가능'으로 세면 필터가 거짓말이 된다. */
-  test("사용 가능만은 확인된 코드만 남기고 모르는 코드는 뺀다", () => {
+  test("사용 가능만은 확인된 코드만 남긴다", () => {
     const kept = filterStations([fastOnly, slowOnly, unknownOnly], {
       type: "all",
       availableOnly: true,
@@ -109,10 +159,10 @@ describe("필터", () => {
     expect(kept.map((item) => item.station_id)).toEqual(["A"]);
   });
 
-  test("종류와 상태 조건은 같은 충전기 한 대가 동시에 만족해야 한다", () => {
+  test("속도와 상태 조건은 같은 충전기 한 대가 동시에 만족해야 한다", () => {
     const mixed = station({
-      station_id: "D",
-      // 급속은 충전 중이고, 사용 가능한 건 완속뿐이다 — '급속 + 사용 가능만'에 걸리면 안 된다.
+      station_id: "F",
+      // 급속은 충전 중이고, 비어 있는 건 완속뿐이다.
       chargers: [
         { ...FAST_AVAILABLE, status: "charging" },
         { ...SLOW_CHARGING, status: "available" },

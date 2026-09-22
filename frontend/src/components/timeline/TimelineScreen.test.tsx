@@ -218,21 +218,76 @@ describe("TimelineScreen", () => {
     );
   });
 
-  test("태양광 겹쳐 보기는 준비 중이라고 밝히고 눌리지 않는다", async () => {
-    stubFetch(() => ({ body: timeline() }));
+/*
+ * 태양광 예측은 기상청 호출이라 늘 받아두지 않는다. 버튼을 켤 때만 부르고,
+ * 켤 수 없으면 켜진 척하지 않고 "준비 중"으로 돌아간다.
+ */
+describe("태양광 겹쳐 보기", () => {
+  const SOLAR = {
+    region: "전남",
+    day: "2026-10-10",
+    model_version: "v1",
+    grid_nx: 51,
+    grid_ny: 67,
+    base_date: "20261010",
+    base_time: "0500",
+    installed_capacity_mw: null,
+    capacity_source: null,
+    assumptions: [
+      "전남 전체를 기상청 5km 격자 한 칸(nx=57, ny=71)의 예보로 대신합니다.",
+      "기상청 단기예보 20260921 2000 발표를 사용했습니다.",
+    ],
+    hours: [
+      { hour: 12, ghi_wm2: 811, clear_sky_ghi_wm2: 1000, output_index: 0.811,
+        predicted_mwh: null, sky: "1", pty: "0" },
+    ],
+  };
+
+  function solarButton() {
+    return screen.getAllByRole("button", { name: /태양광 발전 예측 겹쳐 보기/ })[0];
+  }
+
+  test("켜기 전에는 예측을 부르지 않는다", async () => {
+    const { urls } = stubFetch(() => ({ body: timeline() }));
 
     render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
+    await screen.findAllByRole("button", { name: /태양광 발전 예측 겹쳐 보기/ });
 
-    // 모바일 자리와 데스크톱 자리에 하나씩 있다 (보이지 않는 쪽은 display:none).
-    const solarButtons = await screen.findAllByRole("button", {
-      name: /태양광 발전 예측 겹쳐 보기/,
-    });
-    expect(solarButtons.length).toBeGreaterThan(0);
-    for (const solar of solarButtons) {
-      expect(solar).toBeDisabled();
-      expect(solar).toHaveTextContent("준비 중");
-    }
+    expect(urls.some((url) => url.startsWith("/api/solar-forecast"))).toBe(false);
   });
+
+  test("켜면 그 날짜로 부르고 전제를 함께 보여준다", async () => {
+    const user = userEvent.setup();
+    const { urls } = stubFetch((url) =>
+      url.startsWith("/api/solar-forecast") ? { body: SOLAR } : { body: timeline() },
+    );
+
+    render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
+    await user.click(solarButton());
+
+    await waitFor(() =>
+      expect(urls.some((url) => url.includes("day=2026-10-10"))).toBe(true),
+    );
+    expect(await screen.findByText(/nx=57, ny=71/)).toBeInTheDocument();
+    expect(screen.getByText(/20260921 2000 발표/)).toBeInTheDocument();
+  });
+
+  /* 켤 수 없으면 켜진 척하지 않는다 — 빈 오버레이가 "해가 없다"로 읽힌다. */
+  test("501이면 켜지 않고 준비 중으로 돌아간다", async () => {
+    const user = userEvent.setup();
+    stubFetch((url) =>
+      url.startsWith("/api/solar-forecast")
+        ? { status: 501, body: { detail: "태양광 발전 예측은 아직 준비되지 않았습니다." } }
+        : { body: timeline() },
+    );
+
+    render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
+    await user.click(solarButton());
+
+    await waitFor(() => expect(solarButton()).toBeDisabled());
+    expect(solarButton()).toHaveTextContent("준비 중");
+  });
+});
 
   test("URL에 날짜가 없으면 마운트 뒤에 오늘로 부른다", async () => {
     const { urls } = stubFetch(() => ({ body: timeline() }));

@@ -1,5 +1,8 @@
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./client";
 import type {
+  ChatResponse,
+  ChatTurn,
+  FavoriteStation,
   HealthResponse,
   Mode,
   PlanSummary,
@@ -7,7 +10,7 @@ import type {
   RecommendResponse,
   SavedPlan,
   SavedPlanPage,
-  FavoriteStation,
+  SolarForecast,
   Station,
   TimelineResponse,
   User,
@@ -164,4 +167,44 @@ export function addFavorite(stationId: string): Promise<void> {
 
 export function removeFavorite(stationId: string): Promise<void> {
   return apiDelete<void>(`/api/me/favorites/${encodeURIComponent(stationId)}`);
+}
+
+// ── 태양광 발전 예측 (F-09) ─────────────────────────────────────────────
+
+/**
+ * 시도별 시간별 태양광 발전 예측.
+ *
+ * 차트에 겹칠 값은 `output_index`(0~1)다. `predicted_mwh`는 지금 항상 null이다.
+ * `KMA_API_KEY`가 없으면 501이 온다 — 화면이 그 사실을 정직하게 알린다.
+ */
+export function fetchSolarForecast(params: {
+  region: string;
+  day: string;
+}): Promise<SolarForecast> {
+  return apiGet<SolarForecast>("/api/solar-forecast", {
+    region: params.region,
+    day: params.day,
+  });
+}
+
+// ── 자연어 질의 (F-10) ──────────────────────────────────────────────────
+
+/**
+ * 질문 한 번. 로그인 필요.
+ *
+ * 올 수 있는 오류가 네 갈래이고 화면이 전부 다르게 말해야 한다:
+ *   401 로그인 필요 · 501 `GEMINI_API_KEY` 없음 · 429 호출 제한(Retry-After)
+ *   503 모델 쪽 일시 실패(재시도할 만함)
+ *
+ * `history`는 생략할 수 있지만, 되묻기("배터리 용량을 알려주세요") 다음 답을
+ * 이어붙이려면 필요하다 — 안 보내면 서버는 매번 첫 질문으로 읽는다.
+ */
+export function askChat(params: {
+  message: string;
+  history?: ChatTurn[];
+}): Promise<ChatResponse> {
+  return apiPost<ChatResponse>("/api/chat", {
+    message: params.message,
+    ...(params.history && params.history.length > 0 ? { history: params.history } : {}),
+  });
 }
