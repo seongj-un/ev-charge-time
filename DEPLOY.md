@@ -41,6 +41,24 @@ docker compose -f docker-compose.prod.yml up -d --build
 스키마가 코드보다 뒤처진 채로 서비스되면 500이 나는데, 그때는 원인이 배포인지
 코드인지 구분하기 어렵다.
 
+## 지금 돌고 있는 곳
+
+**http://13.125.147.86** — AWS EC2 `t3.micro`, Ubuntu 24.04, 탄력적 IP.
+
+외부 키 세 개가 들어가 있어 충전소·태양광·질문하기까지 전부 열린다.
+컨테이너 넷(Postgres·백엔드·프론트·Caddy) 모두 `healthy`.
+
+서버에서 확인한 값:
+
+```
+/health    {"status":"ok","unverified_tariff_items":["public_fast.base_price_per_kwh","weekend_discount_sunset"]}
+/timeline  200
+```
+
+**기관 네트워크에서는 안 보일 수 있다.** 학교·회사 방화벽이 알려진 사이트만
+통과시키는 경우가 있고, 셀룰러 망은 80번에 투명 프록시를 두기도 한다. 둘 다
+실제로 겪었다 — 구별하는 법은 [deploy/CLOUD.md](deploy/CLOUD.md)의 "막혔을 때" 참고.
+
 ## 확인된 것 (2026-09-22, 로컬 스택)
 
 ```
