@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useSession } from "@/components/auth/SessionProvider";
 import { PageContainer } from "@/components/shell/AppShell";
-import { PinIcon } from "@/components/shell/icons";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Notice } from "@/components/ui/Notice";
 import { ApiError } from "@/lib/api/client";
@@ -12,6 +11,7 @@ import { addFavorite, fetchStations, removeFavorite } from "@/lib/api/endpoints"
 import type { Station } from "@/lib/api/types";
 
 import { StationCard } from "./StationCard";
+import { StationMap } from "./StationMap";
 import {
   AREAS,
   DEFAULT_AREA,
@@ -202,16 +202,8 @@ export function StationsScreen() {
         </ButtonLink>
       </div>
 
-      <div className="mt-5 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
+      <div className="mt-5 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
         <div className="min-w-0">
-          {/* 지도 자리. 시안도 자리표시자이고, 지도 없이도 목록으로 쓸 수 있다. */}
-          <div
-            className="flex h-44 flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line bg-sunken text-ink-3 lg:hidden"
-            aria-hidden
-          >
-            <PinIcon className="size-6" />
-            <span className="text-sm">지도 영역</span>
-          </div>
 
           {/*
            * 어디를 기준으로 찾는지 늘 보이게 둔다.
@@ -379,14 +371,27 @@ export function StationsScreen() {
           </p>
         </div>
 
-        {/* 데스크톱에서는 지도가 오른쪽 큰 자리를 차지한다 (시안 p-18). */}
-        <div
-          className="hidden h-[520px] flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line bg-sunken text-ink-3 lg:flex"
-          aria-hidden
-        >
-          <PinIcon className="size-7" />
-          <span className="text-sm">지도 영역</span>
-        </div>
+        {/*
+         * 지도는 **하나만** 만든다.
+         *
+         * 모바일용·데스크톱용을 따로 두면 둘 다 마운트되고 하나는 늘
+         * display:none이다. Leaflet은 크기 0인 상자에서 초기화되면 타일 위치를
+         * 잘못 잡고, 화면이 넓어져도 스스로 고치지 못한다. 높이만 반응형으로
+         * 바꾸고 순서로 자리를 옮긴다 — 모바일에서는 목록 위, 데스크톱에서는
+         * 오른쪽 칸(시안 p-18).
+         */}
+        {geo.kind === "ready" ? (
+          <StationMap
+            center={geo.coords}
+            stations={stations}
+            className="order-first mt-4 h-44 lg:order-none lg:mt-0 lg:h-[520px]"
+          />
+        ) : (
+          <div
+            className="order-first mt-4 h-44 animate-pulse rounded-card bg-sunken lg:order-none lg:mt-0 lg:h-[520px]"
+            aria-hidden
+          />
+        )}
       </div>
     </PageContainer>
   );

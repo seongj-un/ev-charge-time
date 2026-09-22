@@ -1,3 +1,9 @@
+/*
+ * Leaflet 기본 스타일. 타일 위치 계산을 CSS가 하므로 빠지면 지도가 어긋난다.
+ * 패키지 안의 파일을 그대로 쓴다 — CDN을 타면 오프라인에서 지도만 깨진다.
+ */
+@import "leaflet/dist/leaflet.css";
+
 @import "tailwindcss";
 @import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 
