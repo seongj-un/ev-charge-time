@@ -17,10 +17,16 @@ Amazon Linux 2023도 되지만 Docker 설치 방식이 다르고(`dnf`), 아래 
 **메모리 2GB 이상을 권합니다.** `next build`만 실측 **435MB**를 쓰고 `npm ci`가
 겹칩니다. 1GB로도 되지만 스왑을 타면서 느려집니다(15분 이상).
 
-| | 권장 | 최소 |
+| | 무료 | 빠름 |
 |---|---|---|
-| **AWS EC2** | `t3.small` (2GB) · ARM이면 `t4g.small` | `t3.micro` (1GB) + 스왑 |
-| **오라클** | `VM.Standard.A1.Flex` ARM 4코어/24GB — Always Free | AMD 마이크로 (1GB) + 스왑 |
+| **AWS EC2** | `t3.micro` (1GB) — 프리 티어 12개월·750시간 | `t3.small` (2GB) ≈ $19/월 · ARM이면 `t4g.small` ≈ $15/월 |
+| **오라클** | `VM.Standard.A1.Flex` ARM 4코어/24GB — Always Free | 같음 |
+
+**`small`은 프리 티어가 아니다.** AWS 무료는 `t2.micro`·`t3.micro`(1GB)뿐이다.
+
+1GB로도 된다. **빌드는 배포할 때 한 번뿐이고** 뜨고 나면 메모리를 그렇게 쓰지
+않는다. 아래 스크립트가 스왑 4GB를 만들어 빌드가 죽지 않게 한다 — 대신 15분쯤
+걸린다.
 
 **아키텍처를 AMI와 맞추세요.** `t4g`·Ampere는 **Arm** AMI, `t3`·`t2`는 **x86**
 AMI입니다. 어긋나면 인스턴스가 아예 안 뜹니다.

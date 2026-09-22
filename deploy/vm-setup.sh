@@ -69,14 +69,19 @@ mem_mb=$(free -m | awk '/^Mem:/{print $2}')
 swap_mb=$(free -m | awk '/^Swap:/{print $2}')
 printf '   메모리 %sMB · 스왑 %sMB\n' "$mem_mb" "$swap_mb"
 
-if [ "$mem_mb" -lt 2048 ] && [ "$swap_mb" -lt 1024 ]; then
-  warn "메모리가 작습니다. 빌드 중 죽지 않도록 스왑 2GB를 만듭니다"
-  sudo fallocate -l 2G /swapfile
+if [ "$mem_mb" -lt 2048 ] && [ "$swap_mb" -lt 2048 ]; then
+  # 1GB 인스턴스(t3.micro 등)에서 npm ci와 next build가 겹친다. 넉넉하게
+  # 잡는다 — 디스크는 남고, 모자라서 빌드가 죽으면 처음부터 다시다.
+  warn "메모리가 작습니다. 빌드 중 죽지 않도록 스왑 4GB를 만듭니다"
+  sudo fallocate -l 4G /swapfile
   sudo chmod 600 /swapfile
   sudo mkswap /swapfile >/dev/null
   sudo swapon /swapfile
   grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
-  ok "스왑 2GB 추가"
+  # 기본 swappiness(60)로는 스왑이 남아 있어도 OOM 킬러가 먼저 움직인다.
+  sudo sysctl -w vm.swappiness=80 >/dev/null
+  grep -q '^vm.swappiness' /etc/sysctl.conf || echo 'vm.swappiness=80' | sudo tee -a /etc/sysctl.conf >/dev/null
+  ok "스왑 4GB 추가"
 else
   ok "충분합니다"
 fi
