@@ -99,7 +99,9 @@ def is_discount_hour(
     rule = tariff.get("weekend_discount_self")
     day = moment.date()
 
-    if day.year > rule["until_year"]:
+    # 일몰 연도는 별도 항목이다 — 할인 자체는 보도자료로 확인됐지만 언제까지인지는
+    # 확인되지 않아, 확인 상태를 따로 달 수 있게 떼어 놨다.
+    if day.year > tariff.get("weekend_discount_sunset")["until_year"]:
         return False
     if season_of(day, tariff) not in rule["seasons"]:
         return False
