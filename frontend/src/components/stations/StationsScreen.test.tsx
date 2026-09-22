@@ -169,6 +169,58 @@ describe("주변 충전소 — 위치", () => {
   });
 
   /*
+   * 눌렀는데 아무 일도 안 일어나는 것처럼 보이면 안 된다.
+   *
+   * 기본 지역을 보고 있는 상태에서 "내 위치로 찾기"가 실패하면 결과가 같은
+   * 화면이다. 아무 말도 안 하면 사용자는 버튼이 고장났다고 읽는다 — 실제로
+   * 그렇게 보고됐다.
+   */
+  test("내 위치로 찾기가 실패하면 그 사실을 말한다", async () => {
+    const user = userEvent.setup();
+    stubGeolocation({ kind: "denied" });
+    renderScreen(routes(NOT_IMPLEMENTED));
+
+    const button = await screen.findByRole("button", { name: /내 위치/ });
+    await user.click(button);
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/위치를 얻지 못했어요/);
+  });
+
+  /* 목포를 보다가 눌렀는데 실패했다고 빛가람으로 끌려가면 안 된다. */
+  test("실패해도 보던 지역을 그대로 둔다", async () => {
+    const user = userEvent.setup();
+    stubGeolocation({ kind: "denied" });
+    const calls = renderScreen(routes(NOT_IMPLEMENTED));
+
+    const picker = await screen.findByRole("combobox", { name: /지역/ });
+    const 목포 = AREAS.find((a) => a.id === "mokpo")!;
+    await user.selectOptions(picker, 목포.id);
+    await waitFor(() =>
+      expect(
+        callsTo(calls, "GET", "/api/chargers").some((c) => c.url.includes(`lat=${목포.lat}`)),
+      ).toBe(true),
+    );
+
+    await user.click(screen.getByRole("button", { name: /내 위치/ }));
+    await screen.findByRole("status");
+
+    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue(목포.id);
+  });
+
+  test("위치를 얻으면 안내가 사라진다", async () => {
+    const user = userEvent.setup();
+    stubGeolocation([{ kind: "denied" }, { kind: "denied" }, SEOUL]);
+    renderScreen(routes(NOT_IMPLEMENTED));
+
+    const button = await screen.findByRole("button", { name: /내 위치/ });
+    await user.click(button);
+    await screen.findByRole("status");
+
+    await user.click(screen.getByRole("button", { name: /내 위치/ }));
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+  });
+
+  /*
    * 응답이 아예 안 오는 경우. timeout 옵션이 없으면 화면이 영영 로딩에 갇힌다 —
    * 에러가 오는 것보다 나쁜 실패 모드다.
    */

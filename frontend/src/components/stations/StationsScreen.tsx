@@ -100,6 +100,9 @@ function areaState(area: Area): GeoState {
 export function StationsScreen() {
   const { status } = useSession();
   const [geo, setGeo] = useState<GeoState>({ kind: "asking" });
+  /** "내 위치로 찾기"가 도는 중. geo를 asking으로 되돌리지 않아 지도가 안 깜빡인다. */
+  const [locating, setLocating] = useState(false);
+  const [geoNotice, setGeoNotice] = useState<string | null>(null);
   const [stations, setStations] = useState<Station[] | null>(null);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
   const [filter, setFilter] = useState<StationFilter>({ type: "all", availableOnly: false });
@@ -108,23 +111,36 @@ export function StationsScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   /**
-   * 기기 위치를 (다시) 물어본다. 못 얻으면 지금 보던 지역을 그대로 둔다 —
-   * 눌렀더니 화면이 비어 버리면 되돌릴 방법이 없다.
+   * 기기 위치를 (다시) 물어본다.
+   *
+   * 못 얻으면 **보던 지역을 그대로 두고 그 사실을 말한다.** 예전엔 조용히
+   * 기본 지역으로 되돌렸는데, 기본 지역을 보던 사람에게는 결과가 같은
+   * 화면이라 버튼이 고장난 것처럼 보였다 — 실제로 그렇게 보고됐다.
+   * 목포를 보다가 눌렀는데 빛가람으로 끌려가는 것도 같은 이유로 안 된다.
+   *
+   * 로딩 중에 지도를 지우지 않는 것도 의도다. 화면이 깜빡였다 같은 자리로
+   * 돌아오면 무슨 일이 일어난 건지 알 수 없다.
    */
   const useMyLocation = useCallback(() => {
-    setGeo({ kind: "asking" });
+    setLocating(true);
+    setGeoNotice(null);
     void askDeviceLocation().then((coords) => {
-      setGeo(
-        coords === null
-          ? areaState(DEFAULT_AREA)
-          : { kind: "ready", coords, origin: { kind: "device" } },
-      );
+      setLocating(false);
+      if (coords === null) {
+        setGeoNotice(
+          "위치를 얻지 못했어요. 브라우저나 기기에서 위치 접근이 막혀 있을 수 있어요.",
+        );
+        return;
+      }
+      setGeo({ kind: "ready", coords, origin: { kind: "device" } });
     });
   }, []);
 
   const selectArea = useCallback((id: string) => {
     const found = AREAS.find((area) => area.id === id);
-    if (found) setGeo(areaState(found));
+    if (!found) return;
+    setGeoNotice(null);
+    setGeo(areaState(found));
   }, []);
 
   // 마운트 때 한 번 물어보고, 못 얻으면 기본 지역으로 넘어간다.
@@ -214,7 +230,7 @@ export function StationsScreen() {
            * 척하지 않는 것이 중요하다.
            */}
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            {geo.kind === "ready" && geo.origin.kind === "device" ? (
+            {geo.kind === "ready" && geo.origin.kind === "device" && geoNotice === null ? (
               <span className="rounded-pill bg-brand/10 px-3 py-2 text-sm font-bold text-brand">
                 내 위치 기준
               </span>
@@ -236,10 +252,27 @@ export function StationsScreen() {
               </label>
             )}
 
-            <Button type="button" onClick={useMyLocation} variant="ghost" className="text-sm">
-              내 위치로 찾기
+            <Button
+              type="button"
+              onClick={useMyLocation}
+              disabled={locating}
+              variant="ghost"
+              className="text-sm"
+            >
+              {locating ? "위치 확인 중…" : "내 위치로 찾기"}
             </Button>
           </div>
+
+          {/*
+           * 눌렀는데 아무 일도 안 일어나는 것처럼 보이면 안 된다. 기본 지역을
+           * 보던 사람에게는 실패 결과가 같은 화면이라, 말해 주지 않으면 버튼이
+           * 고장난 줄 안다.
+           */}
+          {geoNotice ? (
+            <p role="status" className="mt-2 rounded-field bg-warn-bg px-3.5 py-2.5 text-sm text-warn-fg">
+              {geoNotice} 지역을 골라 찾아볼 수 있어요.
+            </p>
+          ) : null}
 
           <fieldset className="mt-4">
             <legend className="sr-only">충전기 종류</legend>
