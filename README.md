@@ -48,6 +48,16 @@ uv run uvicorn evcharge.main:app --reload
 | `KMA_API_KEY` | `GET /api/solar-forecast` | [공공데이터포털 15084084](https://www.data.go.kr/data/15084084/openapi.do) |
 | `GEMINI_API_KEY` | `POST /api/chat` | [Google AI Studio](https://aistudio.google.com/apikey) (무료) |
 
+`POST /api/chat`에는 한도가 **둘** 걸린다. 사용자별(`CHAT_RATE_LIMIT_COUNT`,
+기본 20회/60분)과 서비스 전체(`CHAT_SERVICE_LIMIT_COUNT`, 기본 300회/24시간)다.
+공개 서버에서는 회원가입이 열려 있어 사용자별 한도가 계정 수만큼 늘어나는데,
+무료 티어의 일일 할당량은 **프로젝트 전체**에 걸리기 때문이다 — 한 사람이
+예산을 비우면 그날 모두가 막힌다.
+
+429에 `X-RateLimit-Scope`가 `user`인지 `service`인지 실린다. 화면이 둘을
+다르게 말해야 한다: 개인 한도는 기다리면 풀리고, 서비스 한도는 그날 안에는
+안 풀린다. `CHAT_SERVICE_LIMIT_COUNT=0`이면 서비스 한도를 걸지 않는다.
+
 공공데이터포털은 계정당 인증키를 하나만 주므로 위 두 키는 **같은 문자열**이 된다.
 그래도 설정을 따로 두는 이유는 활용신청이 데이터셋별로 따로 승인되기 때문이다 —
 "충전소는 되는데 예보는 안 된다"는 상태가 실제로 있다.

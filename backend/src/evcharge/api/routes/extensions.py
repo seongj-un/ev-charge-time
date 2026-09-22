@@ -20,7 +20,7 @@ from ...domain.pricing import KST
 from ...infra.db import get_session
 from ...infra.kma_api import KmaApiClient
 from ...infra.llm import GeminiClient, LlmClient, LlmError
-from ...infra.models import ChatRateLimit, User, Vehicle
+from ...infra.models import ChatRateLimit, ChatServiceQuota, User, Vehicle
 from ...settings import get_settings
 from .. import chat_service
 from ..auth_deps import current_user
@@ -127,6 +127,7 @@ def chat(
 
     now = datetime.now(KST)
     _consume_quota(session, user, now)
+    _consume_service_quota(session, now)
 
     try:
         conditions = chat_service.extract_conditions(
@@ -234,7 +235,76 @@ def _consume_quota(session: DbSession, user: User, now: datetime) -> None:
                 f"{settings.chat_rate_limit_count}회)을 초과했습니다. "
                 f"약 {minutes}분 뒤에 다시 물어볼 수 있어요."
             ),
-            headers={"Retry-After": str(retry_after)},
+            headers={
+                "Retry-After": str(retry_after),
+                # 화면이 두 한도를 다르게 말해야 한다. 개인 한도는 기다리면
+                # 풀리고, 서비스 한도는 "오늘은 여기까지"에 가깝다.
+                "X-RateLimit-Scope": "user",
+            },
+        )
+
+
+def _consume_service_quota(session: DbSession, now: datetime) -> None:
+    """서비스 전체 호출분을 원자적으로 차감하고, 넘었으면 429.
+
+    사용자 한도를 통과한 뒤에 부른다. 순서를 뒤집으면, 어차피 개인 한도에
+    걸려 거절될 요청이 공용 예산을 먼저 깎는다.
+
+    ``_consume_quota``와 같은 UPSERT 한 문장이다. 행은 ``id=1`` 하나뿐이라
+    모든 요청이 그 행에서 직렬화된다.
+
+    ``chat_service_limit_count``가 0이면 걸지 않는다 — 개발·테스트용이다.
+    """
+    settings = get_settings()
+    limit = settings.chat_service_limit_count
+    if limit <= 0:
+        return
+
+    window = timedelta(hours=settings.chat_service_limit_window_hours)
+    window_start = _window_start(now, window)
+
+    increment = (
+        pg_insert(ChatServiceQuota)
+        .values(id=1, window_start=window_start, used_count=1)
+        .on_conflict_do_update(
+            index_elements=[ChatServiceQuota.id],
+            set_={
+                "used_count": case(
+                    (
+                        ChatServiceQuota.window_start == window_start,
+                        ChatServiceQuota.used_count + 1,
+                    ),
+                    else_=1,
+                ),
+                "window_start": window_start,
+            },
+        )
+        .returning(ChatServiceQuota.used_count)
+    )
+    used = session.execute(increment).scalar_one()
+    session.commit()
+
+    if used > limit:
+        reset_at = window_start + window
+        retry_after = max(1, ceil((reset_at - now).total_seconds()))
+        hours = ceil(retry_after / 3600)
+        logger.warning(
+            "자연어 질의 서비스 전체 한도 소진: %s/%s (창 시작 %s)",
+            used,
+            limit,
+            window_start,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "오늘 이 서비스의 질문 횟수를 모두 썼습니다. "
+                f"약 {hours}시간 뒤에 다시 열립니다. "
+                "그동안에도 추천·단가 차트·주변 충전소는 그대로 쓸 수 있어요."
+            ),
+            headers={
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Scope": "service",
+            },
         )
 
 

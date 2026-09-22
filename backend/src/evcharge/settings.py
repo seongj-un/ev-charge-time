@@ -80,6 +80,17 @@ class Settings(BaseSettings):
     chat_rate_limit_count: int = 20
     chat_rate_limit_window_minutes: int = 60
 
+    # 서비스 전체 한도. 사용자별 한도와 **함께** 건다.
+    #
+    # 공개 서버에서는 회원가입이 열려 있어 "사용자당 20회"가 계정 수만큼
+    # 늘어나는데, 무료 티어 일일 할당량은 프로젝트 전체에 걸린다. 한 사람이
+    # 예산을 비우면 그날 모두가 막히고, 그게 본선 시연 중이면 최악이다.
+    #
+    # 기본값 300회/24시간은 무료 티어 안쪽에서 넉넉히 시연할 수 있는 선이다.
+    # 0으로 두면 서비스 전체 한도를 걸지 않는다 (개발용).
+    chat_service_limit_count: int = 300
+    chat_service_limit_window_hours: int = 24
+
     # F-09 태양광 발전 예측 — 공공데이터포털 "기상청_단기예보 조회서비스"
     # (https://www.data.go.kr/data/15084084/openapi.do)
     #

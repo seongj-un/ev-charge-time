@@ -113,6 +113,20 @@ def _never_call_the_real_llm() -> None:
     os.environ["GEMINI_API_KEY"] = ""
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _service_quota_off_by_default() -> None:
+    """테스트 세션 전체에서 **서비스 전체** 호출 한도를 끈다 (F-10).
+
+    이 카운터는 행이 ``id=1`` 하나뿐이라 **모든 테스트가 같은 행을 공유한다.**
+    켜 둔 채로 두면 ``POST /api/chat``을 부르는 테스트가 쌓일수록 카운터가
+    올라가, 어느 날 관계없는 테스트가 429로 깨진다 — 테스트 순서에 따라
+    결과가 달라지는, 가장 찾기 싫은 종류의 실패다.
+
+    서비스 한도 자체는 ``test_chat_service_quota.py``가 켜서 검증한다.
+    """
+    os.environ["CHAT_SERVICE_LIMIT_COUNT"] = "0"
+
+
 @pytest.fixture(scope="session")
 def test_engine() -> Iterator[Engine]:
     """테스트 DB에 붙는 세션 스코프 engine. 스키마는 세션당 한 번만 만든다."""

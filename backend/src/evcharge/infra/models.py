@@ -194,6 +194,41 @@ class ChatRateLimit(Base):
     )
 
 
+class ChatServiceQuota(Base):
+    """F-10 자연어 질의의 **서비스 전체** 호출 제한 (고정 창 카운터).
+
+    사용자별 제한(``ChatRateLimit``)만으로는 공개 서버를 지킬 수 없다.
+    회원가입이 열려 있으면 계정을 여러 개 만드는 것으로 "사용자당 N회"가
+    사실상 무제한이 되는데, **무료 티어의 일일 할당량은 프로젝트 전체에**
+    걸린다. 한 사람이 공용 예산을 비우면 그날 나머지 모두의 질문이 막힌다.
+
+    본선 시연 중에 그 일이 나는 것이 최악이라, 사용자 한도와 별개로
+    서비스 전체 한도를 하나 더 둔다.
+
+    **행은 영원히 하나다.** ``id``를 1로 고정하고 ``window_start``를 값으로
+    들고 다니면서, UPSERT 한 문장이 "같은 창이면 +1, 창이 넘어갔으면 1로
+    초기화"를 처리한다. ``ChatRateLimit``과 같은 이유로 읽고-쓰기를 하지
+    않는다 — 병렬 요청에 증가분을 잃으면 한도가 우회된다.
+    """
+
+    __tablename__ = "chat_service_quota"
+
+    # 항상 1. 이 테이블은 행 하나짜리 카운터다.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    used_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class ChargerCache(Base):
     __tablename__ = "charger_cache"
 
