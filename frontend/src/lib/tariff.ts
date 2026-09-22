@@ -24,6 +24,13 @@ const UNVERIFIED_LABEL: Record<string, string> = {
   "public_fast.base_price_per_kwh": "공공 급속 단가",
   "public_fast.weekend_discount": "주말 할인",
   weekend_discount_self: "주말 할인",
+  /*
+   * 할인 자체와 적용 기한은 근거가 다르다. 봄·가을 주말 11~14시 50%는 기후에너지
+   * 환경부 보도자료(2026-04-14)로 확인됐지만, "2030년까지"는 어느 공식 문서에도
+   * 없어 따로 떨어져 나왔다. 둘을 같은 이름으로 부르면 확인된 할인까지 잠정치로
+   * 읽힌다.
+   */
+  weekend_discount_sunset: "주말 할인 적용 기한",
   power_fund_rate: "전력산업기반기금",
   "adders.climate_env_per_kwh": "기후환경요금",
   "adders.fuel_adjustment_per_kwh": "연료비조정요금",

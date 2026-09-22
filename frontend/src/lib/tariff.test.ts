@@ -46,6 +46,27 @@ describe("unverifiedNotice", () => {
     );
   });
 
+  /*
+   * 2026-04-16 요금 개편을 반영하면서 남은 미확인 항목이 둘로 줄었다.
+   * 주말 할인 자체는 공식 문서로 확인됐고, 2030년까지라는 일몰 연도만
+   * 근거가 없어 weekend_discount_sunset 으로 따로 떨어져 나왔다.
+   *
+   * "일부 요금 항목"으로 뭉뚱그리면 사용자는 무엇이 잠정치인지 모른다 —
+   * 지금 화면에 실제로 뜨는 문장이라 이름을 붙여 준다.
+   */
+  test("주말 할인 적용 기한을 이름으로 말한다", () => {
+    expect(unverifiedNotice(["weekend_discount_sunset"])).toBe(
+      "주말 할인 적용 기한은 공식 요금표 확인 전 값입니다.",
+    );
+  });
+
+  /** 지금 백엔드가 실제로 보내는 두 항목. */
+  test("현재 남은 두 항목을 그대로 문장으로 만든다", () => {
+    expect(
+      unverifiedNotice(["public_fast.base_price_per_kwh", "weekend_discount_sunset"]),
+    ).toBe("공공 급속 단가와 주말 할인 적용 기한은 공식 요금표 확인 전 값입니다.");
+  });
+
   /* 백엔드가 새 키를 추가해도 빈 문장이 나오면 안 된다. */
   test("모르는 키는 뭉뚱그려 말한다", () => {
     expect(unverifiedNotice(["brand_new_thing"])).toBe(
