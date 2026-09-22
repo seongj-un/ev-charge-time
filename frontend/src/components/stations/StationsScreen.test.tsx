@@ -1,10 +1,11 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { SessionProvider } from "@/components/auth/SessionProvider";
 import { USER, callsTo, stubApi, type ApiCall, type Route } from "@/components/me/test-api";
 
+import { AREAS, DEFAULT_AREA } from "./station-view";
 import { StationsScreen } from "./StationsScreen";
 import {
   FAST_AVAILABLE,
@@ -108,41 +109,97 @@ describe("주변 충전소 — 백엔드가 501인 오늘", () => {
   });
 });
 
+/*
+ * 위치는 이 화면에서 제일 잘 깨지는 부분이다.
+ *
+ * 실제로 겪은 것: 사이트 권한이 "granted"인데도 getCurrentPosition이
+ * PERMISSION_DENIED로 떨어졌다. macOS가 Chrome의 위치 서비스를 막고 있으면
+ * 그렇게 된다. 사용자는 브라우저에서 아무리 "허용"을 눌러도 못 고친다.
+ *
+ * 그래서 이 화면은 **위치를 못 얻어도 쓸 수 있어야 한다.** 막다른 길로 두면
+ * 심사위원 노트북이 같은 상태일 때 그 자리에서 죽는다.
+ */
 describe("주변 충전소 — 위치", () => {
-  test("권한을 거부하면 이유를 말하고 다시 시도할 길을 준다", async () => {
+  test("위치를 못 얻으면 기본 지역으로라도 찾아 준다", async () => {
     stubGeolocation({ kind: "denied" });
     const calls = renderScreen(routes(NOT_IMPLEMENTED));
 
-    expect(
-      await screen.findByText("위치를 알 수 없어 주변 충전소를 찾지 못했어요"),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
-    // 좌표가 없으면 서버에 묻지도 않는다.
-    expect(callsTo(calls, "GET", "/api/chargers")).toHaveLength(0);
+    await waitFor(() => expect(callsTo(calls, "GET", "/api/chargers")).toHaveLength(1));
+    const url = callsTo(calls, "GET", "/api/chargers")[0].url;
+    expect(url).toContain(`lat=${DEFAULT_AREA.lat}`);
+    expect(url).toContain(`lng=${DEFAULT_AREA.lng}`);
   });
 
-  test("다시 시도를 누르면 위치를 다시 묻고, 받으면 조회한다", async () => {
+  test("어느 지역을 보고 있는지 밝힌다 — 내 위치인 척하지 않는다", async () => {
+    stubGeolocation({ kind: "denied" });
+    renderScreen(routes(NOT_IMPLEMENTED));
+
+    expect(await screen.findByText(new RegExp(DEFAULT_AREA.name))).toBeInTheDocument();
+  });
+
+  test("지역을 바꾸면 그 좌표로 다시 찾는다", async () => {
+    const user = userEvent.setup();
+    stubGeolocation({ kind: "denied" });
+    const calls = renderScreen(routes(NOT_IMPLEMENTED));
+
+    const picker = await screen.findByRole("combobox", { name: /지역/ });
+    const 목포 = AREAS.find((a) => a.id === "mokpo")!;
+    await user.selectOptions(picker, 목포.id);
+
+    await waitFor(() => {
+      const urls = callsTo(calls, "GET", "/api/chargers").map((c) => c.url);
+      expect(urls.some((u) => u.includes(`lat=${목포.lat}`))).toBe(true);
+    });
+  });
+
+  test("내 위치로 다시 시도할 길을 남긴다", async () => {
     const user = userEvent.setup();
     const geo = stubGeolocation([{ kind: "denied" }, SEOUL]);
     const calls = renderScreen(routes(NOT_IMPLEMENTED));
 
-    await screen.findByRole("button", { name: "다시 시도" });
+    const retry = await screen.findByRole("button", { name: /내 위치/ });
     expect(geo.calls).toBe(1);
-
-    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    await user.click(retry);
 
     await waitFor(() => expect(geo.calls).toBe(2));
-    await waitFor(() => expect(callsTo(calls, "GET", "/api/chargers")).toHaveLength(1));
+    await waitFor(() => {
+      const urls = callsTo(calls, "GET", "/api/chargers").map((c) => c.url);
+      expect(urls.some((u) => u.includes(`lat=${SEOUL.lat}`))).toBe(true);
+    });
   });
 
-  test("브라우저에 위치 기능이 없으면 권한 거부와 구분해서 알린다", async () => {
-    stubGeolocation({ kind: "missing" });
+  /*
+   * 응답이 아예 안 오는 경우. timeout 옵션이 없으면 화면이 영영 로딩에 갇힌다 —
+   * 에러가 오는 것보다 나쁜 실패 모드다.
+   */
+  test("위치 요청에 제한 시간을 건다", async () => {
+    const geo = stubGeolocation({ kind: "hang" });
     renderScreen(routes(NOT_IMPLEMENTED));
 
-    expect(
-      await screen.findByText("위치를 알 수 없어 주변 충전소를 찾지 못했어요"),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/이 브라우저/)).toBeInTheDocument();
+    await waitFor(() => expect(geo.calls).toBe(1));
+    expect(geo.options[0]?.timeout).toBeGreaterThan(0);
+  });
+
+  test("응답이 없어도 기본 지역으로 넘어간다", async () => {
+    vi.useFakeTimers();
+    try {
+      stubGeolocation({ kind: "hang" });
+      const calls = renderScreen(routes(NOT_IMPLEMENTED));
+      // 제한 시간이 지나면 스스로 포기하고 기본 지역으로 간다.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20_000);
+      });
+      expect(callsTo(calls, "GET", "/api/chargers").length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("브라우저에 위치 기능이 없어도 기본 지역으로 찾아 준다", async () => {
+    stubGeolocation({ kind: "missing" });
+    const calls = renderScreen(routes(NOT_IMPLEMENTED));
+
+    await waitFor(() => expect(callsTo(calls, "GET", "/api/chargers")).toHaveLength(1));
   });
 
   test("각주에 좌표를 저장하지 않는다는 것을 밝힌다", async () => {
@@ -252,11 +309,17 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
     expect(screen.getByText("고른 조건에 맞는 충전소가 없어요")).toBeInTheDocument();
   });
 
-  test("서버가 빈 목록을 주면 없다고 말한다", async () => {
+  /*
+   * "없다"와 "아직 수집하지 않았다"는 다른 말이다. 캐시가 전남·광주만 담고
+   * 있어서 서울에서 열면 빈 목록이 오는데, 그걸 "주변에 없다"고 하면 거짓말이
+   * 된다. 프론트는 어느 쪽인지 알 수 없으므로 둘 다 말한다.
+   */
+  test("빈 목록을 '충전소가 없다'로 단정하지 않는다", async () => {
     stubGeolocation(SEOUL);
     renderScreen(routes({ body: [] }));
 
-    expect(await screen.findByText("주변에 충전소가 없어요")).toBeInTheDocument();
+    expect(await screen.findByText("이 근처에서 충전소를 찾지 못했어요")).toBeInTheDocument();
+    expect(screen.getByText(/전남·광주 지역 충전소만 수집/)).toBeInTheDocument();
   });
 
   test("별을 누르면 즐겨찾기에 넣고, 다시 누르면 뺀다", async () => {

@@ -8,6 +8,31 @@ import { parseKstWallClock } from "@/lib/format";
  * 화면 코드가 그럴듯한 데이터를 하나라도 들고 있으면 시연에서 무너진다.
  */
 
+/**
+ * 위치를 못 얻었을 때 고를 조회 기준점.
+ *
+ * 화면이 기기 좌표 하나에 걸려 있으면 안 된다. 사이트 권한이 "허용"이어도 OS가
+ * 위치 서비스를 막으면 `getCurrentPosition`이 PERMISSION_DENIED로 떨어지고,
+ * 사용자는 브라우저에서 아무리 허용을 눌러도 고칠 수 없다. 그때 빠져나갈 길이
+ * 없으면 화면이 그냥 죽는다.
+ *
+ * **좌표는 짐작한 값이 아니라 실제 API로 결과를 확인한 것만 남겼다** (반경 2km):
+ * 빛가람 158곳 · 광주 상무 328곳 · 목포 137곳 · 여수 127곳 · 순천 96곳.
+ * 캐시가 전남·광주만 담고 있어 그 밖 좌표를 넣으면 조용히 빈 목록이 된다.
+ */
+export type Area = { id: string; name: string; lat: number; lng: number };
+
+export const AREAS: Area[] = [
+  // 기본값이 빛가람인 건 대회장이기도 하고, 데이터가 확실히 있는 곳이기도 하다.
+  { id: "bitgaram", name: "빛가람혁신도시", lat: 35.0175, lng: 126.79 },
+  { id: "gwangju", name: "광주 상무지구", lat: 35.152, lng: 126.851 },
+  { id: "mokpo", name: "목포", lat: 34.8118, lng: 126.3922 },
+  { id: "yeosu", name: "여수", lat: 34.7604, lng: 127.6622 },
+  { id: "suncheon", name: "순천", lat: 34.9506, lng: 127.4872 },
+];
+
+export const DEFAULT_AREA = AREAS[0];
+
 /** 이름이 아직 없는 즐겨찾기에 쓸 문구. 한 곳에만 둔다. */
 export const NAME_MISSING = "이름을 아직 불러오지 못했어요";
 

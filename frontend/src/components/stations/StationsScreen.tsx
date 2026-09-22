@@ -13,7 +13,10 @@ import type { Station } from "@/lib/api/types";
 
 import { StationCard } from "./StationCard";
 import {
+  AREAS,
+  DEFAULT_AREA,
   FAST_MIN_KW,
+  type Area,
   filterStations,
   latestStatusUpdate,
   statusUpdatedLabel,
@@ -31,13 +34,25 @@ import {
 
 type Coords = { lat: number; lng: number };
 
+/**
+ * 좌표를 어디서 얻었는지.
+ *
+ * 화면이 이걸 밝혀야 한다 — 기본 지역으로 찾아 놓고 "내 주변"이라고 하면
+ * 사용자는 자기 근처에 이 충전소들이 있다고 믿는다.
+ */
+type Origin = { kind: "device" } | { kind: "area"; area: Area };
+
 type GeoState =
   | { kind: "asking" }
-  | { kind: "ready"; coords: Coords }
-  /** 권한 거부 또는 위치 획득 실패 */
-  | { kind: "denied" }
-  /** 브라우저에 Geolocation API가 없음 */
-  | { kind: "missing" };
+  | { kind: "ready"; coords: Coords; origin: Origin };
+
+/**
+ * 위치 요청에 거는 제한 시간.
+ *
+ * 없으면 OS가 응답을 주지 않을 때 화면이 영원히 로딩에 갇힌다. 에러가 오는
+ * 것보다 나쁜 실패 모드다 — 에러는 최소한 다음 화면을 그릴 수 있다.
+ */
+const GEO_TIMEOUT_MS = 8000;
 
 const SIGN_IN_HREF = `/login?next=${encodeURIComponent("/stations")}`;
 
@@ -47,21 +62,39 @@ const TYPE_OPTIONS: { value: StationFilter["type"]; label: string }[] = [
   { value: "slow", label: "완속" },
 ];
 
-function askLocation(): Promise<GeoState> {
+/**
+ * 기기 위치를 물어본다. 못 얻으면 null.
+ *
+ * 실패를 종류별로 나누지 않는 건 화면이 할 일이 같기 때문이다. 사이트 권한이
+ * "허용"이어도 OS가 막으면 PERMISSION_DENIED가 오는데, 그때 "브라우저에서
+ * 허용해 주세요"라고 안내하면 사용자는 이미 허용해 둔 설정을 다시 확인하러
+ * 갔다가 돌아온다. 어느 쪽이든 지금 할 수 있는 건 지역을 고르는 것이다.
+ */
+function askDeviceLocation(): Promise<Coords | null> {
   return new Promise((resolve) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      resolve({ kind: "missing" });
+      resolve(null);
       return;
     }
+    let settled = false;
+    const done = (value: Coords | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
     navigator.geolocation.getCurrentPosition(
       (position) =>
-        resolve({
-          kind: "ready",
-          coords: { lat: position.coords.latitude, lng: position.coords.longitude },
-        }),
-      () => resolve({ kind: "denied" }),
+        done({ lat: position.coords.latitude, lng: position.coords.longitude }),
+      () => done(null),
+      { timeout: GEO_TIMEOUT_MS, maximumAge: 5 * 60 * 1000 },
     );
+    // 브라우저가 timeout 옵션을 지키지 않는 경우가 있어 우리도 한 번 더 건다.
+    setTimeout(() => done(null), GEO_TIMEOUT_MS + 500);
   });
+}
+
+function areaState(area: Area): GeoState {
+  return { kind: "ready", coords: { lat: area.lat, lng: area.lng }, origin: { kind: "area", area } };
 }
 
 export function StationsScreen() {
@@ -74,17 +107,36 @@ export function StationsScreen() {
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  /** 버튼에서 부른다. 이펙트 본문에서 부르면 동기 setState가 되어 lint에 걸린다. */
-  const requestLocation = useCallback(() => {
+  /**
+   * 기기 위치를 (다시) 물어본다. 못 얻으면 지금 보던 지역을 그대로 둔다 —
+   * 눌렀더니 화면이 비어 버리면 되돌릴 방법이 없다.
+   */
+  const useMyLocation = useCallback(() => {
     setGeo({ kind: "asking" });
-    void askLocation().then(setGeo);
+    void askDeviceLocation().then((coords) => {
+      setGeo(
+        coords === null
+          ? areaState(DEFAULT_AREA)
+          : { kind: "ready", coords, origin: { kind: "device" } },
+      );
+    });
   }, []);
 
-  // 처음 상태가 이미 asking이라, 마운트 때는 물어보기만 하면 된다.
+  const selectArea = useCallback((id: string) => {
+    const found = AREAS.find((area) => area.id === id);
+    if (found) setGeo(areaState(found));
+  }, []);
+
+  // 마운트 때 한 번 물어보고, 못 얻으면 기본 지역으로 넘어간다.
   useEffect(() => {
     let alive = true;
-    void askLocation().then((next) => {
-      if (alive) setGeo(next);
+    void askDeviceLocation().then((coords) => {
+      if (!alive) return;
+      setGeo(
+        coords === null
+          ? areaState(DEFAULT_AREA)
+          : { kind: "ready", coords, origin: { kind: "device" } },
+      );
     });
     return () => {
       alive = false;
@@ -161,6 +213,42 @@ export function StationsScreen() {
             <span className="text-sm">지도 영역</span>
           </div>
 
+          {/*
+           * 어디를 기준으로 찾는지 늘 보이게 둔다.
+           *
+           * 기기 위치를 못 얻어도 화면이 죽지 않아야 한다 — 사이트 권한이
+           * "허용"인데 OS가 막으면 PERMISSION_DENIED가 오고, 사용자는
+           * 브라우저에서 고칠 수 없다. 그때 기본 지역으로 넘어가되 "내 주변"인
+           * 척하지 않는 것이 중요하다.
+           */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {geo.kind === "ready" && geo.origin.kind === "device" ? (
+              <span className="rounded-pill bg-brand/10 px-3 py-2 text-sm font-bold text-brand">
+                내 위치 기준
+              </span>
+            ) : (
+              <label className="flex items-center gap-2 text-sm text-ink-2">
+                <span className="font-bold text-ink">지역</span>
+                <select
+                  aria-label="지역"
+                  value={geo.kind === "ready" && geo.origin.kind === "area" ? geo.origin.area.id : DEFAULT_AREA.id}
+                  onChange={(event) => selectArea(event.target.value)}
+                  className="rounded-field border border-line bg-field px-3 py-2 text-sm text-ink outline-none focus-visible:border-brand"
+                >
+                  {AREAS.map((area) => (
+                    <option key={area.id} value={area.id}>
+                      {area.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <Button type="button" onClick={useMyLocation} variant="ghost" className="text-sm">
+              내 위치로 찾기
+            </Button>
+          </div>
+
           <fieldset className="mt-4">
             <legend className="sr-only">충전기 종류</legend>
             <div className="flex flex-wrap items-center gap-2">
@@ -224,22 +312,6 @@ export function StationsScreen() {
           <div className="mt-4">
             {geo.kind === "asking" ? (
               <div className="h-24 animate-pulse rounded-card bg-sunken" aria-hidden />
-            ) : geo.kind !== "ready" ? (
-              <section className="rounded-card border border-line bg-surface px-5 py-8 text-center">
-                <p className="text-base font-bold text-ink">
-                  위치를 알 수 없어 주변 충전소를 찾지 못했어요
-                </p>
-                <p className="mt-2 text-sm leading-relaxed text-ink-2">
-                  {geo.kind === "missing"
-                    ? "이 브라우저는 위치 기능을 지원하지 않아요."
-                    : "브라우저에서 위치 권한을 허용하면 가까운 충전소를 찾아드려요."}
-                </p>
-                <div className="mt-5">
-                  <Button type="button" onClick={requestLocation} variant="outline" size="lg">
-                    다시 시도
-                  </Button>
-                </div>
-              </section>
             ) : loadError ? (
               <Notice>
                 {loadError.notImplemented ? (
@@ -256,9 +328,18 @@ export function StationsScreen() {
             ) : stations === null ? (
               <div className="h-24 animate-pulse rounded-card bg-sunken" aria-hidden />
             ) : stations.length === 0 ? (
-              <p className="rounded-card border border-line bg-surface px-5 py-8 text-center text-ink-2">
-                주변에 충전소가 없어요
-              </p>
+              /*
+               * "충전소가 없다"와 "이 지역은 아직 수집하지 않았다"는 다른 말이다.
+               * 지금 캐시는 전남·광주만 담고 있어서, 서울에서 열면 빈 목록이
+               * 온다 — 그걸 "주변에 없다"고 하면 거짓말이 된다. 어느 쪽인지
+               * 프론트가 알 수 없으므로 둘 다 말하고 지역을 고를 길을 준다.
+               */
+              <div className="rounded-card border border-line bg-surface px-5 py-8 text-center">
+                <p className="text-ink-2">이 근처에서 충전소를 찾지 못했어요</p>
+                <p className="mt-2 text-sm text-ink-3">
+                  지금은 전남·광주 지역 충전소만 수집돼 있어요. 위쪽에서 지역을 바꿔 보세요.
+                </p>
+              </div>
             ) : visible.length === 0 ? (
               <p className="rounded-card border border-line bg-surface px-5 py-8 text-center text-ink-2">
                 고른 조건에 맞는 충전소가 없어요

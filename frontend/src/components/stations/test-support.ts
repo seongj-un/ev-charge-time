@@ -91,15 +91,25 @@ export type GeoResult =
   /** 위치는 물어봤지만 못 받음 (POSITION_UNAVAILABLE) */
   | { kind: "failed" }
   /** 브라우저에 Geolocation API가 아예 없음 */
-  | { kind: "missing" };
+  | { kind: "missing" }
+  /**
+   * 성공도 실패도 돌려주지 않음.
+   *
+   * OS가 위치 서비스를 막았을 때 실제로 나타나는 실패 모드다. 에러가 오면
+   * 그래도 화면이 반응하는데, 아무 응답이 없으면 timeout 옵션이 없는 한
+   * 영원히 기다린다.
+   */
+  | { kind: "hang" };
 
 /**
  * 결과를 배열로 주면 호출마다 하나씩 소비한다 — "다시 시도하면 이번엔 성공한다"를
  * 그대로 쓸 수 있게 하려는 것이다. 배열이 바닥나면 마지막 값을 계속 돌려준다.
  */
-export function stubGeolocation(results: GeoResult | GeoResult[]): { calls: number } {
+export function stubGeolocation(
+  results: GeoResult | GeoResult[],
+): { calls: number; options: (PositionOptions | undefined)[] } {
   const sequence = Array.isArray(results) ? results : [results];
-  const counter = { calls: 0 };
+  const counter = { calls: 0, options: [] as (PositionOptions | undefined)[] };
 
   const define = (value: unknown) => {
     Object.defineProperty(navigator, "geolocation", { value, configurable: true });
@@ -114,9 +124,13 @@ export function stubGeolocation(results: GeoResult | GeoResult[]): { calls: numb
     getCurrentPosition(
       onSuccess: (position: { coords: { latitude: number; longitude: number } }) => void,
       onError: (error: { code: number; message: string }) => void,
+      options?: PositionOptions,
     ) {
       const result = sequence[Math.min(counter.calls, sequence.length - 1)];
       counter.calls += 1;
+      counter.options.push(options);
+      // 아무것도 부르지 않는다. timeout 옵션이 없으면 화면이 여기 갇힌다.
+      if (result.kind === "hang") return;
       if (result.kind === "granted") {
         onSuccess({ coords: { latitude: result.lat, longitude: result.lng } });
         return;
