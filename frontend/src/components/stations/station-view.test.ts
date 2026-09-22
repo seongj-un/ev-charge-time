@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   AREAS,
   DEFAULT_AREA,
+  geoBlockMessage,
   NAME_MISSING,
   speedLabel,
   speedOf,
@@ -240,5 +241,41 @@ describe("지역 기준점", () => {
 
   test("이름이 비어 있지 않다", () => {
     for (const area of AREAS) expect(area.name.trim()).not.toBe("");
+  });
+});
+
+/*
+ * 위치를 못 얻었을 때 무엇을 고쳐야 하는지.
+ *
+ * 사용자가 Chrome의 "위치 액세스 허용됨" 알림과 우리 안내를 나란히 놓고
+ * "허용했는데 왜 안 되냐"고 물었다. 둘 다 맞는 말이었다 — 사이트 권한은
+ * 허용이고 OS가 막고 있었다. 한 문장으로 뭉뚱그리면 사용자는 이미 허용해 둔
+ * 설정을 다시 확인하러 갔다가 그대로 돌아온다.
+ */
+describe("위치 차단 안내", () => {
+  test("사이트 권한이 허용인데 실패하면 기기 설정을 가리킨다", () => {
+    const message = geoBlockMessage("granted");
+    expect(message).toMatch(/기기|시스템 설정/);
+    // 이미 해 둔 일을 또 시키지 않는다.
+    expect(message).not.toMatch(/사이트의 위치 접근을 허용/);
+  });
+
+  test("사이트 권한이 거부면 주소창을 가리킨다", () => {
+    expect(geoBlockMessage("denied")).toMatch(/주소창/);
+  });
+
+  /* 아직 안 물어봤거나 알 수 없으면 한쪽으로 단정하지 않는다. */
+  test("알 수 없으면 양쪽을 다 말한다", () => {
+    for (const state of ["prompt", "unknown"] as const) {
+      const message = geoBlockMessage(state);
+      expect(message).toMatch(/브라우저/);
+      expect(message).toMatch(/기기/);
+    }
+  });
+
+  test("어느 경우든 빈 문장을 내놓지 않는다", () => {
+    for (const state of ["granted", "denied", "prompt", "unknown"] as const) {
+      expect(geoBlockMessage(state).trim().length).toBeGreaterThan(10);
+    }
   });
 });

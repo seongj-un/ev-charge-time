@@ -15,6 +15,8 @@ import { StationMap } from "./StationMap";
 import {
   AREAS,
   DEFAULT_AREA,
+  geoBlockMessage,
+  type GeoPermission,
   FAST_MIN_KW,
   type Area,
   filterStations,
@@ -93,6 +95,20 @@ function askDeviceLocation(): Promise<Coords | null> {
   });
 }
 
+/**
+ * 사이트 권한 상태를 물어본다. 실패는 곧 unknown이다 — 이걸 못 읽는다고
+ * 위치 찾기 자체가 실패하면 안 된다.
+ */
+async function askPermission(): Promise<GeoPermission> {
+  try {
+    if (typeof navigator === "undefined" || !navigator.permissions?.query) return "unknown";
+    const status = await navigator.permissions.query({ name: "geolocation" as PermissionName });
+    return status.state as GeoPermission;
+  } catch {
+    return "unknown";
+  }
+}
+
 function areaState(area: Area): GeoState {
   return { kind: "ready", coords: { lat: area.lat, lng: area.lng }, origin: { kind: "area", area } };
 }
@@ -127,9 +143,12 @@ export function StationsScreen() {
     void askDeviceLocation().then((coords) => {
       setLocating(false);
       if (coords === null) {
-        setGeoNotice(
-          "위치를 얻지 못했어요. 브라우저나 기기에서 위치 접근이 막혀 있을 수 있어요.",
-        );
+        /*
+         * 왜 실패했는지까지 봐야 쓸모 있는 안내가 된다. 사이트 권한이 허용인데
+         * 실패했다면 막는 쪽은 기기다 — 그때 "브라우저에서 허용해 주세요"라고
+         * 하면 이미 해 둔 일을 다시 시키는 셈이다.
+         */
+        void askPermission().then((permission) => setGeoNotice(geoBlockMessage(permission)));
         return;
       }
       setGeo({ kind: "ready", coords, origin: { kind: "device" } });

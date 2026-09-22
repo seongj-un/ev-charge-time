@@ -33,6 +33,33 @@ export const AREAS: Area[] = [
 
 export const DEFAULT_AREA = AREAS[0];
 
+/**
+ * 사이트 권한 상태. `navigator.permissions`가 없거나 물어보다 실패하면 unknown.
+ */
+export type GeoPermission = "granted" | "denied" | "prompt" | "unknown";
+
+/**
+ * 위치를 못 얻었을 때 **무엇을 고쳐야 하는지** 알려 준다.
+ *
+ * 한 문장으로 뭉뚱그리면 안 되는 이유가 실제로 드러났다. 사용자가 Chrome의
+ * "위치 액세스 허용됨" 알림과 우리 안내를 나란히 놓고 "허용했는데 왜 안
+ * 되냐"고 물었다. 둘 다 맞는 말이었다 — 사이트 권한은 허용이고 macOS가
+ * 막고 있었다. "브라우저에서 허용해 주세요"라고 하면 이미 해 둔 일을 다시
+ * 시키는 셈이고, 사용자는 확인만 하고 그대로 돌아온다.
+ */
+export function geoBlockMessage(permission: GeoPermission): string {
+  switch (permission) {
+    case "granted":
+      // 사이트는 허용인데 실패했다 = 막는 쪽은 기기다.
+      return "브라우저에서는 위치를 허용했지만 기기가 막고 있어요. macOS는 시스템 설정 › 개인정보 보호 및 보안 › 위치 서비스에서 Chrome을 켜야 해요.";
+    case "denied":
+      return "이 사이트의 위치 접근이 차단돼 있어요. 주소창 왼쪽 아이콘에서 허용할 수 있어요.";
+    default:
+      // 아직 안 물어봤거나 알 수 없다. 한쪽으로 단정하지 않는다.
+      return "위치를 얻지 못했어요. 브라우저나 기기에서 위치 접근이 막혀 있을 수 있어요.";
+  }
+}
+
 /** 이름이 아직 없는 즐겨찾기에 쓸 문구. 한 곳에만 둔다. */
 export const NAME_MISSING = "이름을 아직 불러오지 못했어요";
 
