@@ -3,10 +3,12 @@ import type { ComponentType } from "react";
 import { BoltIcon, ChartIcon, ChatIcon, HomeIcon, PersonIcon, PinIcon } from "./icons";
 
 /**
- * 이름이 아직 정해지지 않았다 (노션 문서 제목도 "(가칭)"). 디자인의 자리표시자를
- * 그대로 두되 한 곳에만 둔다 — 이름이 정해지면 이 상수만 고치면 된다.
+ * 서비스 이름.
+ *
+ * 상단 내비·홈·추천 화면·브라우저 탭 제목·PWA 매니페스트가 전부 이걸 읽는다.
+ * 한 곳에만 둔 덕에 이름이 정해졌을 때 이 줄만 고치면 됐다.
  */
-export const SERVICE_NAME = "[서비스명]";
+export const SERVICE_NAME = "키네틱";
 
 export type NavItem = {
   href: string;
