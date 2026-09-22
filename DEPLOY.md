@@ -1,6 +1,6 @@
 # 키네틱 배포
 
-오라클 클라우드에 올리는 절차는 [deploy/ORACLE.md](deploy/ORACLE.md)에 있다.
+AWS EC2·오라클 클라우드에 올리는 절차는 [deploy/CLOUD.md](deploy/CLOUD.md)에 있다.
 아래는 호스트와 무관한 공통 내용이다.
 
 한 번에 넷이 뜬다: Postgres → 백엔드(FastAPI) → 프론트(Next) → Caddy.
