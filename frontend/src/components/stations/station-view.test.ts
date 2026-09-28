@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   AREAS,
+  connectorLabel,
   DEFAULT_AREA,
   geoBlockMessage,
   NAME_MISSING,
@@ -63,6 +64,37 @@ describe("충전기 상태 코드", () => {
   test("빈 코드는 빈 배지가 아니라 모른다고 말한다", () => {
     expect(statusView("").label).toBe("상태 없음");
     expect(statusView("").available).toBe(false);
+  });
+});
+
+/*
+ * 기준은 활용가이드 v1.25 3.3절 chgerType 공통코드다. 타입은 커넥터 모양이지
+ * 속도가 아니다 — 속도는 아래 speedOf가 capacity_kw로 따로 가른다.
+ */
+describe("충전기 커넥터 종류", () => {
+  test("공식 코드표의 코드를 커넥터 이름으로 옮긴다", () => {
+    expect(connectorLabel("01")).toBe("DC차데모");
+    expect(connectorLabel("02")).toBe("AC완속");
+    expect(connectorLabel("03")).toBe("DC차데모+AC3상");
+    expect(connectorLabel("04")).toBe("DC콤보");
+    expect(connectorLabel("05")).toBe("DC차데모+DC콤보");
+    expect(connectorLabel("06")).toBe("DC차데모+AC3상+DC콤보");
+    expect(connectorLabel("07")).toBe("AC3상");
+    expect(connectorLabel("08")).toBe("DC콤보(완속)");
+    expect(connectorLabel("09")).toBe("NACS");
+    expect(connectorLabel("10")).toBe("DC콤보+NACS");
+    expect(connectorLabel("11")).toBe("DC콤보2(버스전용)");
+  });
+
+  test("앞뒤 공백은 무시한다", () => {
+    expect(connectorLabel(" 04 ")).toBe("DC콤보");
+  });
+
+  /* 모양을 넘겨짚으면 사용자는 꽂히지 않는 충전기로 간다. 모르면 말하지 않는다. */
+  test("코드표에 없는 코드는 지어내지 않는다", () => {
+    expect(connectorLabel("12")).toBeNull();
+    expect(connectorLabel("4")).toBeNull();
+    expect(connectorLabel("")).toBeNull();
   });
 });
 

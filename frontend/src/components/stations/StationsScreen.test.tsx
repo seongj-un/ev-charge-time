@@ -297,6 +297,9 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
     expect(stationItem("서울역 공영주차장").getByText("사용 가능")).toBeInTheDocument();
     expect(stationItem("시청 앞 충전소").getByText("1.2 km")).toBeInTheDocument();
     expect(stationItem("시청 앞 충전소").getByText("충전 중")).toBeInTheDocument();
+    // 타입 코드 04·02는 커넥터 이름으로 보인다 (활용가이드 3.3절)
+    expect(stationItem("서울역 공영주차장").getByText("DC콤보")).toBeInTheDocument();
+    expect(stationItem("시청 앞 충전소").getByText("AC완속")).toBeInTheDocument();
   });
 
   test("모르는 상태 코드는 코드 그대로 보여준다", async () => {

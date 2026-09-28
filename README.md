@@ -92,6 +92,8 @@ uv run python -m evcharge.sync --states --period 5   # 최근 5분 변경분만
   (`frontend/src/components/stations/station-view.ts`) — '사용 가능'은
   `2`(충전대기) 하나뿐이다. 한동안 "문서에 없다"고 적었던 `9`는 3.2절에
   **상태미확인**으로 있다 (필드 설명 칸의 목록은 0–5까지만 적혀 있다).
+  커넥터 이름(DC콤보·AC완속 …)도 화면이 3.3절 표로 붙이고, 표에 없는 코드는
+  넘겨짚지 않고 비워 둔다.
 
 ## 자연어 질의 켜기 (F-10)
 
@@ -206,10 +208,9 @@ backend/config/  tariff.yaml · holidays.yaml
   `weekend_discount_sunset`으로 따로 떼어 미확인으로 남겼다
 - `config/holidays.yaml`의 음력·대체공휴일은 공공데이터포털 특일 정보 API로 대조 필요
 - `tariff_version`은 근거 문서 시행일로 매긴다(`2026.04.16-mcee`). 개정 시 함께 올린다
-- 커넥터 종류(DC차데모/AC완속/DC콤보 …)를 화면에 아직 보여주지 않는다. 코드표는
-  이제 있다(활용가이드 3.3절, `docs/sources/`) — 표시만 남았다. 급속·완속 구분은
-  계속 코드가 아니라 `capacity_kw`로 가른다 — `chgerType=04`(DC콤보)가 7~350 kW에
-  걸쳐 있어 코드로는 못 가른다
+- 급속·완속 구분은 코드가 아니라 `capacity_kw`로 가른다 — `chgerType=04`(DC콤보)가
+  7~350 kW에 걸쳐 있어 코드로는 못 가른다. 경계 50 kW는 실데이터의 빈 구간이지
+  공식 기준이 아니다
 - 지역별 태양광 설비용량 (전력거래소). 없으면 `/api/solar-forecast`의 `predicted_mwh`가
   null로 나간다 — 일사량과 STC 대비 지수는 설비용량과 무관하게 항상 채워진다
 - `SKY=2`와 `PTY=2·3`은 실제 예보에서 관찰되지 않아 미검증이다. 나오면 조용히 넘어가지

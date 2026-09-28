@@ -114,6 +114,29 @@ export function statusView(status: string): StatusView {
   return { label: status.trim(), tone: "off", known: false, available: false };
 }
 
+/*
+ * 활용가이드 v1.25(2026-07-01) 3.3절 chgerType 공통코드. 커넥터 모양이지 속도가
+ * 아니다. 표에 없는 코드는 넘겨짚지 않는다 — 모양을 잘못 말하면 사용자는 꽂히지
+ * 않는 충전기로 간다.
+ */
+const CONNECTOR: Record<string, string> = {
+  "01": "DC차데모",
+  "02": "AC완속",
+  "03": "DC차데모+AC3상",
+  "04": "DC콤보",
+  "05": "DC차데모+DC콤보",
+  "06": "DC차데모+AC3상+DC콤보",
+  "07": "AC3상",
+  "08": "DC콤보(완속)",
+  "09": "NACS",
+  "10": "DC콤보+NACS",
+  "11": "DC콤보2(버스전용)",
+};
+
+export function connectorLabel(type: string): string | null {
+  return CONNECTOR[type.trim()] ?? null;
+}
+
 /**
  * 급속/완속을 가르는 경계 (kW).
  *
