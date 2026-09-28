@@ -304,11 +304,29 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
     renderScreen(routes({ body: [남산] }));
 
     await screen.findByRole("heading", { name: "남산 주차장" });
-    // stat=9는 공식 코드표에 없는 값이다. 뜻을 지어내지 않고 원문을 남긴다.
-    expect(stationItem("남산 주차장").getByText("9")).toBeInTheDocument();
+    // stat=7은 공식 코드표(활용가이드 v1.25 3.2절)에 없다. 뜻을 지어내지 않고 원문을 남긴다.
+    expect(stationItem("남산 주차장").getByText("7")).toBeInTheDocument();
     expect(screen.queryByText("사용 가능")).not.toBeInTheDocument();
     // 왜 코드가 그대로 보이는지 화면이 한 줄로 설명한다.
-    expect(screen.getByText(/아직 확정되지 않은 상태 코드/)).toBeInTheDocument();
+    expect(screen.getByText(/공식 코드표에 없는 상태 코드/)).toBeInTheDocument();
+  });
+
+  /*
+   * 9(상태미확인)는 실데이터의 5%가 넘는다. 공식 코드라서 뜻을 붙여 보여주고,
+   * "코드표에 없는 코드" 안내는 띄우지 않는다 — 띄우면 화면이 늘 그 말을 한다.
+   */
+  test("상태미확인(9)은 공식 코드라 뜻으로 보여준다", async () => {
+    stubGeolocation(SEOUL);
+    const 미확인 = station({
+      station_id: "ME000009",
+      name: "상태 미확인 충전소",
+      chargers: [{ ...UNKNOWN_STATUS, charger_id: "c-9", status: "9" }],
+    });
+    renderScreen(routes({ body: [미확인] }));
+
+    await screen.findByRole("heading", { name: "상태 미확인 충전소" });
+    expect(stationItem("상태 미확인 충전소").getByText("상태 미확인")).toBeInTheDocument();
+    expect(screen.queryByText(/공식 코드표에 없는 상태 코드/)).not.toBeInTheDocument();
   });
 
   /*

@@ -412,7 +412,7 @@ export function StationsScreen() {
 
           {hasUnknownStatus ? (
             <p className="mt-3 text-xs leading-relaxed text-ink-3">
-              아직 확정되지 않은 상태 코드는 원문 그대로 보여드려요. 뜻을 넘겨짚으면
+              공식 코드표에 없는 상태 코드는 원문 그대로 보여드려요. 뜻을 넘겨짚으면
               없는 자리를 찾아가게 돼요.
             </p>
           ) : null}

@@ -83,17 +83,22 @@ export type StatusView = {
 };
 
 /*
- * 뜻이 코드에 적혀 있는 값만 옮긴다.
+ * 한국환경공단 활용가이드 v1.25(2026-07-01) 3.2절 stat 공통코드를 그대로 옮긴다.
+ * 원본: docs/sources/한국환경공단_전기자동차 충전소 정보_OpenAPI활용가이드_v1.25.docx
  *
- * 명세 2-4가 "상태 코드 매핑은 원본 API 문서 확인 후 확정"으로 남아 있고,
- * 한국환경공단 원본은 "1".."9" 같은 숫자를 쓴다. 모르는 코드를 '사용 가능'으로
- * 넘겨짚으면 사용자는 없는 자리를 찾아 차를 몬다.
+ * 서버는 원문 코드를 그대로 준다(API 명세서 2-4). 뜻은 여기서 한 번만 붙인다.
+ * '사용 가능'은 2(충전대기) 하나뿐이다 — 하나라도 잘못 세면 사용자는 없는 자리를
+ * 찾아 차를 몬다. 표에 없는 코드는 지어내지 않고 원문을 보여준다.
  */
 const KNOWN_STATUS: Record<string, { label: string; tone: StatusTone; available: boolean }> = {
-  available: { label: "사용 가능", tone: "ok", available: true },
-  charging: { label: "충전 중", tone: "warn", available: false },
-  maintenance: { label: "점검 중", tone: "off", available: false },
-  unavailable: { label: "사용 불가", tone: "off", available: false },
+  "0": { label: "알 수 없음", tone: "off", available: false },
+  "1": { label: "통신 이상", tone: "off", available: false },
+  "2": { label: "사용 가능", tone: "ok", available: true },
+  "3": { label: "충전 중", tone: "warn", available: false },
+  "4": { label: "운영 중지", tone: "off", available: false },
+  "5": { label: "점검 중", tone: "off", available: false },
+  "6": { label: "예약 중", tone: "warn", available: false },
+  "9": { label: "상태 미확인", tone: "off", available: false },
 };
 
 export function statusView(status: string): StatusView {
@@ -124,7 +129,8 @@ export type ChargeSpeed = "fast" | "slow" | "unknown";
  *
  * 타입은 속도를 결정하지 못한다 — 실데이터에서 type=04가 7~350 kW에 걸쳐
  * 있고 그중 137대는 50 kW 미만이다. 타입으로 가르면 수백 대가 틀린다.
- * 게다가 타입 코드는 공식 활용가이드가 없어 뜻을 모른다 (stat과 같은 이유).
+ * 타입 코드의 뜻은 커넥터 종류다(활용가이드 3.3절: 02 AC완속, 04 DC콤보 …) —
+ * 꽂는 모양을 말할 뿐 속도를 말하지 않는다.
  *
  * capacity_kw는 API가 주는 실측값이라 넘겨짚을 여지가 없다.
  * 다만 0 kW인 충전기가 20대 실제로 있어, 그건 완속이라 말하지 않는다.
