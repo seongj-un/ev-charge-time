@@ -136,7 +136,24 @@ docker compose -f docker-compose.prod.yml logs -f caddy    # 인증서 발급 �
 `http://<IP>`가 `https://<IP>`로 넘어가는데 인증서가 이름에만 있어서 TLS에서
 끊깁니다. `SITE_ADDRESS=:80`으로 띄웠을 때만 `http://<IP>`입니다.
 
-## ⑦ 고친 코드 올리기
+## ⑦ 충전소 갱신 걸기 (한 번만)
+
+충전소 목록과 충전기 상태는 사용자 요청이 아니라 cron이 받아 둡니다. 공공 API가
+하루 1,000건까지라서입니다 (README "충전소 캐시 수집" 참고).
+
+```bash
+cd ~/kinetic
+sudo install -m 644 deploy/kinetic-chargers.cron /etc/cron.d/kinetic-chargers
+sudo install -m 644 deploy/kinetic-sync.logrotate /etc/logrotate.d/kinetic-sync
+# 처음 한 번은 전체를 받아 둡니다 (4호출, 약 12초)
+docker compose -f docker-compose.prod.yml exec -T backend python -m evcharge.sync
+```
+
+5분 뒤 `tail /var/log/kinetic-sync.log`에 새 줄이 보이면 걸린 것입니다.
+**빼먹으면 충전기 상태가 마지막으로 받은 시각에 멈춥니다** — 화면은 멈춘 줄 모르고
+"사용 가능"·"충전 중"을 계속 말합니다. 실제로 6일 동안 그랬습니다.
+
+## ⑧ 고친 코드 올리기
 
 ④의 `git archive` 줄을 다시 돌리고, 바뀐 쪽만 다시 빌드합니다.
 
@@ -156,6 +173,7 @@ docker compose -f docker-compose.prod.yml up -d --build backend
 반영을 확인합니다.
 
 - 서버의 `.env`는 저장소에 없으므로 덮이지 않습니다.
+- `deploy/kinetic-chargers.cron`이 바뀌었으면 ⑦의 `install` 두 줄을 다시 돌립니다.
 - 반대로 **저장소에서 지운 파일은 서버에 남아 빌드에 들어갑니다.** 지운 것이
   페이지나 마이그레이션이면 서버에서도 지우세요.
 - 기관 망처럼 22번이 막힌 곳에서는 `ssh`가 멈춥니다. 22번이 열린 망에서 돌리세요.

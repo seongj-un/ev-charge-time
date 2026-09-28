@@ -1,0 +1,21 @@
+# 충전소 캐시(charger_cache)를 공공데이터포털에서 주기적으로 받는다.
+#
+#   sudo install -m 644 deploy/kinetic-chargers.cron /etc/cron.d/kinetic-chargers
+#
+# /etc/cron.d에 넣을 때는 이름에서 점을 뺀다 — Ubuntu의 cron은 이름에 점이 든
+# 파일을 아무 말 없이 건너뛴다.
+#
+# 이게 없으면 충전기 상태가 마지막으로 손으로 받은 시각에 멈춘 채 화면이
+# "사용 가능"·"충전 중"을 계속 말한다. 실제로 6일 동안 그랬다 (2026-09-22 → 09-28).
+#
+# 하루 호출 수는 개발계정 한도(1,000건) 안이다.
+#   상태 갱신  5분마다 1호출  = 288건. 최근 10분 변경분을 받아 5분 간격과 겹치게
+#              한다 — 한 회차가 늦거나 빠져도 다음 회차가 메운다.
+#   전체 수집  하루 1번 4호출 =   4건. 새로 생긴 충전소와 좌표를 받는다.
+# 두 작업이 겹치지 않게 flock으로 줄 세운다.
+
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+*/5 * * * * root cd /home/ubuntu/kinetic && flock -n /run/kinetic-sync.lock docker compose -f docker-compose.prod.yml exec -T backend python -m evcharge.sync --states --period 10 >> /var/log/kinetic-sync.log 2>&1
+17 4 * * * root cd /home/ubuntu/kinetic && flock -w 120 /run/kinetic-sync.lock docker compose -f docker-compose.prod.yml exec -T backend python -m evcharge.sync >> /var/log/kinetic-sync.log 2>&1
