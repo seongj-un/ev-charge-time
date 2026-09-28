@@ -355,7 +355,7 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
     expect(screen.queryByRole("heading", { name: "시청 앞 충전소" })).not.toBeInTheDocument();
   });
 
-  test("사용 가능만은 확인된 코드만 남기고, 그 사실을 밝힌다", async () => {
+  test("사용 가능만은 충전대기인 곳만 남기고, 그 사실을 밝힌다", async () => {
     const user = userEvent.setup();
     stubGeolocation(SEOUL);
     renderScreen(routes({ body: [서울역, 남산] }));
@@ -365,7 +365,8 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
 
     expect(screen.getByRole("heading", { name: "서울역 공영주차장" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "남산 주차장" })).not.toBeInTheDocument();
-    expect(screen.getByText(/확인된 코드만 남겨요/)).toBeInTheDocument();
+    expect(screen.getByText(/충전대기인 충전기가 있는 곳만 남겨요/)).toBeInTheDocument();
+    expect(screen.queryByText(/아직 확정되지 않은/)).not.toBeInTheDocument();
   });
 
   test("필터가 전부 걸러내면 빈 화면 대신 이유를 말한다", async () => {

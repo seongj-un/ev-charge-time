@@ -343,7 +343,7 @@ export function StationsScreen() {
 
           {filter.availableOnly ? (
             <p className="mt-2 text-xs text-ink-3">
-              뜻이 확인된 코드만 남겨요. 아직 확정되지 않은 상태 코드는 빠집니다.
+              지금 충전대기인 충전기가 있는 곳만 남겨요. 공식 코드표에 없는 상태 코드는 세지 않아요.
             </p>
           ) : null}
 
