@@ -51,8 +51,8 @@ SSH 키페어를 만들어 두세요 — 나중에 접속할 유일한 방법입
 Caddy가 인증서를 자동으로 받으려면 **IP가 아니라 이름**이 필요합니다.
 
 - 도메인이 있으면 A 레코드를 인스턴스 IP로
-- 없으면 **DuckDNS**(무료, 카드 불필요)에서 `kinetic.duckdns.org` 같은 주소를
-  만들어 IP를 연결
+- 없으면 **DuckDNS**(무료, 카드 불필요)에서 `kinetic-ev.duckdns.org` 같은 주소를
+  만들어 IP를 연결 — 지금 서비스가 쓰는 이름이 이것입니다
 
 이름이 없으면 HTTP(`http://<IP>`)로 써도 됩니다. 그때는 `COOKIE_SECURE=false`를
 유지해야 합니다 — HTTP인데 켜면 쿠키가 안 실려 로그인이 조용히 실패합니다.
@@ -68,14 +68,20 @@ Caddy가 인증서를 자동으로 받으려면 **IP가 아니라 이름**이 �
 ssh -i <키파일>.pem ubuntu@<공인IP>
 ```
 
-코드를 올립니다. 저장소가 비공개라 rsync가 가장 간단합니다.
+코드를 올립니다. 저장소가 비공개라 서버가 직접 받지 않고 맥에서 밀어 넣습니다.
+**`main`에 커밋된 것만** 보냅니다.
 
 ```bash
 # 내 맥에서
-rsync -az -e "ssh -i <키파일>.pem" \
-  --exclude node_modules --exclude .git --exclude .next \
-  ~/orca/workspaces/EV_Charge_time_추천/frontend/ ubuntu@<공인IP>:~/kinetic/
+cd ~/orca/projects/EV_Charge_time_추천
+git archive main | ssh -i <키파일>.pem ubuntu@<공인IP> 'mkdir -p ~/kinetic && tar -x -C ~/kinetic'
 ```
+
+작업 폴더를 rsync하지 않는 이유: 폴더는 거기 체크아웃된 브랜치를 보낸다.
+예전 절차는 `frontend` worktree를 보냈는데 그 브랜치는 `main`보다 뒤처질 수
+있다 — 2026-09-28 기준 `a7c47dc`에 멈춰 백엔드 수정 둘(Gemini 서비스 한도,
+사용자 화면의 오류 문구)이 빠져 있다. `git archive main`은 어느 폴더에서
+돌려도 같은 것을 보내고, 커밋 안 된 파일·`.env`·`node_modules`는 딸려 가지 않는다.
 
 VM 안에서:
 
@@ -100,7 +106,7 @@ nano .env
 POSTGRES_PASSWORD=<openssl rand -base64 24 결과>
 
 # 이름이 있으면
-SITE_ADDRESS=kinetic.duckdns.org
+SITE_ADDRESS=kinetic-ev.duckdns.org
 COOKIE_SECURE=true
 
 # 없으면
@@ -126,7 +132,33 @@ curl -s localhost/health                                  # 미확인 요금 항
 docker compose -f docker-compose.prod.yml logs -f caddy    # 인증서 발급 로그
 ```
 
-브라우저로 `https://<주소>` 또는 `http://<IP>`.
+브라우저로 `https://<주소>`. 이름을 넣었다면 **IP로는 열리지 않습니다** —
+`http://<IP>`가 `https://<IP>`로 넘어가는데 인증서가 이름에만 있어서 TLS에서
+끊깁니다. `SITE_ADDRESS=:80`으로 띄웠을 때만 `http://<IP>`입니다.
+
+## ⑦ 고친 코드 올리기
+
+④의 `git archive` 줄을 다시 돌리고, 바뀐 쪽만 다시 빌드합니다.
+
+```bash
+# 내 맥에서
+cd ~/orca/projects/EV_Charge_time_추천
+git archive main | ssh -i <키파일>.pem ubuntu@<공인IP> 'tar -x -C ~/kinetic'
+
+# VM 안에서
+cd ~/kinetic
+docker compose -f docker-compose.prod.yml up -d --build backend
+```
+
+프론트도 바뀌었으면 끝의 `backend`를 빼고 전부 빌드합니다 (1GB에서는 15분 넘게
+걸릴 수 있습니다). 마이그레이션이 든 변경이면
+`docker compose -f docker-compose.prod.yml logs backend | grep "Running upgrade"`로
+반영을 확인합니다.
+
+- 서버의 `.env`는 저장소에 없으므로 덮이지 않습니다.
+- 반대로 **저장소에서 지운 파일은 서버에 남아 빌드에 들어갑니다.** 지운 것이
+  페이지나 마이그레이션이면 서버에서도 지우세요.
+- 기관 망처럼 22번이 막힌 곳에서는 `ssh`가 멈춥니다. 22번이 열린 망에서 돌리세요.
 
 ---
 
