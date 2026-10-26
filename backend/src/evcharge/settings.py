@@ -1,8 +1,9 @@
 from pathlib import Path
 from urllib.parse import unquote
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
@@ -13,6 +14,18 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://evcharge:evcharge@localhost:5432/evcharge"
+
+    # 배포(docker-compose.prod.yml)는 DATABASE_URL 대신 조각을 넘긴다. 비밀번호를
+    # URL 문자열에 그대로 끼우면 `@`·`:`·`/`·`%`가 들어갈 때 주소가 엉뚱하게
+    # 갈린다(배포 안내가 권하는 `openssl rand -base64`는 `/`·`+`를 낸다).
+    # POSTGRES_PASSWORD가 있고 DATABASE_URL을 직접 주지 않았으면 아래
+    # validator가 인코딩해서 database_url을 만든다. 개발·테스트는 지금처럼
+    # DATABASE_URL(또는 기본값)을 쓴다.
+    postgres_user: str = "evcharge"
+    postgres_password: str = ""
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_db: str = "evcharge"
     tariff_path: Path = BACKEND_ROOT / "config" / "tariff.yaml"
     holidays_path: Path = BACKEND_ROOT / "config" / "holidays.yaml"
 
@@ -132,6 +145,25 @@ class Settings(BaseSettings):
         cleaned = value.strip().strip('"').strip("'")
         return unquote(cleaned) if "%" in cleaned else cleaned
 
+    @model_validator(mode="after")
+    def _database_url_from_parts(self) -> "Settings":
+        if "database_url" in self.model_fields_set or not self.postgres_password:
+            return self
+        self.database_url = URL.create(
+            "postgresql+psycopg",
+            username=self.postgres_user,
+            password=self.postgres_password,
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
+        ).render_as_string(hide_password=False)
+        return self
+
+
+def alembic_safe_url(url: str) -> str:
+    """alembic ``Config.set_main_option``용. configparser가 ``%``를 보간 문법으로
+    읽으므로, 퍼센트 인코딩된 비밀번호(``%40`` 등)가 든 주소는 ``%%``로 바꿔야 한다."""
+    return url.replace("%", "%%")
 
 
 def get_settings() -> Settings:

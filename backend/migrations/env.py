@@ -25,12 +25,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from evcharge.infra.db import Base  # noqa: E402
 from evcharge.infra import models  # noqa: E402,F401  (모델 등록을 위해 import)
-from evcharge.settings import get_settings  # noqa: E402
+from evcharge.settings import alembic_safe_url, get_settings  # noqa: E402
 
 target_metadata = Base.metadata
 
 # DB 주소는 alembic.ini가 아니라 앱 설정에서 읽는다 — 한 곳에서만 관리한다.
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# alembic Config는 configparser라 `%`를 보간 문법으로 읽는다. 퍼센트 인코딩된
+# 비밀번호(`%40` 등)가 든 주소를 그대로 넣으면 기동 시 ValueError가 난다.
+config.set_main_option("sqlalchemy.url", alembic_safe_url(get_settings().database_url))
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
