@@ -96,6 +96,13 @@ describe("로그인 화면", () => {
     ["외부 주소", "https://evil.example.com/steal"],
     ["프로토콜 상대 주소", "//evil.example.com"],
     ["상대 경로", "recommend"],
+    // ?next=%2F%09%2Fattacker.example — URL 파서가 탭·줄바꿈을 지워 //attacker.example이 된다.
+    ["탭이 낀 주소", "/\t/attacker.example"],
+    ["줄바꿈이 낀 주소", "/\n/attacker.example"],
+    ["캐리지 리턴이 낀 주소", "/\r/attacker.example"],
+    ["역슬래시 주소", "/\\attacker.example"],
+    ["중간에 역슬래시", "/\t\\attacker.example"],
+    ["널 문자", "/me\u0000"],
   ])("%s는 돌아갈 곳으로 받지 않는다", async (_label, next) => {
     const user = await renderPage({ next });
 
