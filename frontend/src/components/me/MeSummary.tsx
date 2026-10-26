@@ -44,6 +44,7 @@ export function MeSummary() {
   const [password, setPassword] = useState("");
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   /* '이번 달'은 붙은 다음에 계산한다. 이유는 hooks.ts에 적어 두었다. */
   const hydrated = useIsHydrated();
@@ -100,7 +101,15 @@ export function MeSummary() {
 
   async function handleLogout() {
     setPending(true);
-    await signOut();
+    setLogoutError(null);
+    try {
+      await signOut();
+    } catch {
+      // 서버 세션이 그대로 남았다. 손님 화면으로 보내면 "로그아웃됐다"고 믿게 된다.
+      setLogoutError("로그아웃하지 못했어요. 연결을 확인하고 다시 눌러 주세요.");
+      setPending(false);
+      return;
+    }
     // 로그아웃하고 이 화면에 남으면 "로그인이 필요해요"만 보인다. 홈이 더 쓸모 있다.
     router.replace("/");
   }
@@ -285,6 +294,11 @@ export function MeSummary() {
             </DangerButton>
           </div>
         </div>
+        {logoutError ? (
+          <p role="alert" className="mt-3 text-sm font-medium text-danger">
+            {logoutError}
+          </p>
+        ) : null}
 
         {/* 확인 단계는 인라인으로 편다. 모달이 아니어서 뒤로 가기·스크롤이 그대로 산다. */}
         {withdrawOpen ? (

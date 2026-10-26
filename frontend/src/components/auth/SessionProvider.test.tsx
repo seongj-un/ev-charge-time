@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { SessionProvider, useSession } from "./SessionProvider";
@@ -24,12 +25,14 @@ function json(body: unknown, status = 200) {
 
 function Probe() {
   const { status, user, signIn, signOut } = useSession();
+  const [failed, setFailed] = useState(false);
   return (
     <div>
       <span data-testid="status">{status}</span>
       <span data-testid="who">{user?.nickname ?? "-"}</span>
+      <span data-testid="signout-failed">{failed ? "yes" : "no"}</span>
       <button onClick={() => signIn({ ...USER, nickname: "새사람" })}>들어가기</button>
-      <button onClick={() => void signOut()}>나가기</button>
+      <button onClick={() => void signOut().catch(() => setFailed(true))}>나가기</button>
     </div>
   );
 }
@@ -113,11 +116,14 @@ describe("SessionProvider", () => {
   });
 
   /*
-   * 로그아웃 요청이 실패해도 화면은 손님으로 돌려야 한다. 서버 세션은 이미
-   * 지워졌을 수도 있고, 무엇보다 사용자가 "나가기"를 눌렀는데 여전히 로그인
-   * 상태로 남아 있으면 공용 PC에서 위험하다.
+   * 로그아웃 요청이 실패하면 로그인 상태를 그대로 두고 실패를 알린다.
+   *
+   * 예전에는 실패해도 화면을 손님으로 돌렸다(공용 PC에서 로그인 상태로 남는 게
+   * 위험하다는 이유). 그런데 그러면 서버 세션과 쿠키는 그대로라, 다음 사람이
+   * 새로고침하는 순간 다시 로그인된다 — "로그아웃됐다"고 믿게 만드는 쪽이 더
+   * 위험하다. 실패를 알려 다시 누르게 한다.
    */
-  test("로그아웃 요청이 실패해도 손님으로 돌아간다", async () => {
+  test("로그아웃 요청이 실패하면 로그인 상태로 남고 실패를 알린다", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(async (url: string) => {
@@ -130,7 +136,82 @@ describe("SessionProvider", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "나가기" }));
 
+    await waitFor(() => expect(screen.getByTestId("signout-failed")).toHaveTextContent("yes"));
+    expect(screen.getByTestId("status")).toHaveTextContent("authenticated");
+  });
+
+  test("서버가 500을 주면 로그아웃되지 않은 것이다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string) =>
+        url === "/api/auth/logout" ? json({ detail: "boom" }, 500) : json(USER),
+      ),
+    );
+    renderProbe();
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
+
+    await userEvent.click(screen.getByRole("button", { name: "나가기" }));
+
+    await waitFor(() => expect(screen.getByTestId("signout-failed")).toHaveTextContent("yes"));
+    expect(screen.getByTestId("status")).toHaveTextContent("authenticated");
+  });
+
+  test("로그아웃이 401이면 세션이 이미 없는 것이니 손님으로 돌아간다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string) =>
+        url === "/api/auth/logout" ? json({ detail: "로그인이 필요합니다." }, 401) : json(USER),
+      ),
+    );
+    renderProbe();
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
+
+    await userEvent.click(screen.getByRole("button", { name: "나가기" }));
+
     await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+    expect(screen.getByTestId("signout-failed")).toHaveTextContent("no");
+  });
+
+  /*
+   * 처음 화면이 뜰 때 보낸 /api/me가 늦게 도착하면, 그 사이에 끝난 로그인 결과를
+   * 덮어쓴다(손님이던 시점의 401이 막 로그인한 사람을 손님으로 되돌린다).
+   * 로그인·로그아웃이 일어나면 그 전에 보낸 조회 결과는 버린다.
+   */
+  test("늦게 도착한 처음 조회가 그 사이의 로그인을 덮지 않는다", async () => {
+    let answerMe: (response: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () => new Promise<Response>((resolve) => (answerMe = resolve)),
+      ),
+    );
+    renderProbe();
+
+    await userEvent.click(screen.getByRole("button", { name: "들어가기" }));
+    expect(screen.getByTestId("who")).toHaveTextContent("새사람");
+
+    answerMe(json({ detail: "로그인이 필요합니다." }, 401));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.getByTestId("status")).toHaveTextContent("authenticated");
+    expect(screen.getByTestId("who")).toHaveTextContent("새사람");
+  });
+
+  test("늦게 도착한 처음 조회가 이전 사용자로 되돌리지 않는다", async () => {
+    let answerMe: (response: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () => new Promise<Response>((resolve) => (answerMe = resolve)),
+      ),
+    );
+    renderProbe();
+
+    await userEvent.click(screen.getByRole("button", { name: "들어가기" }));
+    answerMe(json(USER)); // 처음 조회는 예전 사용자(충전러)를 돌려준다
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId("who")).toHaveTextContent("새사람");
   });
 
   test("Provider 밖에서 쓰면 바로 알려준다", () => {

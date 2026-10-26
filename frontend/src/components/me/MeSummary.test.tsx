@@ -193,6 +193,26 @@ describe("마이페이지 요약", () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/"));
   });
 
+  test("로그아웃이 실패하면 이 화면에 남아 실패를 알리고 다시 누를 수 있다", async () => {
+    const user = userEvent.setup();
+    const routes = okRoutes();
+    const calls = renderSummary((call) =>
+      call.url === "/api/auth/logout" ? { status: 500, body: { detail: "boom" } } : routes(call),
+    );
+    await screen.findByText("출퇴근 차");
+
+    await user.click(screen.getByRole("button", { name: "로그아웃" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("로그아웃하지 못했어요");
+    expect(replace).not.toHaveBeenCalled();
+    // 아직 로그인 상태다 — 화면이 그대로 있고 버튼을 다시 누를 수 있다.
+    expect(screen.getByText("출퇴근 차")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "로그아웃" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "로그아웃" }));
+    await waitFor(() => expect(callsTo(calls, "POST", "/api/auth/logout")).toHaveLength(2));
+  });
+
   test("사이드바에서 마이페이지 안쪽 화면으로 갈 수 있다", async () => {
     renderSummary(okRoutes());
     await screen.findByText("출퇴근 차");
