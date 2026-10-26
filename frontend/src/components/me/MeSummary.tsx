@@ -6,12 +6,11 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { useSession } from "@/components/auth/SessionProvider";
 import { ArrowRightIcon, ChevronRightIcon } from "@/components/shell/icons";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
 import { ApiError } from "@/lib/api/client";
-import { deleteAccount, fetchPlanSummary, fetchVehicles } from "@/lib/api/endpoints";
+import { deleteAccount, fetchFavorites, fetchPlanSummary, fetchVehicles } from "@/lib/api/endpoints";
 import type { PlanSummary, Vehicle } from "@/lib/api/types";
 import { formatWon } from "@/lib/format";
 
@@ -27,9 +26,6 @@ import { DangerButton, MeSkeleton, ServerUnreachable, SignInRequired } from "./M
  * 그려 하나를 CSS로 숨기면 스크린리더가 같은 문장을 두 번 읽고, 고칠 때도 두 곳을
  * 고쳐야 한다. 대신 lg: 변형으로 카드의 톤과 배치를 바꾼다 — Tailwind 출력에서
  * lg: 변형이 기본 유틸리티보다 뒤에 오므로 bg-ink → lg:bg-surface 같은 덮어쓰기가 먹는다.
- *
- * 즐겨찾는 충전소 숫자는 **일부러 부르지 않는다.** 백엔드가 즐겨찾기 응답 모델을
- * 분리하는 중이라, 지금 값을 받아 그리면 모델이 바뀐 날 조용히 틀린 숫자가 뜬다.
  */
 export function MeSummary() {
   const { status, user, signOut, clear } = useSession();
@@ -37,6 +33,7 @@ export function MeSummary() {
 
   const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
   const [summary, setSummary] = useState<PlanSummary | null>(null);
+  const [favoriteCount, setFavoriteCount] = useState<number | "error" | null>(null);
 
   /* 탈퇴 확인 단계. window.confirm은 쓰지 않는다 — 브라우저 모달은 자동화가 못 넘고,
    * 무엇보다 비밀번호를 받을 칸이 없다. */
@@ -83,6 +80,24 @@ export function MeSummary() {
       live = false;
     };
   }, [status, month, clear]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let live = true;
+    fetchFavorites()
+      .then((list) => {
+        if (live) setFavoriteCount(list.length);
+      })
+      .catch((error: unknown) => {
+        if (!live) return;
+        if (error instanceof ApiError && error.needsLogin) clear();
+        // 조회 실패를 즐겨찾기 0곳으로 보여주지 않는다.
+        setFavoriteCount("error");
+      });
+    return () => {
+      live = false;
+    };
+  }, [status, clear]);
 
   if (status === "loading") return <MeSkeleton />;
   if (status === "unreachable") return <ServerUnreachable title="내 정보" />;
@@ -214,13 +229,19 @@ export function MeSummary() {
           </Link>
         </div>
 
-        {/* 즐겨찾는 충전소 — 숫자를 부르지 않는 이유는 파일 머리말에 적었다. */}
+        {/* 즐겨찾는 충전소. 로딩과 실패는 실제 0곳과 구분한다. */}
         <Card className="hidden p-5 lg:block">
           <p className="text-xs font-bold text-ink-3">즐겨찾는 충전소</p>
-          <p className="mt-2 text-xl font-bold text-ink lg:text-[22px]">준비 중</p>
-          <p className="mt-2 text-sm text-ink-2">
-            충전소 응답 형식을 정리하는 중이라 아직 개수를 보여드리지 않아요.
+          <p className="tnum mt-2 text-xl font-bold text-ink lg:text-[22px]">
+            {typeof favoriteCount === "number" ? `${favoriteCount}곳` : "—"}
           </p>
+          {favoriteCount === "error" ? (
+            <p className="mt-2 text-sm text-ink-2">즐겨찾기를 불러오지 못했어요.</p>
+          ) : favoriteCount === 0 ? (
+            <p className="mt-2 text-sm text-ink-2">
+              <Link href="/stations" className="text-brand underline">주변 충전소</Link>에서 별을 눌러 저장해 보세요.
+            </p>
+          ) : null}
           <Link href="/me/favorites" className="mt-4 inline-block text-sm font-bold text-brand">
             즐겨찾기
           </Link>
@@ -257,7 +278,6 @@ export function MeSummary() {
           >
             <span className="text-[15px] font-bold text-ink">{item.label}</span>
             <span className="flex items-center gap-2">
-              {item.href === "/me/favorites" ? <Badge tone="off">준비 중</Badge> : null}
               <ChevronRightIcon className="size-5 text-ink-3" />
             </span>
           </Link>

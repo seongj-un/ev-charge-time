@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { SessionProvider } from "@/components/auth/SessionProvider";
+import type { FavoriteStation } from "@/lib/api/types";
 
 import { MeSummary } from "./MeSummary";
 import {
@@ -107,17 +108,84 @@ describe("마이페이지 요약", () => {
     expect(summaryCall?.url).toMatch(/month=\d{4}-\d{2}/);
   });
 
-  /*
-   * 즐겨찾기 응답 모델이 지금 바뀌는 중이라 호출하지 않는다.
-   * 숫자를 지어내 채우면 모델이 바뀐 날 조용히 틀린 값이 뜬다.
-   */
-  test("즐겨찾는 충전소는 준비 중으로 두고 부르지 않는다", async () => {
-    const calls = renderSummary(okRoutes());
-    await screen.findByText("출퇴근 차");
+  test("즐겨찾는 충전소의 실제 개수를 보여주고 준비 중 문구를 없앤다", async () => {
+    const routes = okRoutes();
+    // 이름·주소 캐시가 없어도 즐겨찾기 개수에는 포함한다.
+    const favorites: FavoriteStation[] = ["s1", "s2", "s3"].map((station_id) => ({
+      station_id,
+      name: null,
+      address: null,
+      lat: null,
+      lng: null,
+      distance_m: null,
+      operator: null,
+      available_hours: null,
+      is_favorite: true,
+      chargers: null,
+    }));
+    const calls = renderSummary((call) =>
+      call.url === "/api/me/favorites" ? { body: favorites } : routes(call),
+    );
 
-    expect(calls.some((call) => call.url.startsWith("/api/me/favorites"))).toBe(false);
-    // 모바일 목록의 배지와 데스크톱 카드가 둘 다 준비 중임을 밝힌다.
-    expect(screen.getAllByText("준비 중").length).toBeGreaterThan(0);
+    expect(await screen.findByText("3곳")).toBeInTheDocument();
+    expect(callsTo(calls, "GET", "/api/me/favorites")).toHaveLength(1);
+    expect(screen.queryByText("준비 중")).not.toBeInTheDocument();
+  });
+
+  test("즐겨찾기가 없으면 0곳과 주변 충전소에서 저장하는 안내를 보여준다", async () => {
+    const routes = okRoutes();
+    renderSummary((call) =>
+      call.url === "/api/me/favorites" ? { body: [] } : routes(call),
+    );
+
+    expect(await screen.findByText("0곳")).toBeInTheDocument();
+    expect(screen.getByText(/에서 별을 눌러 저장해 보세요/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "주변 충전소" })).toHaveAttribute("href", "/stations");
+    expect(screen.queryByText("준비 중")).not.toBeInTheDocument();
+  });
+
+  test("즐겨찾기를 불러오는 동안 개수를 지어내지 않는다", async () => {
+    stubApi((name, value) => vi.stubGlobal(name, value), okRoutes());
+    const fetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
+      url === "/api/me/favorites" ? new Promise<Response>(() => {}) : fetch(url, init),
+    );
+    render(<SessionProvider><MeSummary /></SessionProvider>);
+
+    await screen.findByText("출퇴근 차");
+    await screen.findByText("0건");
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText(/\d+곳/)).not.toBeInTheDocument();
+    expect(screen.queryByText("즐겨찾기를 불러오지 못했어요.")).not.toBeInTheDocument();
+    expect(screen.queryByText("준비 중")).not.toBeInTheDocument();
+  });
+
+  test("즐겨찾기 조회 실패는 0곳 대신 안내하고 다른 요약은 유지한다", async () => {
+    const routes = okRoutes();
+    renderSummary((call) =>
+      call.url === "/api/me/favorites"
+        ? { status: 500, body: { detail: "boom" } }
+        : routes(call),
+    );
+
+    expect(await screen.findByText("즐겨찾기를 불러오지 못했어요.")).toBeInTheDocument();
+    expect(screen.queryByText(/\d+곳/)).not.toBeInTheDocument();
+    expect(screen.getByText("출퇴근 차")).toBeInTheDocument();
+    expect(screen.getByText("0건")).toBeInTheDocument();
+    expect(screen.queryByText("준비 중")).not.toBeInTheDocument();
+  });
+
+  test("즐겨찾기 조회 중 세션이 끊기면 로그인 안내로 보낸다", async () => {
+    const routes = okRoutes();
+    renderSummary((call) =>
+      call.url === "/api/me/favorites"
+        ? { status: 401, body: { detail: "로그인이 필요합니다." } }
+        : routes(call),
+    );
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "로그인이 필요해요" }),
+    ).toBeInTheDocument();
   });
 
   test("요청 도중 세션이 끊기면 로그인 안내로 떨어진다", async () => {
