@@ -13,6 +13,22 @@
 # 세션 쿠키는 그대로 실린다. 백엔드를 밖으로 따로 노출하면 그때 교차 출처가
 # 되어 구조가 무너지므로, 백엔드 포트는 끝까지 열지 않는다.
 
+{
+	# 사이트의 log 블록(아래)은 접근 로그만 다룬다. 백엔드가 죽어 502가 날 때
+	# 같은 오류 로그는 기본 로거로 가고, 거기에도 요청 URI가 통째로 실린다.
+	# 그래서 기본 로거에도 같은 필터를 건다.
+	log default {
+		output stderr
+		format filter {
+			wrap console
+			request>uri query {
+				delete lat
+				delete lng
+			}
+		}
+	}
+}
+
 {$SITE_ADDRESS} {
 	encode zstd gzip
 
@@ -30,8 +46,16 @@
 
 	log {
 		# 위치 좌표가 쿼리스트링에 실린다 — "위치는 조회에만 쓰고 저장하지
-		# 않는다"는 약속은 접속 로그에도 적용된다.
+		# 않는다"는 약속은 접속 로그에도 적용된다. console 포맷만으로는 쿼리가
+		# 그대로 찍혀서, filter로 /api/chargers의 lat·lng를 지운 뒤 console로 낸다.
+		# (백엔드 uvicorn 접근 로그는 Dockerfile에서 끈다 — 접근 로그는 여기 한 곳.)
 		output stderr
-		format console
+		format filter {
+			wrap console
+			request>uri query {
+				delete lat
+				delete lng
+			}
+		}
 	}
 }

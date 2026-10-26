@@ -32,4 +32,6 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
 
 # 마이그레이션을 먼저 돌리고 뜬다. 스키마가 코드보다 뒤처진 채로 서비스되면
 # 500이 나는데, 그때는 원인이 배포인지 코드인지 구분하기 어렵다.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn evcharge.main:app --host 0.0.0.0 --port 8000"]
+# --no-access-log: uvicorn 접근 로그는 쿼리스트링을 그대로 찍어서 /api/chargers의
+# 위치 좌표(lat·lng)가 남는다. 접근 로그는 좌표를 지우는 Caddy 한 곳에서만 남긴다.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn evcharge.main:app --host 0.0.0.0 --port 8000 --no-access-log"]
