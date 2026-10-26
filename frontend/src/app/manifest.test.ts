@@ -16,8 +16,16 @@ describe("manifest", () => {
     expect(result.theme_color).toBe("#F1F0EB");
   });
 
-  /** 아이콘 에셋이 아직 없다 — 없는 파일을 가리키면 설치 시 404가 난다. */
-  test("아이콘 에셋이 생기기 전까지 icons는 비워 둔다", () => {
-    expect(manifest().icons).toEqual([]);
+  test("일반 설치 아이콘과 안전 영역을 갖춘 maskable PNG를 제공한다", () => {
+    expect(manifest().icons).toEqual([
+      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      {
+        src: "/icons/icon-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+    ]);
   });
 });

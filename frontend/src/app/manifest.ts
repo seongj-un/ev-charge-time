@@ -5,8 +5,8 @@ import { SERVICE_NAME } from "@/components/shell/nav";
 /**
  * layout.tsx가 가리키는 /manifest.webmanifest를 Next가 이 파일로 만들어 준다.
  *
- * icons는 일부러 비워 뒀다. 아직 아이콘 에셋이 없는데 경로만 적어 두면 설치할 때
- * 404가 나고, 브라우저는 그걸 조용히 삼켜서 나중에 원인을 찾기 어렵다.
+ * public/icons의 실제 PNG를 참조한다. maskable은 중앙 80% 안전 영역을 지킨다.
+ * 재생성: frontend에서 node scripts/generate-pwa-icons.mjs 실행.
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -19,6 +19,15 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     background_color: "#F1F0EB",
     theme_color: "#F1F0EB",
-    icons: [],
+    icons: [
+      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      {
+        src: "/icons/icon-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+    ],
   };
 }
