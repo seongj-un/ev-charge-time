@@ -8,10 +8,9 @@ import { Notice } from "@/components/ui/Notice";
 import { ApiError } from "@/lib/api/client";
 import { fetchRecommendation, fetchTimeline } from "@/lib/api/endpoints";
 import type { RecommendResponse } from "@/lib/api/types";
-import { coveredHours } from "@/lib/charging";
 import { fromSearchParams, toRecommendRequest, type RecommendForm } from "@/lib/recommend-params";
 
-import { bandSummary, buildAxis, buildColumns, type Axis } from "./chart-data";
+import { axisHours, bandSummary, buildAxis, buildColumns, type Axis } from "./chart-data";
 import { unverifiedNotice } from "@/lib/tariff";
 
 import { assumptionsSentence } from "./plan-text";
@@ -104,7 +103,7 @@ export function ResultView({ query }: { query: string }) {
       });
 
       const next: ChartState = axis
-        ? await loadChart(axis, form.mode)
+        ? await loadChart(axis, form)
         : { status: "error" };
       if (cancelled) return;
       // 그 사이 조건이 바뀌었으면 옛 차트를 새 결과에 얹지 않는다.
@@ -128,23 +127,25 @@ export function ResultView({ query }: { query: string }) {
   const unverifiedItems = response?.unverified_tariff_items ?? [];
   const assumptions = response ? assumptionsSentence(response.assumptions) : null;
 
-  // 차트 위에 얹히는 두 구간. coveredHours가 자정 넘김을 이미 처리한다.
-  const markers: ChartMarker[] = response
-    ? [
-        {
-          hours: coveredHours(response.baseline_now.start, response.baseline_now.end),
-          tone: "muted",
-          label: "지금 바로",
-        },
-        {
-          hours: coveredHours(response.best.start, response.best.end),
-          tone: "ink",
-          label: "추천",
-        },
-      ]
-    : [];
-
   const columns = chart.status === "ready" ? chart.columns : [];
+
+  /*
+   * 차트 위에 얹히는 두 구간. 날짜를 지운 시각만 넘기면 축이 다음날로 밀렸을 때
+   * 오늘 밤 "지금 바로"가 다음날 같은 시각 막대에 얹힌다 — 그래서 축 기준으로 센다.
+   * 축이 아직 없으면 그릴 막대도, 읽어 낼 부하구간도 없다.
+   */
+  const axis = chart.status === "ready" ? chart.axis : null;
+  const baselineHours =
+    response && axis ? axisHours(axis, response.baseline_now.start, response.baseline_now.end) : [];
+  const bestHours = response && axis ? axisHours(axis, response.best.start, response.best.end) : [];
+  // 축에 한 칸도 안 걸친 구간은 마커에서 뺀다. 범례가 차트에 없는 표시를 설명하면
+  // 사용자는 없는 것을 찾는다.
+  const markers: ChartMarker[] = (
+    [
+      { hours: baselineHours, tone: "muted", label: "지금 바로" },
+      { hours: bestHours, tone: "ink", label: "추천" },
+    ] satisfies ChartMarker[]
+  ).filter((marker) => marker.hours.length > 0);
 
   return (
     <PageContainer className="pb-10">
@@ -162,8 +163,8 @@ export function ResultView({ query }: { query: string }) {
             form={form}
             response={response}
             // 부하구간은 응답에 없다. 받아 온 단가에서 읽어 내고, 단가가 없으면 말하지 않는다.
-            bestBand={bandSummary(columns, markers[1]?.hours ?? [])}
-            baselineBand={bandSummary(columns, markers[0]?.hours ?? [])}
+            bestBand={bandSummary(columns, bestHours)}
+            baselineBand={bandSummary(columns, baselineHours)}
           />
 
           {chart.status === "ready" && columns.length > 0 ? (
@@ -219,10 +220,13 @@ export function ResultView({ query }: { query: string }) {
  * 자정을 넘으면 날짜가 둘이다. 계절·휴일·주말 할인이 날짜마다 달라서 첫날 요금표를
  * 둘째 날에 재활용하면 금요일 밤 요금으로 토요일 새벽을 그리게 된다.
  */
-async function loadChart(axis: Axis, mode: RecommendForm["mode"]): Promise<ChartState> {
+async function loadChart(axis: Axis, form: RecommendForm): Promise<ChartState> {
+  // 공용 급속은 사업자마다 단가가 달라, 기본 설정의 백엔드는 단가 없이 timeline을
+  // 거절한다(422). 추천 요청에 실은 값을 단가 요청에도 똑같이 실어야 차트가 나온다.
+  const publicBasePrice = form.mode === "public_fast" ? form.publicBasePrice : undefined;
   try {
     const timelines = await Promise.all(
-      axis.days.map((day) => fetchTimeline({ day, mode })),
+      axis.days.map((day) => fetchTimeline({ day, mode: form.mode, publicBasePrice })),
     );
     return { status: "ready", axis, columns: buildColumns(axis, timelines) };
   } catch {

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type { TimelineResponse } from "@/lib/api/types";
 
-import { axisRangeLabel, bandSummary, buildAxis, buildColumns } from "./chart-data";
+import { axisHours, axisRangeLabel, bandSummary, buildAxis, buildColumns } from "./chart-data";
 
 /*
  * 차트 축은 0–23시 고정이 아니라 "시작 가능 시각 → 완료 시각"이다.
@@ -193,5 +193,67 @@ describe("bandSummary", () => {
 
   test("맞는 컬럼이 없으면 아무 말도 하지 않는다", () => {
     expect(bandSummary([], [22])).toBeNull();
+  });
+});
+
+/*
+ * 차트 마커는 막대를 시각(0–23)만으로 맞춘다. 그래서 구간을 시각으로만 넘기면
+ * 오늘 22시의 "지금 바로"가 내일 22시 막대 위에 얹힌다. 축이 추천 쪽으로 밀려
+ * 다음날부터 시작할 때 실제로 그랬다. 날짜까지 맞춰 축 안에 든 칸만 골라야 한다.
+ */
+describe("axisHours", () => {
+  // 다음날 01시부터 24칸: 10월 8일 01–23시, 10월 9일 0시
+  const axis = buildAxis({
+    earliestStart: "2026-10-08T01:00",
+    deadline: "2026-10-09T01:00",
+  })!;
+
+  test("다른 날짜의 같은 시각은 축에 표시하지 않는다", () => {
+    // 오늘(7일) 22–24시 "지금 바로". 8일 22·23시 칸이 축에 있어도 그건 다른 날이다.
+    expect(axisHours(axis, "2026-10-07T22:00:00+09:00", "2026-10-08T00:00:00+09:00")).toEqual(
+      [],
+    );
+  });
+
+  test("축 안에 든 칸은 그 시각으로 돌려준다", () => {
+    expect(axisHours(axis, "2026-10-08T01:00:00+09:00", "2026-10-08T03:00:00+09:00")).toEqual([
+      1, 2,
+    ]);
+    // 자정을 넘어도 축 안이면 이어서 센다. 정시 끝은 그 시각 칸을 쓰지 않는다.
+    expect(axisHours(axis, "2026-10-08T23:00:00+09:00", "2026-10-09T01:00:00+09:00")).toEqual([
+      23, 0,
+    ]);
+  });
+
+  test("축에 걸친 부분만 남긴다", () => {
+    // 7일 23시 – 8일 02:30. 7일 23시는 축 밖, 8일 1·2시는 축 안 (분이 남으면 그 칸까지).
+    expect(axisHours(axis, "2026-10-07T23:00:00+09:00", "2026-10-08T02:30:00+09:00")).toEqual([
+      1, 2,
+    ]);
+  });
+
+  test("브라우저 표준시와 상관없이 KST 벽시계로 센다", () => {
+    // TZ=UTC 기기에서 Date로 읽으면 22시가 13시가 된다. 표준시 표기를 그대로 믿어야 한다.
+    const evening = buildAxis({
+      earliestStart: "2026-10-07T18:00",
+      deadline: "2026-10-08T08:00",
+    })!;
+    expect(
+      axisHours(evening, "2026-10-07T22:00:00+09:00", "2026-10-08T01:00:00+09:00"),
+    ).toEqual([22, 23, 0]);
+  });
+
+  test("다른 날짜의 시각으로 할인 설명을 붙이지 않는다", () => {
+    // 8일 밤 22·23시만 주말 할인. 7일 밤 22·23시 "지금 바로"에 그 설명이 붙으면 거짓말이다.
+    const nextDay = timelineOf("2026-10-08", 200);
+    nextDay.hours[22] = { hour: 22, band: "light", discounted: true, price_per_kwh: 90 };
+    nextDay.hours[23] = { hour: 23, band: "light", discounted: true, price_per_kwh: 90 };
+    const columns = buildColumns(axis, [nextDay, timelineOf("2026-10-09", 300)]);
+
+    const baseline = axisHours(axis, "2026-10-07T22:00:00+09:00", "2026-10-08T00:00:00+09:00");
+    expect(bandSummary(columns, baseline)).toBeNull();
+
+    const sameNight = axisHours(axis, "2026-10-08T22:00:00+09:00", "2026-10-09T00:00:00+09:00");
+    expect(bandSummary(columns, sameNight)).toBe("주말 할인");
   });
 });

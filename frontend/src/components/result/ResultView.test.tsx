@@ -106,6 +106,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+/**
+ * 차트 마커 줄에서 표시된 칸 수. 마커 줄은 aria-hidden 장식이라 역할로 찾을 수 없어
+ * PriceBarChart의 색 클래스로 센다 (범례 견본은 figure 밖이라 섞이지 않는다).
+ */
+function markedCells(tone: "ink" | "muted"): number {
+  const className = tone === "ink" ? "bg-ink" : "bg-ink-3/45";
+  return document.querySelectorAll(`figure [class~="${className}"]`).length;
+}
+
 type Routes = {
   recommend?: () => Response | Promise<Response>;
   timeline?: (day: string) => Response | Promise<Response>;
@@ -234,6 +243,93 @@ describe("차트", () => {
     expect(screen.getByRole("button", { name: "0시 · 경부하 · 200.0원/kWh" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "7시 · 경부하 · 207.0원/kWh" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^8시 ·/ })).not.toBeInTheDocument();
+  });
+
+  test("두 구간을 각자 걸친 막대에만 표시한다", async () => {
+    stubFetch({});
+
+    render(withSession(QUERY));
+    await screen.findByRole("button", { name: "18시 · 최대 · 118.0원/kWh" });
+
+    // 지금 바로 18–21시 3칸, 추천 22–01시 3칸.
+    expect(markedCells("muted")).toBe(3);
+    expect(markedCells("ink")).toBe(3);
+  });
+
+  /*
+   * 완료가 하루를 훌쩍 넘으면 축이 추천 시작으로 밀려 다음날부터 그려진다.
+   * 그때 오늘 밤 "지금 바로"(7일 22–24시)를 시각만으로 맞추면 다음날 22·23시 막대에
+   * 표시가 얹히고, 다음날 밤의 주말 할인이 "지금 바로"의 설명으로 붙는다.
+   */
+  test("축이 다음날로 밀려도 오늘 구간을 다음날 같은 시각에 표시하지 않는다", async () => {
+    const query = toSearchParams({
+      batteryKwh: 70,
+      chargerKw: 7,
+      socNow: 30,
+      socTarget: 40,
+      earliestStart: "2026-10-07T22:00",
+      deadline: "2026-10-09T08:00",
+      mode: "self_low",
+    }).toString();
+    stubFetch({
+      recommend: () =>
+        jsonResponse({
+          ...RECOMMENDATION,
+          best: {
+            ...RECOMMENDATION.best,
+            start: "2026-10-08T21:00:00+09:00",
+            end: "2026-10-08T23:00:00+09:00",
+          },
+          baseline_now: {
+            ...RECOMMENDATION.baseline_now,
+            start: "2026-10-07T22:00:00+09:00",
+            end: "2026-10-08T00:00:00+09:00",
+          },
+        }),
+      timeline: (day) => {
+        const timeline = timelineOf(day);
+        if (day === "2026-10-08") {
+          timeline.hours[23] = { hour: 23, band: "light", discounted: true, price_per_kwh: 90 };
+        }
+        return jsonResponse(timeline);
+      },
+    });
+
+    render(withSession(query));
+    // 축은 8일 21시부터다. 그 날의 23시 막대가 있다.
+    await screen.findByRole("button", { name: "23시 · 주말 할인 · 90.0원/kWh" });
+
+    expect(markedCells("ink")).toBe(2);
+    expect(markedCells("muted")).toBe(0);
+    // 차트에 없는 구간을 범례가 설명하지 않는다 (PlanCards의 "지금 바로 · 22:00"은 그대로).
+    expect(screen.queryByText("지금 바로")).not.toBeInTheDocument();
+    // 다른 날의 부하구간을 "지금 바로"의 설명으로 붙이지 않는다.
+    expect(screen.queryByText(/시간대$/)).not.toBeInTheDocument();
+  });
+
+  test("공용 급속이면 단가 요청에도 공용 급속 단가를 싣는다", async () => {
+    // 기본 설정의 백엔드는 공용 급속 단가 없이 timeline을 422로 거절한다 — 차트가 통째로 빠진다.
+    const query = toSearchParams({
+      batteryKwh: 70,
+      chargerKw: 50,
+      socNow: 30,
+      socTarget: 60,
+      earliestStart: "2026-10-07T18:00",
+      deadline: "2026-10-08T08:00",
+      mode: "public_fast",
+      publicBasePrice: 347.2,
+    }).toString();
+    const calls = stubFetch({});
+
+    render(withSession(query));
+    await screen.findByText("18시 → 다음날 08시");
+
+    const timelineCalls = calls.filter((url) => url.startsWith("/api/timeline"));
+    expect(timelineCalls.length).toBeGreaterThan(0);
+    for (const url of timelineCalls) {
+      expect(url).toContain("mode=public_fast");
+      expect(url).toContain("public_base_price=347.2");
+    }
   });
 
   test("단가를 못 불러와도 추천은 그대로 보여주고 차트만 뺀다", async () => {

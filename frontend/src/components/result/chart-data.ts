@@ -113,6 +113,29 @@ export function buildColumns(axis: Axis, timelines: TimelineResponse[]): PriceCo
   return columns;
 }
 
+/**
+ * 구간이 이 축의 어느 칸을 덮는지, 칸의 시각(0–23)으로 돌려준다.
+ *
+ * PriceBarChart는 마커를 시각만으로 막대에 맞춘다. 시각만 넘기면 날짜가 사라져서,
+ * 축이 추천 쪽으로 밀려 다음날부터 시작할 때 오늘 22시의 "지금 바로"가 내일 22시
+ * 막대에 얹히고, 내일 밤의 주말 할인이 "지금 바로"의 설명으로 붙는다.
+ * 그래서 날짜까지 든 절대 칸 번호로 축 안에 드는지를 먼저 가린다. 축은 24칸을 넘지
+ * 않으므로(MAX_AXIS_HOURS) 축 안에서는 시각 하나가 칸 하나로 정해진다.
+ *
+ * 칸을 세는 규칙은 축과 같다 — 분은 버리고, 정시에 끝나면 그 시각 칸은 쓰지 않았다.
+ * 벽시계 값만 읽으므로 브라우저 표준시가 KST가 아니어도 결과가 같다.
+ */
+export function axisHours(axis: Axis, startIso: string, endIso: string): number[] {
+  const first = Math.max(hourIndexOf(startIso), axis.startIndex);
+  const last = Math.min(endHourIndexOf(endIso), axis.startIndex + axis.length - 1);
+
+  const hours: number[] = [];
+  for (let index = first; index <= last; index += 1) {
+    hours.push(hourOfIndex(index));
+  }
+  return hours;
+}
+
 /** "18시 → 다음날 08시". 끝은 마지막 막대가 아니라 축이 닫히는 시각이다. */
 export function axisRangeLabel(axis: Axis): string {
   const exclusiveEnd = axis.endHour + 1;
