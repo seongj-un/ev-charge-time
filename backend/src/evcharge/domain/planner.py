@@ -106,18 +106,23 @@ def _candidate_starts(
     return sorted(s for s in starts if earliest <= s <= latest)
 
 
+def _floor_to_grid(moment: datetime) -> datetime:
+    return moment.replace(minute=moment.minute - moment.minute % 15, second=0, microsecond=0)
+
+
 def _ceil_to_grid(moment: datetime) -> datetime:
-    remainder = (moment.minute % 15, moment.second, moment.microsecond)
-    if remainder == (0, 0, 0):
-        return moment
-    floor = moment.replace(
-        minute=moment.minute - moment.minute % 15, second=0, microsecond=0
-    )
-    return floor + GRID
+    floor = _floor_to_grid(moment)
+    return moment if floor == moment else floor + GRID
 
 
 def _plan_for(start: datetime, request: ChargeRequest, price_fn: PriceFn) -> ChargePlan:
-    """15분 조각으로 나눠 (조각 kWh × 조각 단가)를 합산한다."""
+    """시계 기준 15분 격자(:00·:15·:30·:45)로 나눠 (조각 kWh × 조각 단가)를 합산한다.
+
+    조각 단가는 조각 첫 순간의 단가다. 그래서 조각 경계는 **시작 시각이 아니라
+    시계에** 맞춘다 — 요금(부하구간·할인 창·날짜)은 정시에 바뀌므로 시계 격자로
+    자르면 한 조각 안에서 단가가 바뀌지 않는다. 시작 시각부터 15분씩 자르면
+    07:59 시작의 첫 조각이 08시를 넘어서도 07:59의 단가를 계속 써 버린다.
+    """
     duration = request.duration
     end = start + duration
 
@@ -126,7 +131,7 @@ def _plan_for(start: datetime, request: ChargeRequest, price_fn: PriceFn) -> Cha
     moment = start
 
     while moment < end:
-        slice_end = min(moment + GRID, end)
+        slice_end = min(_floor_to_grid(moment) + GRID, end)
         slice_hours = (slice_end - moment).total_seconds() / 3600
         slice_kwh = request.charger_kw * slice_hours
 

@@ -147,3 +147,52 @@ def test_cost_integrates_across_a_price_change():
 def test_assumptions_are_reported():
     result = recommend(spec_request(), night_is_cheap)
     assert len(result.assumptions) >= 3
+
+
+# ── 요금이 바뀌는 시각에서도 조각을 나눈다 ─────────────────────────────────────
+#
+# 예전에는 시작 시각부터 15분씩 잘라 조각 첫 순간의 단가를 조각 전체에 썼다.
+# 07:59에 시작하면 07:59–08:14가 통째로 경부하 단가가 되어, 08시에 이미 비싸진
+# 14분이 싸게 계산됐다. 탐색은 이 착시를 "최저가"로 골라냈다 — 후보에는 격자에서
+# 어긋난 시작 시각(earliest_start 자신, 가장 늦은 시작)이 들어가기 때문이다.
+
+
+def test_a_slice_does_not_carry_the_old_price_across_a_price_change():
+    """07:59 시작 15분(1 kWh/분 × 15분 = 0.25h × 60kW = 15 kWh).
+
+    1분은 60원, 14분은 180원이어야 한다: 1 × 60 + 14 × 180 = 2,580원.
+    """
+    request = ChargeRequest(
+        battery_kwh=100.0,
+        soc_now=0.0,
+        soc_target=15.0,
+        charger_kw=60.0,
+        earliest_start=kst(2026, 7, 1, 7, 59),
+        deadline=kst(2026, 7, 1, 8, 14),
+    )
+
+    result = recommend(request, night_is_cheap)
+
+    assert result.best.start == kst(2026, 7, 1, 7, 59)
+    assert result.best.cost_won == 1 * 60 + 14 * 180
+
+
+def test_a_misaligned_start_is_not_mistaken_for_the_cheapest():
+    """07:59와 22:00 중 고를 수 있으면 실제로 싼 22:00을 골라야 한다.
+
+    예전 계산으로는 07:59 시작 15분이 22:00 시작과 똑같이 "전부 60원"이라
+    동률이었고, 동률이면 더 이른 시작을 고르므로 비싼 07:59를 추천했다.
+    """
+    request = ChargeRequest(
+        battery_kwh=100.0,
+        soc_now=0.0,
+        soc_target=15.0,
+        charger_kw=60.0,
+        earliest_start=kst(2026, 7, 1, 7, 59),
+        deadline=kst(2026, 7, 1, 22, 15),
+    )
+
+    result = recommend(request, night_is_cheap)
+
+    assert result.best.start == kst(2026, 7, 1, 22)
+    assert result.best.cost_won == 15 * 60
