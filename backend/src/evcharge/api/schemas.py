@@ -34,14 +34,20 @@ def _to_kst_isoformat(value: datetime) -> str:
 KstDatetime = Annotated[datetime, PlainSerializer(_to_kst_isoformat, return_type=str)]
 
 
-def _normalize_email(value: str) -> str:
+def _normalize_email(value: object) -> object:
     """앞뒤 공백을 지우고 소문자로 통일한다.
 
     이메일 로컬파트는 RFC상 대소문자를 구분할 수 있지만, 이 서비스는
     "같은 사람이 두 번 가입되는" 문제를 막는 게 우선이라 통째로 소문자로
     다룬다(I-3). 가입(중복 확인·저장)과 로그인(조회) 양쪽이 이 타입을 함께
     써야 한다 — 한쪽만 정규화하면 기존 계정에 로그인이 안 된다.
+
+    BeforeValidator라 타입 검증보다 먼저 돈다. 문자열이 아니면(null·숫자·배열)
+    손대지 않고 그대로 넘겨 EmailStr이 422로 거절하게 한다 — 여기서 .strip()을
+    부르면 AttributeError로 500이 난다.
     """
+    if not isinstance(value, str):
+        return value
     return value.strip().lower()
 
 

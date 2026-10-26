@@ -8,6 +8,8 @@ import statistics
 import time
 import uuid
 
+import pytest
+
 from evcharge.settings import get_settings
 
 EMAIL = "signup-flow@example.com"
@@ -309,3 +311,15 @@ def test_login_timing_does_not_leak_whether_the_email_is_registered(client):
         f"(registered={median_registered * 1000:.3f}ms, "
         f"unknown={median_unknown * 1000:.3f}ms, ratio={ratio:.1f}x)"
     )
+
+
+# 이메일 정규화(strip·lower)가 타입 검증보다 먼저 돈다. 문자열이 아닌 값이 오면
+# .strip()에서 AttributeError가 나 500이 됐다 — 형식이 틀린 요청은 422여야 한다.
+@pytest.mark.parametrize("path", ["/api/auth/signup", "/api/auth/login"])
+@pytest.mark.parametrize("email", [None, 123, ["a@example.com"], {"x": 1}, True])
+def test_a_non_string_email_is_422_not_500(client, path, email):
+    body = {"email": email, "password": "password123", "nickname": "테스터"}
+
+    response = client.post(path, json=body)
+
+    assert response.status_code == 422
