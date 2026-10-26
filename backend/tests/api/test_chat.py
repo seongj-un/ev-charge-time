@@ -589,3 +589,29 @@ def test_429_body_says_when_not_just_that_it_is_limited(
 
     detail = _ask(client).json()["detail"]
     assert "분" in detail, detail
+
+
+def test_a_model_failure_log_does_not_carry_the_original_exception(
+    client, db_session, fake_llm, caplog
+):
+    """503 경로의 로그는 ``LlmError``의 (이미 가린) 문구만 남긴다.
+
+    예전에는 ``exc_info=True``라서 ``LlmError``에 매달린 원본 예외까지 traceback으로
+    찍혔다. 원본 문구에 키가 들어 있으면 바깥 문구를 아무리 가려도 로그로 샜다.
+    """
+    secret = "AIzaSy-route-level-fake-key-000000"
+    _login(client, db_session)
+    try:
+        try:
+            raise RuntimeError(f"401 key={secret}")
+        except RuntimeError as original:
+            raise LlmError("모델 호출 실패: <GEMINI_API_KEY>") from original
+    except LlmError as chained:
+        fake_llm.payload = chained
+
+    with caplog.at_level("WARNING"):
+        response = _ask(client)
+
+    assert response.status_code == 503
+    assert "자연어 질의 실패" in caplog.text
+    assert secret not in caplog.text

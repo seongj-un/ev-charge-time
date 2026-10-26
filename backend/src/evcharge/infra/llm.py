@@ -104,12 +104,14 @@ class GeminiClient:
                     http_options=types.HttpOptions(timeout=int(self.timeout_s * 1000)),
                 ),
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - LlmError로 되던진다(from None은 키 때문)
             # 좁게 잡을 수가 없다. SDK는 APIError(4xx/5xx) 말고도 전송 계층
             # (httpx), 인증(google-auth), 스키마 변환에서 서로 다른 예외를
             # 낸다. 어느 쪽이든 사용자에게는 "지금은 답할 수 없다"는 같은 뜻이고,
             # 잡지 않으면 500으로 새면서 내부 사정이 그대로 노출된다.
-            raise LlmError(f"모델 호출 실패: {self._mask(str(exc))}") from exc
+            # ``from None``: 원본 예외를 매달면 traceback에 가리지 않은 원본 문구가
+            # 그대로 찍힌다. 원인 파악에 필요한 종류와 (가린) 문구는 메시지에 싣는다.
+            raise LlmError(f"모델 호출 실패: {self._describe(exc)}") from None
 
         text = self._output_text(response)
         if not text or not text.strip():
@@ -145,10 +147,13 @@ class GeminiClient:
         """
         try:
             return response.text or ""
-        except Exception as exc:
-            # 위와 같은 이유로 넓게 잡는다. (BLE001은 이렇게 되던지는 경우는
-            # 잡지 않으므로 noqa가 필요 없다 — 삼키는 except만 규칙 대상이다.)
-            raise LlmError(f"모델 응답을 읽지 못했다: {self._mask(str(exc))}") from exc
+        except Exception as exc:  # noqa: BLE001 - LlmError로 되던진다(from None은 키 때문)
+            # 위와 같은 이유로 넓게 잡는다. (BLE001은 `from exc`로 되던지면 잡지
+            # 않지만, 키가 든 원본을 매달지 않으려고 `from None`을 써서 noqa가 필요하다.)
+            raise LlmError(f"모델 응답을 읽지 못했다: {self._describe(exc)}") from None
+
+    def _describe(self, exc: BaseException) -> str:
+        return f"{type(exc).__name__}: {self._mask(str(exc))}"
 
     def _mask(self, text: str) -> str:
         """예외 문구에 되비쳐 나온 API 키를 지운다 (``charger_api.py``와 같은 이유).

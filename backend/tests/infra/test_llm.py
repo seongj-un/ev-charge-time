@@ -155,3 +155,37 @@ def test_the_request_carries_the_model_schema_and_json_mime_type():
     assert config.temperature == 0.0
     # 사용자가 화면 앞에서 기다린다. 무한정 매달리지 않는다(밀리초 단위).
     assert config.http_options.timeout == 20_000
+
+
+def test_the_api_key_never_leaks_through_the_exception_chain():
+    """바깥 문구만 가려서는 부족하다. ``raise ... from exc``로 원본 예외를 매달면
+    ``logger.warning(..., exc_info=True)``나 에러 트래커가 찍는 traceback에
+    "The above exception was the direct cause" 아래로 원본 문구가 그대로 나온다.
+    traceback 전체를 문자열로 만들어도 키가 없어야 한다."""
+    import traceback
+
+    sdk = _Sdk(
+        lambda _: (_ for _ in ()).throw(
+            RuntimeError(f"401 Unauthorized: key={SECRET_KEY} rejected")
+        )
+    )
+
+    with pytest.raises(LlmError) as exc_info:
+        _call(_client(sdk=sdk))
+
+    rendered = "".join(traceback.format_exception(exc_info.value))
+    assert SECRET_KEY not in rendered, "API 키가 예외 체인(traceback)으로 샜다"
+    # 원인을 잃지는 않는다 — 원본 예외의 종류와 (가린) 문구는 남는다.
+    assert "RuntimeError" in str(exc_info.value)
+    assert "<GEMINI_API_KEY>" in str(exc_info.value)
+
+
+def test_a_response_read_failure_does_not_leak_the_key_through_the_chain():
+    import traceback
+
+    sdk = _Sdk(lambda _: _Response(ValueError(f"bad candidate for key={SECRET_KEY}")))
+
+    with pytest.raises(LlmError) as exc_info:
+        _call(_client(sdk=sdk))
+
+    assert SECRET_KEY not in "".join(traceback.format_exception(exc_info.value))
