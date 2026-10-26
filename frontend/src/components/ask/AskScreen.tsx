@@ -13,7 +13,14 @@ import type { RecommendResponse } from "@/lib/api/types";
 import { formatHm, formatKoreanDate, formatKwh, formatWon } from "@/lib/format";
 import { unverifiedNotice } from "@/lib/tariff";
 
-import { missingLabels, toHistory, waitLabel } from "./ask-view";
+import {
+  FALLBACK_WAIT_SECONDS,
+  missingLabels,
+  msUntilUnlock,
+  toHistory,
+  unlockAt,
+  waitLabel,
+} from "./ask-view";
 import type { AskTurn } from "./ask-view";
 
 /**
@@ -31,8 +38,11 @@ type Blocked =
   | { kind: "none" }
   /** GEMINI_API_KEY가 없다. 기다린다고 풀리지 않는다. */
   | { kind: "not-ready"; message: string }
-  /** 호출 제한. 재시도 버튼을 주지 않는다 — 눌러도 또 429다. */
-  | { kind: "rate-limited"; message: string; until: string }
+  /**
+   * 호출 제한. 재시도 버튼을 주지 않는다 — 눌러도 또 429다.
+   * 대신 `unlockAtMs`에 스스로 풀린다. 시각을 모르면 FALLBACK_WAIT_SECONDS 뒤다.
+   */
+  | { kind: "rate-limited"; message: string; until: string; unlockAtMs: number }
   /** 모델 쪽 일시 실패. 같은 질문을 그대로 다시 보낼 수 있다. */
   | { kind: "retryable"; message: string; question: string };
 
@@ -49,6 +59,23 @@ export function AskScreen() {
     if (turns.length === 0) return;
     logEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [turns.length]);
+
+  /*
+   * 호출 제한은 풀리는 시각에 스스로 푼다. 안 풀면 화면에 적힌 시각이 지나도
+   * 입력창이 잠긴 채라 새로고침 말고는 다시 물어볼 길이 없다.
+   *
+   * blocked가 바뀌거나 화면을 떠나면 타이머를 치운다. 남겨 두면 나중에 다른
+   * 이유로 막힌 상태(503 등)를 이 타이머가 엉뚱하게 지운다.
+   */
+  const unlockAtMs = blocked.kind === "rate-limited" ? blocked.unlockAtMs : null;
+  useEffect(() => {
+    if (unlockAtMs === null) return;
+    const timer = setTimeout(
+      () => setBlocked({ kind: "none" }),
+      msUntilUnlock(unlockAtMs, Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [unlockAtMs]);
 
   async function send(question: string, previous: AskTurn[]) {
     setSending(true);
@@ -323,10 +350,12 @@ function blockedFrom(error: unknown, question: string): Blocked {
     return { kind: "not-ready", message: error.message };
   }
   if (error.status === 429) {
+    const now = Date.now();
     return {
       kind: "rate-limited",
       message: error.message,
-      until: waitLabel(error.retryAfterSeconds, Date.now()),
+      until: waitLabel(error.retryAfterSeconds, now),
+      unlockAtMs: unlockAt(error.retryAfterSeconds ?? FALLBACK_WAIT_SECONDS, now),
     };
   }
   return { kind: "retryable", message: error.message, question };

@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  FALLBACK_WAIT_SECONDS,
   HISTORY_TURNS,
+  MAX_TIMER_MS,
   missingLabels,
+  msUntilUnlock,
   toHistory,
   unlockAt,
   unlockClockLabel,
@@ -87,6 +90,38 @@ describe("다시 물어볼 수 있는 시각", () => {
 
   test("알면 언제 풀리는지 적는다", () => {
     expect(waitLabel(1725, NOW, "Asia/Seoul")).toBe("23:04부터 다시 물어볼 수 있어요.");
+  });
+});
+
+/*
+ * 잠금을 언제 푸는가.
+ *
+ * 429로 잠근 입력창은 반드시 풀려야 한다. 풀 시각을 놓치면 사용자는 새로고침
+ * 말고는 다시 물어볼 길이 없다.
+ */
+describe("잠금 해제까지 남은 시간", () => {
+  const NOW = Date.parse("2026-09-21T22:35:00+09:00");
+
+  test("풀리는 시각까지 남은 ms", () => {
+    expect(msUntilUnlock(unlockAt(1725, NOW), NOW)).toBe(1725 * 1000);
+  });
+
+  /* 탭이 잠들어 타이머가 늦게 돌면 이미 지난 시각일 수 있다. 바로 푼다. */
+  test("이미 지났으면 0", () => {
+    expect(msUntilUnlock(NOW - 5000, NOW)).toBe(0);
+  });
+
+  /*
+   * setTimeout은 2^31-1ms를 넘기면 즉시 실행된다. 터무니없는 Retry-After가
+   * 오면 잠금이 곧바로 풀리는 셈이라, 상한에서 자른다.
+   */
+  test("타이머 상한을 넘지 않는다", () => {
+    expect(msUntilUnlock(NOW + 40 * 24 * 3600 * 1000, NOW)).toBe(MAX_TIMER_MS);
+  });
+
+  /* 헤더가 없을 때 쓰는 대기 시간은 양수여야 잠금이 의미가 있다. */
+  test("헤더가 없을 때 기다릴 시간이 있다", () => {
+    expect(FALLBACK_WAIT_SECONDS).toBeGreaterThan(0);
   });
 });
 

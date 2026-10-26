@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -6,6 +6,7 @@ import { SessionProvider } from "@/components/auth/SessionProvider";
 import type { ChatResponse, RecommendResponse } from "@/lib/api/types";
 
 import { AskScreen } from "./AskScreen";
+import { FALLBACK_WAIT_SECONDS } from "./ask-view";
 
 /*
  * 이 화면이 지켜야 하는 약속.
@@ -16,7 +17,7 @@ import { AskScreen } from "./AskScreen";
  *   3. 되묻기에 답하려면 이력이 이어져야 한다.
  *   4. 막힌 이유 네 가지(401·501·429·503)를 서로 다르게 말한다.
  *      특히 429에는 재시도 버튼을 주지 않는다 — 눌러봐야 또 429이고,
- *      그 호출도 무료 티어 할당량을 깎는다.
+ *      그 호출도 무료 티어 할당량을 깎는다. 대신 풀리는 시각에 스스로 푼다.
  *   5. 키가 없을 때(501) 그럴듯한 답변을 지어내지 않는다.
  */
 
@@ -104,6 +105,7 @@ function renderScreen() {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -326,6 +328,73 @@ describe("막혔을 때", () => {
     await ask("언제 충전해?");
 
     expect(await screen.findByText(/잠시 후 다시 물어봐 주세요/)).toBeInTheDocument();
+  });
+
+  /*
+   * 잠금은 풀리는 시각까지만이다. 그 뒤에도 잠겨 있으면 사용자는 새로고침
+   * 말고는 다시 물어볼 길이 없다 — 화면에 적힌 시각이 거짓말이 된다.
+   */
+  test("호출 제한은 Retry-After가 지나면 풀린다", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let attempt = 0;
+    const calls = stubFetch(() => {
+      attempt += 1;
+      return attempt === 1
+        ? json({ detail: "질문 횟수 제한(60분당 20회)을 초과했습니다." }, 429, {
+            "retry-after": "1725",
+          })
+        : json(answer("이번엔 됐습니다"));
+    });
+    renderScreen();
+    await ask("언제 충전해?");
+    await screen.findByText(/질문 횟수 제한/);
+    const box = screen.getByRole("textbox", { name: /질문/ });
+
+    // 1초 전까지는 잠겨 있다. 일찍 풀면 또 429다.
+    await act(() => vi.advanceTimersByTimeAsync(1724_000));
+    expect(box).toBeDisabled();
+
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+    expect(box).toBeEnabled();
+    expect(screen.queryByText(/질문 횟수 제한/)).not.toBeInTheDocument();
+
+    // 풀린 뒤에는 정말로 다시 물어볼 수 있어야 한다.
+    await ask("다시 물어볼게");
+    expect(await screen.findByText("이번엔 됐습니다")).toBeInTheDocument();
+    expect(calls.chat).toHaveLength(2);
+    expect(box).toBeEnabled();
+  });
+
+  /*
+   * 헤더가 없으면 언제 풀리는지 모른다. 그래도 영영 잠그지는 않는다 — 정해 둔
+   * 만큼만 기다리고 푼다. 그 사이 다시 눌러봐야 또 429일 뿐이다.
+   */
+  test("남은 시간을 몰라도 잠금이 영영 가지는 않는다", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stubFetch(() => json({ detail: "질문 횟수 제한을 초과했습니다." }, 429));
+    renderScreen();
+    await ask("언제 충전해?");
+    await screen.findByText(/잠시 후 다시 물어봐 주세요/);
+    const box = screen.getByRole("textbox", { name: /질문/ });
+    expect(box).toBeDisabled();
+
+    await act(() => vi.advanceTimersByTimeAsync(FALLBACK_WAIT_SECONDS * 1000));
+    expect(box).toBeEnabled();
+  });
+
+  /* 화면을 떠난 뒤에 잠금 해제 타이머가 돌면 사라진 컴포넌트의 상태를 건드린다. */
+  test("화면을 떠나면 잠금 타이머를 치운다", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stubFetch(() =>
+      json({ detail: "질문 횟수 제한을 초과했습니다." }, 429, { "retry-after": "1725" }),
+    );
+    const { unmount } = renderScreen();
+    await ask("언제 충전해?");
+    await screen.findByText(/질문 횟수 제한/);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   /* 503은 모델 쪽 일시 실패다. 같은 질문을 그대로 다시 보낼 수 있다. */

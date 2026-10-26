@@ -79,6 +79,29 @@ export function unlockClockLabel(atMs: number, timeZone?: string): string {
   return `${hour === "24" ? "00" : hour}:${minute}`;
 }
 
+/**
+ * Retry-After가 없을 때 입력창을 잠가 두는 시간 (초).
+ *
+ * 모른다고 영영 잠그면 사용자는 새로고침 말고는 다시 물어볼 길이 없다.
+ * 그렇다고 바로 풀면 곧장 또 429다. 화면이 말하는 "잠시 후"만큼만 막는다 —
+ * 그때 다시 막히면 그 429가 새 시간을 알려준다.
+ */
+export const FALLBACK_WAIT_SECONDS = 60;
+
+/** setTimeout이 받을 수 있는 가장 긴 지연. 넘기면 브라우저가 즉시 실행한다. */
+export const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/**
+ * 잠금을 풀 때까지 남은 ms. 타이머에 그대로 넘긴다.
+ *
+ * 이미 지났으면 0이다 — 탭이 잠들어 다시 계산할 즈음엔 풀릴 시각이 지났을 수
+ * 있다. 상한에서 자르는 이유는 MAX_TIMER_MS를 넘긴 지연이 "즉시"로 읽혀
+ * 잠금이 곧바로 풀리기 때문이다.
+ */
+export function msUntilUnlock(atMs: number, nowMs: number): number {
+  return Math.min(Math.max(atMs - nowMs, 0), MAX_TIMER_MS);
+}
+
 /** 429 밑에 적을 한 줄. 남은 시간을 모르면 시각을 지어내지 않는다. */
 export function waitLabel(seconds: number | null, nowMs: number, timeZone?: string): string {
   if (seconds === null) return "잠시 후 다시 물어봐 주세요.";
