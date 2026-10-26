@@ -195,6 +195,37 @@ export function discountScopeLabel(response: TimelineResponse): string {
   return `${SEASON_LABEL[response.season]} 토·일·공휴일`;
 }
 
+/** 공용 급속 단가의 상한. 백엔드 schemas.MAX_PRICE_PER_KWH와 같다. */
+const MAX_PUBLIC_BASE_PRICE = 10_000;
+
+/**
+ * 공용 급속 단가 칸의 글자 → 보낼 수 있는 단가, 못 보내면 null.
+ *
+ * Number("")는 0이라 그냥 쓰면 빈 칸이 "0원"으로 나간다. 백엔드가 받지 않을 값(0 이하,
+ * 상한 초과)도 여기서 걸러 null로 둔다 — 그러면 화면은 단가 없이 부르고, 백엔드가
+ * "충전기에 적힌 요금을 넣어 달라"고 말해 준다. 틀린 숫자를 보내 받는 422보다 그 문장이 낫다.
+ */
+export function parsePublicBasePrice(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0 || value > MAX_PUBLIC_BASE_PRICE) return null;
+  return value;
+}
+
+/**
+ * "이 날짜로 충전 시간 추천받기"의 주소.
+ *
+ * 공용 급속은 단가가 없으면 추천도 못 하니, 여기서 넣은 단가를 같이 넘긴다 —
+ * 추천 화면에서 같은 숫자를 또 치게 하지 않는다. 다른 방식에는 쓸모없는 값이라 싣지 않는다.
+ */
+export function recommendHref(day: string, mode: Mode, publicBasePrice: number | null): string {
+  const params = new URLSearchParams({ day, mode });
+  if (mode === "public_fast" && publicBasePrice !== null) {
+    params.set("public_base_price", String(publicBasePrice));
+  }
+  return `/recommend?${params.toString()}`;
+}
+
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }

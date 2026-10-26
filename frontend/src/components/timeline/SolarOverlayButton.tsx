@@ -7,6 +7,10 @@
  * 두고 왜 못 켜는지를 버튼 안에 적는다 — 점선 테두리도 같은 말을 하는 장치다.
  * 이름 안에 상태가 들어가야 스크린리더도 "왜 안 눌리지"를 겪지 않는다.
  *
+ * 불러오다 실패한 경우("failed")는 다르다. 예보 범위 밖의 날짜나 일시적인 오류라
+ * 다시 누르면 될 수도 있다. 그래서 누를 수 있게 두되, 켜진 척하지 않도록
+ * "불러오지 못함"을 적고 aria-pressed도 false로 둔다.
+ *
  * 모바일은 목록 맨 아래 가로 꽉 찬 줄, 데스크톱은 차트 카드 좌하단 알약이라
  * 두 자리에 각각 놓인다. 보이지 않는 쪽은 display:none이라 접근성 트리에서도 빠진다.
  */
@@ -18,18 +22,30 @@ export function SolarOverlayButton({
 }: {
   on: boolean;
   onToggle: () => void;
-  /** "ready" 외에는 누를 수 없고, 그 이유가 버튼에 적힌다. */
-  state: "ready" | "loading" | "unavailable";
+  /**
+   * "loading"·"unavailable"은 누를 수 없고, 그 이유가 버튼에 적힌다.
+   * "failed"는 이번 시도가 실패했다는 뜻이라 다시 누를 수 있다.
+   */
+  state: "ready" | "loading" | "unavailable" | "failed";
   className?: string;
 }) {
   const note =
-    state === "loading" ? "불러오는 중" : state === "unavailable" ? "준비 중" : on ? "켜짐" : "꺼짐";
+    state === "loading"
+      ? "불러오는 중"
+      : state === "unavailable"
+        ? "준비 중"
+        : state === "failed"
+          ? "불러오지 못함"
+          : on
+            ? "켜짐"
+            : "꺼짐";
+  const disabled = state === "loading" || state === "unavailable";
 
   return (
     <button
       type="button"
-      disabled={state !== "ready"}
-      aria-pressed={state === "ready" ? on : undefined}
+      disabled={disabled}
+      aria-pressed={disabled ? undefined : state === "ready" && on}
       onClick={onToggle}
       className={`flex w-full items-center justify-between gap-2 rounded-field border border-dashed border-line
         px-4 py-3.5 text-sm text-ink-2 transition-colors disabled:opacity-100

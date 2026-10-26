@@ -11,7 +11,9 @@ import {
   formatBandPrice,
   isDay,
   isMode,
+  parsePublicBasePrice,
   presentBandKeys,
+  recommendHref,
   shiftDay,
   toColumns,
 } from "./timeline-view";
@@ -233,5 +235,47 @@ describe("daySubtitle", () => {
     } satisfies TimelineResponse;
 
     expect(daySubtitle(response)).toBe("시뮬레이션 · 겨울 평일");
+  });
+});
+
+/*
+ * 공용 급속 단가는 사용자가 손으로 넣는 값이다. 빈 칸을 0으로 읽거나 "abc"를 보내면
+ * 백엔드는 422만 돌려주고, 화면은 그걸 고칠 수 없는 오류처럼 보여준다.
+ */
+describe("parsePublicBasePrice", () => {
+  test("0보다 크고 10,000 이하인 수만 받는다", () => {
+    expect(parsePublicBasePrice("347.2")).toBe(347.2);
+    expect(parsePublicBasePrice(" 350 ")).toBe(350);
+    expect(parsePublicBasePrice("10000")).toBe(10000);
+  });
+
+  test("빈 칸·0·음수·상한 초과·숫자 아님은 없는 값이다", () => {
+    expect(parsePublicBasePrice("")).toBeNull();
+    expect(parsePublicBasePrice("   ")).toBeNull();
+    expect(parsePublicBasePrice("0")).toBeNull();
+    expect(parsePublicBasePrice("-10")).toBeNull();
+    expect(parsePublicBasePrice("10000.1")).toBeNull();
+    expect(parsePublicBasePrice("abc")).toBeNull();
+    expect(parsePublicBasePrice("Infinity")).toBeNull();
+  });
+});
+
+describe("recommendHref", () => {
+  test("날짜와 방식을 싣는다", () => {
+    expect(recommendHref("2026-10-10", "self_low", null)).toBe(
+      "/recommend?day=2026-10-10&mode=self_low",
+    );
+  });
+
+  test("공용 급속이면 단가도 싣는다", () => {
+    expect(recommendHref("2026-10-10", "public_fast", 350)).toBe(
+      "/recommend?day=2026-10-10&mode=public_fast&public_base_price=350",
+    );
+  });
+
+  test("공용 급속이 아니면 단가를 싣지 않는다", () => {
+    expect(recommendHref("2026-10-10", "self_low", 350)).toBe(
+      "/recommend?day=2026-10-10&mode=self_low",
+    );
   });
 });

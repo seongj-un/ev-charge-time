@@ -21,16 +21,22 @@ export function TimelinePage() {
 
   const dayParam = searchParams.get("day");
   const modeParam = searchParams.get("mode");
+  // 글자 그대로 넘긴다. 알아볼 수 있는 값인지는 칸을 들고 있는 TimelineScreen이 가린다.
+  const priceParam = searchParams.get("public_base_price");
 
   // 주소창은 누구나 고친다. 못 알아보는 값은 무시하고 기본값으로 간다.
   const day = isDay(dayParam) ? dayParam : null;
   const mode = isMode(modeParam) ? modeParam : "self_low";
 
   const handleQueryChange = useCallback(
-    (query: { day: string; mode: string }) => {
+    (query: { day: string; mode: string; publicBasePrice?: number }) => {
       const next = new URLSearchParams();
       next.set("day", query.day);
       next.set("mode", query.mode);
+      // 공용 급속 단가도 남긴다. 새로고침할 때마다 충전기 요금을 다시 치게 하지 않는다.
+      if (query.publicBasePrice !== undefined) {
+        next.set("public_base_price", String(query.publicBasePrice));
+      }
       // 차트를 보고 있는데 날짜를 넘길 때마다 맨 위로 튀면 안 된다.
       router.replace(`/timeline?${next.toString()}`, { scroll: false });
     },
@@ -38,6 +44,11 @@ export function TimelinePage() {
   );
 
   return (
-    <TimelineScreen initialDay={day} initialMode={mode} onQueryChange={handleQueryChange} />
+    <TimelineScreen
+      initialDay={day}
+      initialMode={mode}
+      initialPublicBasePrice={priceParam}
+      onQueryChange={handleQueryChange}
+    />
   );
 }

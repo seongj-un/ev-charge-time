@@ -80,6 +80,24 @@ describe("TimelinePage", () => {
     );
   });
 
+  test("URL의 공용 급속 단가로 부르고, 바뀐 주소에도 남긴다", async () => {
+    search = new URLSearchParams("day=2026-01-14&mode=public_fast&public_base_price=350");
+
+    render(<TimelinePage />);
+
+    await waitFor(() =>
+      expect(urls).toContain(
+        "/api/timeline?day=2026-01-14&mode=public_fast&public_base_price=350",
+      ),
+    );
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        "/timeline?day=2026-01-14&mode=public_fast&public_base_price=350",
+        { scroll: false },
+      ),
+    );
+  });
+
   test("알아볼 수 없는 쿼리는 무시하고 기본값으로 간다", async () => {
     // 주소창을 손으로 고친 경우. 2월 30일을 그대로 보내면 백엔드가 422만 준다.
     search = new URLSearchParams("day=2026-02-30&mode=self_medium");

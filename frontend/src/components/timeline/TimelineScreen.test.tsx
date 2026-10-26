@@ -287,6 +287,216 @@ describe("태양광 겹쳐 보기", () => {
     await waitFor(() => expect(solarButton()).toBeDisabled());
     expect(solarButton()).toHaveTextContent("준비 중");
   });
+
+  /* 501은 "백엔드에 아예 없다"는 뜻이라 날짜를 바꿔도 그대로다. */
+  test("501로 준비 중이 되면 다른 날짜로 가도 준비 중이다", async () => {
+    const user = userEvent.setup();
+    stubFetch((url) =>
+      url.startsWith("/api/solar-forecast")
+        ? { status: 501, body: { detail: "태양광 발전 예측은 아직 준비되지 않았습니다." } }
+        : { body: timeline() },
+    );
+
+    render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
+    await user.click(solarButton());
+    await waitFor(() => expect(solarButton()).toBeDisabled());
+
+    await user.click(screen.getByRole("button", { name: "다음 날" }));
+
+    expect(await screen.findByText("10월 11일 (일)")).toBeInTheDocument();
+    expect(solarButton()).toBeDisabled();
+    expect(solarButton()).toHaveTextContent("준비 중");
+  });
+
+  /*
+   * 예보 범위(이틀) 밖의 날짜는 422다. 그 날 하루의 사정이지 기능이 없는 게 아니다 —
+   * 한 번 실패했다고 모든 날짜에서 버튼을 잠그면 오늘 예보도 다시는 못 본다.
+   */
+  test("422면 그 날만 불러오지 못함이고, 다시 누르면 다시 부른다", async () => {
+    const user = userEvent.setup();
+    let solarCalls = 0;
+    const { urls } = stubFetch((url) => {
+      if (!url.startsWith("/api/solar-forecast")) return { body: timeline() };
+      solarCalls += 1;
+      return solarCalls === 1
+        ? { status: 422, body: { detail: "예보 범위 밖의 날짜입니다." } }
+        : { body: SOLAR };
+    });
+
+    render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
+    await user.click(solarButton());
+
+    await waitFor(() => expect(solarButton()).toHaveTextContent("불러오지 못함"));
+    // 켜진 척하지 않는다. 그러나 잠그지도 않는다.
+    expect(solarButton()).toBeEnabled();
+    expect(solarButton()).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByText(/nx=57, ny=71/)).toBeNull();
+
+    await user.click(solarButton());
+
+    expect(await screen.findByText(/nx=57, ny=71/)).toBeInTheDocument();
+    expect(urls.filter((url) => url.startsWith("/api/solar-forecast"))).toHaveLength(2);
+    expect(solarButton()).toHaveTextContent("켜짐");
+  });
+
+  test("한 날짜에서 실패해도 날짜를 바꾸면 버튼을 다시 쓸 수 있다", async () => {
+    const user = userEvent.setup();
+    stubFetch((url) => {
+      if (url.startsWith("/api/solar-forecast")) {
+        return { status: 503, body: { detail: "기상청 응답이 없습니다." } };
+      }
+      return {
+        body: timeline({ day: url.includes("2026-10-11") ? "2026-10-11" : "2026-10-10" }),
+      };
+    });
+
+    render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
+    await user.click(solarButton());
+    await waitFor(() => expect(solarButton()).toHaveTextContent("불러오지 못함"));
+
+    await user.click(screen.getByRole("button", { name: "다음 날" }));
+
+    expect(await screen.findByText("10월 11일 (일)")).toBeInTheDocument();
+    expect(solarButton()).toBeEnabled();
+    expect(solarButton()).toHaveTextContent("꺼짐");
+  });
+
+  /*
+   * 날짜를 넘기면 새 날의 단가는 금방 오는데 예보는 기상청을 거쳐 늦게 온다.
+   * 그 사이 어제의 일사량을 오늘 막대 위에 그리면 그건 틀린 그림이다.
+   */
+  test("날짜를 바꾸면 새 날짜의 예측이 올 때까지 옛 예측을 그리지 않는다", async () => {
+    const user = userEvent.setup();
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        if (url.startsWith("/api/solar-forecast") && url.includes("2026-10-11")) {
+          return new Promise<Response>(() => {}); // 끝나지 않는 예보
+        }
+        const body = url.startsWith("/api/solar-forecast")
+          ? SOLAR
+          : timeline({ day: url.includes("2026-10-11") ? "2026-10-11" : "2026-10-10" });
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+
+    render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
+    await user.click(solarButton());
+    expect(await screen.findByText(/nx=57, ny=71/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "다음 날" }));
+
+    expect(await screen.findByText("10월 11일 (일)")).toBeInTheDocument();
+    await waitFor(() => expect(bars()).toHaveLength(24));
+    await waitFor(() =>
+      expect(urls.some((url) => url.includes("solar-forecast") && url.includes("2026-10-11"))).toBe(true),
+    );
+    expect(screen.queryByText(/nx=57, ny=71/)).toBeNull();
+    expect(solarButton()).toHaveTextContent("불러오는 중");
+  });
+});
+
+/*
+ * 공용 급속에는 공식 단가가 없다. 백엔드는 단가 없이 오면 422로 "충전기에 적힌 요금을
+ * 넣어 달라"고 하는데, 화면에 넣을 칸이 없으면 사용자는 그 말을 들어도 할 수 있는 게 없다.
+ */
+describe("공용 급속 단가", () => {
+  function priceInput() {
+    return screen.getByLabelText("공용 급속 단가");
+  }
+
+  test("공용 급속일 때만 단가 칸이 나온다", async () => {
+    const user = userEvent.setup();
+    stubFetch(() => ({ body: timeline() }));
+
+    render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
+    await waitFor(() => expect(bars()).toHaveLength(24));
+    expect(screen.queryByLabelText("공용 급속 단가")).toBeNull();
+
+    await user.click(screen.getByRole("radio", { name: "공공 급속" }));
+
+    expect(priceInput()).toHaveAttribute("inputmode", "decimal");
+    expect(screen.getByText(/충전기에 적힌 kWh당 요금을 넣어 주세요/)).toBeInTheDocument();
+  });
+
+  test("단가를 넣으면 그 단가로 다시 부른다", async () => {
+    const user = userEvent.setup();
+    const { urls } = stubFetch(() => ({ body: timeline({ mode: "public_fast" }) }));
+
+    render(<TimelineScreen initialDay="2026-10-10" initialMode="public_fast" />);
+    await waitFor(() =>
+      expect(urls).toContain("/api/timeline?day=2026-10-10&mode=public_fast"),
+    );
+
+    await user.type(priceInput(), "347.2");
+
+    await waitFor(() =>
+      expect(urls).toContain(
+        "/api/timeline?day=2026-10-10&mode=public_fast&public_base_price=347.2",
+      ),
+    );
+  });
+
+  test("알아볼 수 없는 단가는 보내지 않는다", async () => {
+    const user = userEvent.setup();
+    const { urls } = stubFetch(() => ({ body: timeline({ mode: "public_fast" }) }));
+
+    render(<TimelineScreen initialDay="2026-10-10" initialMode="public_fast" />);
+    await waitFor(() => expect(bars()).toHaveLength(24));
+
+    await user.type(priceInput(), "0");
+    await user.clear(priceInput());
+    await user.type(priceInput(), "-5");
+    await user.clear(priceInput());
+    await user.type(priceInput(), "abc");
+    await user.clear(priceInput());
+    // 한 글자씩 치면 9·99·999·9999를 거친다(전부 받을 수 있는 값). 한 번에 붙여 넣는다.
+    await user.click(priceInput());
+    await user.paste("99999");
+
+    await waitFor(() => expect(bars()).toHaveLength(24));
+    expect(urls.some((url) => url.includes("public_base_price"))).toBe(false);
+  });
+
+  test("추천받기 링크에 단가를 함께 싣는다", async () => {
+    const user = userEvent.setup();
+    stubFetch(() => ({ body: timeline({ mode: "public_fast" }) }));
+
+    render(<TimelineScreen initialDay="2026-10-10" initialMode="public_fast" />);
+    await user.type(priceInput(), "350");
+
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "이 날짜로 충전 시간 추천받기" })).toHaveAttribute(
+        "href",
+        "/recommend?day=2026-10-10&mode=public_fast&public_base_price=350",
+      ),
+    );
+  });
+
+  test("단가를 받아 시작하면 칸에 채워 두고 그 단가로 부른다", async () => {
+    const { urls } = stubFetch(() => ({ body: timeline({ mode: "public_fast" }) }));
+
+    render(
+      <TimelineScreen
+        initialDay="2026-10-10"
+        initialMode="public_fast"
+        initialPublicBasePrice="350"
+      />,
+    );
+
+    expect(priceInput()).toHaveValue("350");
+    await waitFor(() =>
+      expect(urls).toContain(
+        "/api/timeline?day=2026-10-10&mode=public_fast&public_base_price=350",
+      ),
+    );
+    expect(urls).not.toContain("/api/timeline?day=2026-10-10&mode=public_fast");
+  });
 });
 
   test("URL에 날짜가 없으면 마운트 뒤에 오늘로 부른다", async () => {

@@ -8,6 +8,7 @@ import { PageContainer } from "@/components/shell/AppShell";
 import { Badge } from "@/components/ui/Badge";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Field } from "@/components/ui/Field";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { ApiError } from "@/lib/api/client";
 import { fetchHealth, fetchSolarForecast, fetchTimeline } from "@/lib/api/endpoints";
@@ -33,7 +34,9 @@ import {
   discountScopeLabel,
   hasDiscount,
   isDay,
+  parsePublicBasePrice,
   presentBandKeys,
+  recommendHref,
   shiftDay,
   toColumns,
   todayInSeoul,
@@ -60,13 +63,16 @@ const SOLAR_REGION = "전남";
 export function TimelineScreen({
   initialDay,
   initialMode = "self_low",
+  initialPublicBasePrice,
   onQueryChange,
 }: {
   /** URL의 ?day=. 없으면 마운트 뒤에 오늘로 채운다. */
   initialDay?: string | null;
   initialMode?: Mode;
-  /** 바뀐 날짜·방식을 URL에 남기고 싶을 때 */
-  onQueryChange?: (query: { day: string; mode: Mode }) => void;
+  /** URL의 ?public_base_price=. 공용 급속 단가 칸에 그대로 채운다. */
+  initialPublicBasePrice?: string | null;
+  /** 바뀐 날짜·방식(·공용 급속 단가)을 URL에 남기고 싶을 때 */
+  onQueryChange?: (query: { day: string; mode: Mode; publicBasePrice?: number }) => void;
 }) {
   /*
    * 첫 렌더에서 '오늘'을 정하지 않는다.
@@ -86,6 +92,18 @@ export function TimelineScreen({
   const [mode, setMode] = useState<Mode>(initialMode);
   const day =
     dayOverride ?? (isDay(initialDay) ? initialDay : hydrated ? todayInSeoul() : null);
+
+  /*
+   * 공용 급속 단가. 공용 급속은 충전사업자마다 요금이 달라 공식 단가가 없고, 백엔드는
+   * 단가 없이 오면 422로 "충전기에 적힌 요금을 넣어 달라"고 한다. 넣을 칸이 없으면
+   * 사용자는 그 말을 들어도 할 수 있는 게 없다.
+   *
+   * 칸에는 친 글자를 그대로 들고, 보낼 값은 거기서 파생시킨다. 숫자로만 들고 있으면
+   * "347."처럼 치는 도중의 글자가 사라진다. 알아볼 수 없는 값이면 단가 없이 부른다 —
+   * 그러면 백엔드의 문장이 그대로 보이고, 그게 칸을 채우라는 안내가 된다.
+   */
+  const [priceInput, setPriceInput] = useState(initialPublicBasePrice ?? "");
+  const publicBasePrice = mode === "public_fast" ? parsePublicBasePrice(priceInput) : null;
 
   /*
    * 요청 결과를 "어떤 요청의 결과인지"(requestKey)와 함께 들고 있는다.
@@ -111,21 +129,40 @@ export function TimelineScreen({
    * 없다. 선택을 넣게 되면 이 상수를 상태로 올리면 된다.
    */
   const [solarOn, setSolarOn] = useState(false);
-  const [solar, setSolar] = useState<SolarForecast | null>(null);
-  const [solarFailed, setSolarFailed] = useState(false);
+  /*
+   * 예측도 단가처럼 "어느 날의 예측인지"(day)와 함께 들고 있는다.
+   *
+   * 날짜를 넘기면 새 날의 단가는 금방 오고 예보는 기상청을 거쳐 늦게 온다. 예측만
+   * 덩그러니 들고 있으면 그 사이 어제의 일사량이 오늘 막대 위에 그려진다. 지금 날짜와
+   * 예측의 날짜가 다르면 그건 그냥 "아직 안 왔다"다 — 단가의 requestKey와 같은 방식이다.
+   */
+  const [solar, setSolar] = useState<{ day: string; forecast: SolarForecast } | null>(null);
+  /*
+   * 실패는 두 갈래로 나눠 든다.
+   *
+   * 501은 백엔드에 기상청 키가 없다는 뜻이라 어느 날짜를 봐도 같다 — 버튼을 잠근다.
+   * 그 밖의 실패(예보 범위 밖이라 422, 기상청 일시 오류)는 그 날 하루의 사정이다.
+   * 한 번 실패했다고 기능 전체를 잠그면 오늘 예보도 다시는 못 본다. 그래서 실패한
+   * 날짜만 적어 두고, 날짜가 바뀌면 저절로 풀리게 한다.
+   */
+  const [solarUnavailable, setSolarUnavailable] = useState(false);
+  const [solarFailedDay, setSolarFailedDay] = useState<string | null>(null);
 
   useEffect(() => {
     if (!solarOn || day === null) return;
     let alive = true;
     fetchSolarForecast({ region: SOLAR_REGION, day })
       .then((forecast) => {
-        if (alive) setSolar(forecast);
+        if (alive) setSolar({ day, forecast });
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         // 켤 수 없으면 켜진 척하지 않는다 — 빈 오버레이가 "해가 없다"로 읽힌다.
         if (!alive) return;
-        setSolar(null);
-        setSolarFailed(true);
+        if (error instanceof ApiError && error.notImplemented) {
+          setSolarUnavailable(true);
+        } else {
+          setSolarFailedDay(day);
+        }
         setSolarOn(false);
       });
     return () => {
@@ -133,15 +170,20 @@ export function TimelineScreen({
     };
   }, [solarOn, day]);
 
+  const solarForDay = solar !== null && solar.day === day ? solar.forecast : null;
+
   /*
-   * 버튼 상태는 저장하지 않고 파생시킨다. 따로 들고 있으면 세 상태가 어긋나는
+   * 버튼 상태는 저장하지 않고 파생시킨다. 따로 들고 있으면 상태끼리 어긋나는
    * 경우(켜졌는데 loading, 꺼졌는데 ready 같은)를 손으로 막아야 한다.
+   * 다시 누르면 solarOn이 켜지면서 loading이 먼저 잡히니 "불러오지 못함"이 남지 않는다.
    */
-  const solarState: "ready" | "loading" | "unavailable" = solarFailed
+  const solarState: "ready" | "loading" | "unavailable" | "failed" = solarUnavailable
     ? "unavailable"
-    : solarOn && solar === null
+    : solarOn && solarForDay === null
       ? "loading"
-      : "ready";
+      : !solarOn && solarFailedDay !== null && solarFailedDay === day
+        ? "failed"
+        : "ready";
 
   useEffect(() => {
     let alive = true;
@@ -157,7 +199,9 @@ export function TimelineScreen({
     };
   }, []);
   const [result, setResult] = useState<{ key: string; load: Load } | null>(null);
-  const requestKey = day === null ? null : `${day}|${mode}|${retryCount}`;
+  // 단가도 키에 넣는다. 350원으로 받은 단가표를 400원을 친 화면에 보여주면 안 된다.
+  const requestKey =
+    day === null ? null : `${day}|${mode}|${publicBasePrice ?? ""}|${retryCount}`;
   const load: Load =
     requestKey !== null && result?.key === requestKey ? result.load : { status: "loading" };
 
@@ -165,9 +209,9 @@ export function TimelineScreen({
 
   useEffect(() => {
     if (day === null) return;
-    const key = `${day}|${mode}|${retryCount}`;
+    const key = `${day}|${mode}|${publicBasePrice ?? ""}|${retryCount}`;
     let live = true;
-    fetchTimeline({ day, mode })
+    fetchTimeline({ day, mode, ...(publicBasePrice !== null ? { publicBasePrice } : {}) })
       .then((data) => {
         if (live) setResult({ key, load: { status: "ready", data } });
       })
@@ -186,12 +230,12 @@ export function TimelineScreen({
     return () => {
       live = false;
     };
-  }, [day, mode, retryCount]);
+  }, [day, mode, publicBasePrice, retryCount]);
 
   useEffect(() => {
     if (day === null) return;
-    onQueryChange?.({ day, mode });
-  }, [day, mode, onQueryChange]);
+    onQueryChange?.({ day, mode, ...(publicBasePrice !== null ? { publicBasePrice } : {}) });
+  }, [day, mode, publicBasePrice, onQueryChange]);
 
   const data = load.status === "ready" ? load.data : null;
   const hours = data?.hours ?? [];
@@ -242,6 +286,22 @@ export function TimelineScreen({
         />
       </header>
 
+      {/*
+       * 모든 너비에서 보인다. 모바일에는 방식 선택이 없지만 URL로 공용 급속이 올 수 있고,
+       * 그때 이 칸이 없으면 단가표를 볼 길이 없다.
+       */}
+      {mode === "public_fast" ? (
+        <Field
+          className="mt-4 lg:mt-6 lg:max-w-sm"
+          label="공용 급속 단가"
+          suffix="원/kWh"
+          inputMode="decimal"
+          value={priceInput}
+          onChange={(event) => setPriceInput(event.target.value)}
+          hint="공용 급속은 충전사업자마다 요금이 달라요. 충전기에 적힌 kWh당 요금을 넣어 주세요."
+        />
+      ) : null}
+
       <div className="mt-4 grid gap-4 lg:mt-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-6">
         {/* 차트 */}
         <Card className="p-4 lg:p-6">
@@ -288,12 +348,12 @@ export function TimelineScreen({
                 labelEvery={isDesktop ? 1 : 6}
                 plotHeight={isDesktop ? 360 : 190}
               />
-              {solarOn && solar ? (
+              {solarOn && solarForDay ? (
                 <SolarOverlay
                   className="mt-4"
-                  hours={solar.hours}
+                  hours={solarForDay.hours}
                   columns={hours.map((item) => item.hour)}
-                  assumptions={solar.assumptions}
+                  assumptions={solarForDay.assumptions}
                 />
               ) : null}
               <BandLegend
@@ -329,7 +389,7 @@ export function TimelineScreen({
           {data && day ? (
             <div className="hidden lg:block">
               <ButtonLink
-                href={`/recommend?day=${day}&mode=${mode}`}
+                href={recommendHref(day, mode, publicBasePrice)}
                 size="lg"
                 className="w-full"
               >
