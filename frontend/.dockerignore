@@ -3,3 +3,7 @@ node_modules
 .git
 *.log
 coverage
+# 비밀값은 이미지에 굽지 않는다.
+.env
+.env.*
+!.env.example
