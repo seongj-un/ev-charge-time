@@ -196,3 +196,11 @@ def test_a_misaligned_start_is_not_mistaken_for_the_cheapest():
 
     assert result.best.start == kst(2026, 7, 1, 22)
     assert result.best.cost_won == 15 * 60
+
+
+@pytest.mark.parametrize("charger_kw", [1e-300, 1e-12])
+def test_an_astronomical_charge_time_is_insufficient_time_not_an_overflow(charger_kw):
+    """도메인은 스키마를 거치지 않고도 불릴 수 있다. timedelta 범위를 넘는 충전
+    시간은 OverflowError가 아니라 '시간이 부족하다'여야 한다."""
+    with pytest.raises(InsufficientTimeError):
+        recommend(spec_request(charger_kw=charger_kw), night_is_cheap)

@@ -43,3 +43,11 @@ def test_public_fast_with_a_base_price(client):
     ).json()
 
     assert body["hours"][12]["price_per_kwh"] == 301.4
+
+
+def test_non_finite_base_price_is_422(client):
+    response = client.get(
+        "/api/timeline",
+        params={"day": "2026-10-17", "mode": "public_fast", "public_base_price": "inf"},
+    )
+    assert response.status_code == 422

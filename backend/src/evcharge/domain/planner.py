@@ -8,6 +8,7 @@ from .errors import InsufficientTimeError
 from .pricing import Mode, PriceBreakdown
 
 GRID = timedelta(minutes=15)
+_MAX_HOURS = timedelta.max.total_seconds() / 3600
 
 ASSUMPTIONS: tuple[str, ...] = (
     "충전 출력 일정",
@@ -64,13 +65,18 @@ def recommend(request: ChargeRequest, price_fn: PriceFn) -> Recommendation:
     요금표를 모른다 — '시각 → 단가' 함수 하나만 받는다. 덕분에 요금 규칙이
     바뀌어도 탐색 로직은 그대로고, 테스트에서 가짜 단가로 검증할 수 있다.
     """
-    duration = request.duration
     available = request.deadline - request.earliest_start
 
-    if duration > available:
+    # timedelta를 만들기 전에 시간(float)으로 먼저 비교한다. 필요한 시간이
+    # timedelta 범위(약 270만 년)를 넘으면 만드는 순간 OverflowError(=500)라서,
+    # "시간이 부족하다"는 같은 답을 그 전에 내야 한다.
+    hours = request.energy_kwh / request.charger_kw
+    if not hours <= available.total_seconds() / 3600:
+        needed = str(timedelta(hours=hours)) if hours < _MAX_HOURS else f"{hours:,.0f}시간"
         raise InsufficientTimeError(
-            f"시간이 부족합니다: 충전에 {duration} 필요, 가능한 시간은 {available}."
+            f"시간이 부족합니다: 충전에 {needed} 필요, 가능한 시간은 {available}."
         )
+    duration = request.duration
 
     candidates = _candidate_starts(request.earliest_start, request.deadline, duration)
     plans = [_plan_for(start, request, price_fn) for start in candidates]

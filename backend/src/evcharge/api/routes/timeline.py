@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from ...domain.calendar import season_of
 from ...domain.pricing import hourly_prices
 from ..deps import get_holidays, get_tariff
-from ..schemas import HourPriceOut, Mode, TimelineResponse
+from ..schemas import MAX_PRICE_PER_KWH, HourPriceOut, Mode, TimelineResponse
 
 router = APIRouter(prefix="/api", tags=["timeline"])
 
@@ -14,7 +14,9 @@ router = APIRouter(prefix="/api", tags=["timeline"])
 def timeline(
     day: date = Query(description="YYYY-MM-DD. 임의 날짜 가능 (F-06 시뮬레이션)"),
     mode: Mode = "self_low",
-    public_base_price: float | None = Query(default=None, gt=0),
+    public_base_price: float | None = Query(
+        default=None, gt=0, le=MAX_PRICE_PER_KWH, allow_inf_nan=False
+    ),
 ) -> TimelineResponse:
     tariff = get_tariff()
     holidays = get_holidays()

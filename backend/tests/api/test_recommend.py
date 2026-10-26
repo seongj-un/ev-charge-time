@@ -151,3 +151,42 @@ def test_guest_recommend_never_opens_a_db_session(monkeypatch):
     response = post(raw_client)
 
     assert response.status_code == 200
+
+
+# ── 무한대·극단값은 계산으로 넘기지 않는다 ──────────────────────────────────
+#
+# gt=0만 있으면 "Infinity"가 통과한다. charger_kw=Infinity면 충전 시간 0초·비용
+# 0원이 200으로 나갔고, battery_kwh=1e300이면 timedelta가 넘쳐 500이 났다.
+
+
+@pytest.mark.parametrize("field", ["battery_kwh", "charger_kw", "public_base_price"])
+@pytest.mark.parametrize("value", ["Infinity", "-Infinity", "NaN"])
+def test_non_finite_numbers_are_422(client, field, value):
+    overrides = {field: value}
+    if field == "public_base_price":
+        overrides["mode"] = "public_fast"
+
+    response = post(client, **overrides)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("field", ["soc_now", "soc_target", "efficiency"])
+def test_non_finite_soc_and_efficiency_are_422(client, field):
+    assert post(client, **{field: "NaN"}).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"battery_kwh": 1e300},  # 필요한 충전 시간이 timedelta 범위를 넘는다
+        {"charger_kw": 1e-300},  # 같은 결과를 반대쪽에서
+        {"charger_kw": 1e300},
+        {"public_base_price": 1e300, "mode": "public_fast"},
+    ],
+)
+def test_absurd_magnitudes_are_422_not_500(client, overrides):
+    response = post(client, **overrides)
+
+    assert response.status_code == 422
+    assert response.status_code != 500

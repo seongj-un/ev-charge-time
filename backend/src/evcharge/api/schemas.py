@@ -98,16 +98,30 @@ class TimelineResponse(BaseModel):
 MAX_REQUEST_SPAN = timedelta(days=14)
 
 
+# 숫자 입력의 계산 가능 범위. gt=0만으로는 "Infinity"·"NaN"(JSON 확장 표기와
+# 문자열 모두 pydantic이 float로 받아 준다)과 1e300 같은 값이 통과해서, 충전 시간
+# 0초·비용 0원짜리 200이나 timedelta 오버플로 500이 났다. 상한은 "실제로 있는
+# 값 + 넉넉한 여유"다: 승용 전기차 배터리는 100kWh대, 대형 버스도 수백 kWh이고,
+# 가장 빠른 충전기가 1MW급이다. 공용 급속 단가는 kWh당 수백 원대다.
+MAX_BATTERY_KWH = 1000
+MAX_CHARGER_KW = 1000
+MAX_PRICE_PER_KWH = 10_000
+
+
 class RecommendRequest(BaseModel):
-    battery_kwh: float | None = Field(default=None, gt=0)
-    soc_now: float = Field(ge=0, lt=100)
-    soc_target: float = Field(gt=0, le=100)
-    charger_kw: float | None = Field(default=None, gt=0)
+    battery_kwh: float | None = Field(
+        default=None, gt=0, le=MAX_BATTERY_KWH, allow_inf_nan=False
+    )
+    soc_now: float = Field(ge=0, lt=100, allow_inf_nan=False)
+    soc_target: float = Field(gt=0, le=100, allow_inf_nan=False)
+    charger_kw: float | None = Field(default=None, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
     earliest_start: datetime
     deadline: datetime
     mode: Mode = "self_low"
-    public_base_price: float | None = Field(default=None, gt=0)
-    efficiency: float = Field(default=1.0, gt=0, le=1)
+    public_base_price: float | None = Field(
+        default=None, gt=0, le=MAX_PRICE_PER_KWH, allow_inf_nan=False
+    )
+    efficiency: float = Field(default=1.0, gt=0, le=1, allow_inf_nan=False)
     vehicle_id: str | None = None
 
     @field_validator("earliest_start", "deadline")
@@ -191,8 +205,8 @@ class UserOut(BaseModel):
 class VehicleIn(BaseModel):
     # vehicles.name은 varchar(100)(I-2) — 컬럼과 어긋나지 않게 맞춘다.
     name: str = Field(max_length=100)
-    battery_kwh: float = Field(gt=0)
-    charger_kw: float = Field(gt=0)
+    battery_kwh: float = Field(gt=0, le=MAX_BATTERY_KWH, allow_inf_nan=False)
+    charger_kw: float = Field(gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
     mode: Mode = "self_low"
     is_default: bool = False
 
@@ -211,8 +225,10 @@ class VehicleUpdate(BaseModel):
     """
 
     name: str | None = Field(default=None, max_length=100)
-    battery_kwh: float | None = Field(default=None, gt=0)
-    charger_kw: float | None = Field(default=None, gt=0)
+    battery_kwh: float | None = Field(
+        default=None, gt=0, le=MAX_BATTERY_KWH, allow_inf_nan=False
+    )
+    charger_kw: float | None = Field(default=None, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
     mode: Mode | None = None
     is_default: bool | None = None
 

@@ -441,3 +441,15 @@ def test_recommend_with_vehicle_id_requires_login(client):
         "/api/recommend", json={**RECOMMEND_BASE, "vehicle_id": "some-id"}
     )
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize("field", ["battery_kwh", "charger_kw"])
+@pytest.mark.parametrize("value", ["Infinity", "NaN", 1e300])
+def test_vehicle_numbers_must_be_finite_and_sane(auth_client, field, value):
+    """차량 값은 저장됐다가 추천 계산으로 그대로 넘어간다 (F-12). 입구에서 막는다."""
+    created = auth_client.post("/api/me/vehicles", json={**VEHICLE, field: value})
+    assert created.status_code == 422
+
+    vehicle = auth_client.post("/api/me/vehicles", json=VEHICLE).json()
+    patched = auth_client.patch(f"/api/me/vehicles/{vehicle['id']}", json={field: value})
+    assert patched.status_code == 422
