@@ -1,0 +1,11 @@
+# 충전소 갱신 cron의 로그. 5분마다 한두 줄씩 쌓인다.
+#
+#   sudo install -m 644 deploy/kinetic-sync.logrotate /etc/logrotate.d/kinetic-sync
+/var/log/kinetic-sync.log {
+    weekly
+    rotate 4
+    compress
+    missingok
+    notifempty
+    copytruncate
+}

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   AREAS,
+  connectorLabel,
   DEFAULT_AREA,
   geoBlockMessage,
   NAME_MISSING,
@@ -17,41 +18,83 @@ import {
 } from "./station-view";
 import { FAST_AVAILABLE, SLOW_CHARGING, UNKNOWN_STATUS, station } from "./test-support";
 
+/*
+ * 기준은 한국환경공단 활용가이드 v1.25(2026-07-01) 3.2절 stat 공통코드다.
+ * 원본: docs/sources/한국환경공단_전기자동차 충전소 정보_OpenAPI활용가이드_v1.25.docx
+ */
 describe("충전기 상태 코드", () => {
-  test("뜻이 코드에 적혀 있는 값만 우리말로 옮긴다", () => {
-    expect(statusView("available")).toEqual({
-      label: "사용 가능",
-      tone: "ok",
-      known: true,
-      available: true,
-    });
-    expect(statusView("charging").label).toBe("충전 중");
-    expect(statusView("maintenance").label).toBe("점검 중");
+  test("공식 코드표의 코드를 우리말로 옮긴다", () => {
+    expect(statusView("2")).toEqual({ label: "사용 가능", tone: "ok", known: true, available: true });
+    expect(statusView("3")).toEqual({ label: "충전 중", tone: "warn", known: true, available: false });
+    expect(statusView("6")).toEqual({ label: "예약 중", tone: "warn", known: true, available: false });
+    expect(statusView("5")).toEqual({ label: "점검 중", tone: "off", known: true, available: false });
+    expect(statusView("4")).toEqual({ label: "운영 중지", tone: "off", known: true, available: false });
+    expect(statusView("1")).toEqual({ label: "통신 이상", tone: "off", known: true, available: false });
   });
 
-  test("대소문자와 공백은 무시한다", () => {
-    expect(statusView("  CHARGING ").label).toBe("충전 중");
+  /*
+   * 0(알수없음)과 9(상태미확인)는 뜻을 아는 코드다 — 그 뜻이 "모른다"일 뿐이다.
+   * 실데이터에 9가 5% 넘게 있어서, 이걸 모르는 코드로 치면 화면이 늘
+   * "확정되지 않은 코드가 있다"고 말하게 된다.
+   */
+  test("알수없음(0)과 상태미확인(9)은 상태를 모른다고 말한다", () => {
+    expect(statusView("0")).toEqual({ label: "알 수 없음", tone: "off", known: true, available: false });
+    expect(statusView("9")).toEqual({ label: "상태 미확인", tone: "off", known: true, available: false });
   });
 
   /**
    * 이 테스트가 이 화면에서 제일 중요하다.
    *
-   * 명세 2-4가 "상태 코드 매핑은 원본 API 문서 확인 후 확정"으로 남아 있다.
-   * 모르는 코드를 '사용 가능'으로 넘겨짚으면 사용자는 없는 자리를 찾아 차를 몬다.
+   * '사용 가능'을 하나라도 잘못 세면 사용자는 없는 자리를 찾아 차를 몬다.
    */
-  test("모르는 코드는 지어내지 않고 코드를 그대로 보여준다", () => {
-    expect(statusView("2")).toEqual({
-      label: "2",
-      tone: "off",
-      known: false,
-      available: false,
-    });
+  test("사용 가능은 충전대기(2) 하나뿐이다", () => {
+    const official = ["0", "1", "2", "3", "4", "5", "6", "9"];
+    expect(official.filter((code) => statusView(code).available)).toEqual(["2"]);
+  });
+
+  test("앞뒤 공백은 무시한다", () => {
+    expect(statusView(" 3 ").label).toBe("충전 중");
+  });
+
+  test("코드표에 없는 코드는 지어내지 않고 코드를 그대로 보여준다", () => {
+    expect(statusView("7")).toEqual({ label: "7", tone: "off", known: false, available: false });
     expect(statusView("STAT_9").label).toBe("STAT_9");
   });
 
   test("빈 코드는 빈 배지가 아니라 모른다고 말한다", () => {
     expect(statusView("").label).toBe("상태 없음");
     expect(statusView("").available).toBe(false);
+  });
+});
+
+/*
+ * 기준은 활용가이드 v1.25 3.3절 chgerType 공통코드다. 타입은 커넥터 모양이지
+ * 속도가 아니다 — 속도는 아래 speedOf가 capacity_kw로 따로 가른다.
+ */
+describe("충전기 커넥터 종류", () => {
+  test("공식 코드표의 코드를 커넥터 이름으로 옮긴다", () => {
+    expect(connectorLabel("01")).toBe("DC차데모");
+    expect(connectorLabel("02")).toBe("AC완속");
+    expect(connectorLabel("03")).toBe("DC차데모+AC3상");
+    expect(connectorLabel("04")).toBe("DC콤보");
+    expect(connectorLabel("05")).toBe("DC차데모+DC콤보");
+    expect(connectorLabel("06")).toBe("DC차데모+AC3상+DC콤보");
+    expect(connectorLabel("07")).toBe("AC3상");
+    expect(connectorLabel("08")).toBe("DC콤보(완속)");
+    expect(connectorLabel("09")).toBe("NACS");
+    expect(connectorLabel("10")).toBe("DC콤보+NACS");
+    expect(connectorLabel("11")).toBe("DC콤보2(버스전용)");
+  });
+
+  test("앞뒤 공백은 무시한다", () => {
+    expect(connectorLabel(" 04 ")).toBe("DC콤보");
+  });
+
+  /* 모양을 넘겨짚으면 사용자는 꽂히지 않는 충전기로 간다. 모르면 말하지 않는다. */
+  test("코드표에 없는 코드는 지어내지 않는다", () => {
+    expect(connectorLabel("12")).toBeNull();
+    expect(connectorLabel("4")).toBeNull();
+    expect(connectorLabel("")).toBeNull();
   });
 });
 
@@ -167,8 +210,8 @@ describe("필터", () => {
       station_id: "F",
       // 급속은 충전 중이고, 비어 있는 건 완속뿐이다.
       chargers: [
-        { ...FAST_AVAILABLE, status: "charging" },
-        { ...SLOW_CHARGING, status: "available" },
+        { ...FAST_AVAILABLE, status: "3" },
+        { ...SLOW_CHARGING, status: "2" },
       ],
     });
     expect(filterStations([mixed], { type: "fast", availableOnly: true })).toHaveLength(0);

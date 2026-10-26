@@ -10,12 +10,15 @@ import type { Charger, FavoriteStation, Station } from "@/lib/api/types";
  * 501인 오늘의 화면에는 목록이 없다는 것을 따로 못 박아 둔다.
  */
 
-/* 실제 API 모양: 타입은 "02"·"04" 같은 코드, 속도는 capacity_kw가 말해 준다. */
+/*
+ * 실제 API 모양: 타입은 "02"·"04" 같은 코드, 속도는 capacity_kw가 말해 준다.
+ * 상태도 원문 코드다 — "2"가 충전대기(사용 가능), "3"이 충전중.
+ */
 export const FAST_AVAILABLE: Charger = {
   charger_id: "c-fast",
   type: "04",
   capacity_kw: 100,
-  status: "available",
+  status: "2",
   status_updated_at: "2026-09-21T22:10:00+09:00",
 };
 
@@ -23,19 +26,19 @@ export const SLOW_CHARGING: Charger = {
   charger_id: "c-slow",
   type: "02",
   capacity_kw: 7,
-  status: "charging",
+  status: "3",
   status_updated_at: "2026-09-21T22:05:00+09:00",
 };
 
 /**
- * 뜻을 모르는 상태 코드. 실데이터에 stat=9가 1,734대(5.3%) 있는데
- * 공식 코드표에 없는 값이다. 활용가이드 확인 전까지 원문 그대로 둔다.
+ * 공식 코드표(활용가이드 v1.25 3.2절)에 없는 상태 코드.
+ * 실데이터에서 본 적은 없지만, 코드표가 개정되면 이런 값이 먼저 들어온다.
  */
 export const UNKNOWN_STATUS: Charger = {
   charger_id: "c-unknown",
   type: "06",
   capacity_kw: 50,
-  status: "9",
+  status: "7",
   status_updated_at: null,
 };
 

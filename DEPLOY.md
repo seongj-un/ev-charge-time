@@ -43,17 +43,23 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ## 지금 돌고 있는 곳
 
-**http://13.125.147.86** — AWS EC2 `t3.micro`, Ubuntu 24.04, 탄력적 IP.
+**https://kinetic-ev.duckdns.org** — AWS EC2 `t3.micro`, Ubuntu 24.04, 탄력적 IP
+`13.125.147.86`. 인증서는 Let's Encrypt이고 Caddy가 만료 전에 알아서 갱신한다.
 
 외부 키 세 개가 들어가 있어 충전소·태양광·질문하기까지 전부 열린다.
 컨테이너 넷(Postgres·백엔드·프론트·Caddy) 모두 `healthy`.
 
-서버에서 확인한 값:
+밖에서 확인한 값 (2026-09-28):
 
 ```
-/health    {"status":"ok","unverified_tariff_items":["public_fast.base_price_per_kwh","weekend_discount_sunset"]}
-/timeline  200
+/health                      200   미확인 요금 2건
+/ /timeline /stations /ask   200
+인증서                        CN=kinetic-ev.duckdns.org · 2026-12-21까지
 ```
+
+**IP로는 열리지 않는다.** `http://13.125.147.86`은 `https://13.125.147.86`으로
+넘어가는데, 인증서가 도메인에만 있어서 TLS 단계에서 끊긴다. 발표 자료든
+제출 서류든 적는 주소는 도메인 하나다.
 
 **밖에서 안 열리면 보안 그룹부터 보라.** 한동안 "기관 방화벽이 막는다"고
 적어 뒀는데 틀렸다 — 보안 그룹에 80번이 없던 것이었다. 규칙을 넣자마자 같은

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import type { Charger, FavoriteStation, Station } from "@/lib/api/types";
 
 import {
+  connectorLabel,
   displayName,
   formatCapacity,
   formatDistance,
@@ -32,13 +33,14 @@ function StarIcon({ filled }: { filled: boolean }) {
 }
 
 /*
- * 타입 코드(`02`·`04` …)는 보여주지 않는다. 공식 활용가이드가 없어 뜻을 모르고,
- * 속도를 정하지도 못한다 — 같은 type=04가 7 kW부터 350 kW까지 있다.
- * 사용자가 실제로 알고 싶은 건 "몇 kW냐"이고, 그건 API가 실측값으로 준다.
+ * 타입 코드(`02`·`04` …)는 코드가 아니라 커넥터 이름으로 보여준다(활용가이드
+ * 3.3절). 속도는 타입이 정하지 못한다 — 같은 04(DC콤보)가 7 kW부터 350 kW까지
+ * 있다. 그래서 급속·완속은 API가 실측값으로 주는 kW로 가른다.
  */
 function ChargerRow({ charger }: { charger: Charger }) {
   const status = statusView(charger.status);
   const speed = speedOf(charger.capacity_kw);
+  const connector = connectorLabel(charger.type);
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm text-ink-2">
       <span>{speedLabel(charger.capacity_kw)}</span>
@@ -46,6 +48,12 @@ function ChargerRow({ charger }: { charger: Charger }) {
         <>
           <span aria-hidden>·</span>
           <span className="tnum">{formatCapacity(charger.capacity_kw)} kW</span>
+        </>
+      )}
+      {connector === null ? null : (
+        <>
+          <span aria-hidden>·</span>
+          <span>{connector}</span>
         </>
       )}
       <Badge tone={status.tone}>{status.label}</Badge>
