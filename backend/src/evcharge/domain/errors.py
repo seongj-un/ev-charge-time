@@ -12,3 +12,7 @@ class TariffNotConfiguredError(DomainError):
 
 class InsufficientTimeError(DomainError):
     """충전에 필요한 시간이 가능한 시간보다 길다."""
+
+
+class InvalidPriceError(DomainError):
+    """입력한 단가로는 계산할 수 없다 (예: 할인액보다 낮은 공용 급속 단가)."""

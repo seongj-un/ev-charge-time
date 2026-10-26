@@ -228,3 +228,28 @@ def test_self_price_matches_hand_calculation(round_number_tariff, holidays, mome
     breakdown = price_at(moment, "self_low", round_number_tariff, holidays)
 
     assert breakdown.price_per_kwh == expected
+
+
+# ── 공용 급속: 할인액이 기준단가보다 크면 음수 단가가 된다 ────────────────────
+#
+# 할인은 정액(토 48.6원, 일·공휴일 42.7원)을 빼는 방식이다. 기준단가를 1원으로
+# 넣으면 일요일 할인 시간에 −41.7원/kWh가 나와 "충전하면 돈을 받는" 계획이
+# 만들어졌다. 0원으로 깎아 주는 것도 거짓 답이므로, 단가가 잘못됐다고 알린다.
+
+
+def test_public_fast_rejects_a_base_price_below_the_weekend_discount(tariff, holidays):
+    from evcharge.domain.errors import DomainError
+
+    with pytest.raises(DomainError) as caught:
+        price_at(at(2026, 10, 18, 12), "public_fast", tariff, holidays, public_base_price=1.0)
+
+    message = str(caught.value)
+    assert "단가" in message
+    assert "42.7" in message  # 얼마보다 커야 하는지 말해 준다
+
+
+def test_public_fast_low_base_price_is_fine_outside_the_discount_window(tariff, holidays):
+    """할인이 없는 시간에는 빼는 것이 없으니 낮은 단가도 그대로 계산한다."""
+    weekday = price_at(at(2026, 10, 16, 12), "public_fast", tariff, holidays, public_base_price=1.0)
+
+    assert weekday.price_per_kwh == pytest.approx(1.0)
