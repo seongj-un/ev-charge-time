@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useSession } from "@/components/auth/SessionProvider";
 import { MeLayout } from "@/components/me/MeSidebar";
@@ -39,10 +39,18 @@ type ListState = {
   items: SavedPlan[];
   nextCursor: string | null;
   loading: boolean;
+  /** 더 보기 진행 중 표시도 목록과 한 묶음이다 — 달이 바뀌어 목록을 비우면 같이 꺼진다. */
+  loadingMore: boolean;
   error: string | null;
 };
 
-const EMPTY_LIST: ListState = { items: [], nextCursor: null, loading: true, error: null };
+const EMPTY_LIST: ListState = {
+  items: [],
+  nextCursor: null,
+  loading: true,
+  loadingMore: false,
+  error: null,
+};
 
 export function PlansScreen() {
   const hydrated = useIsHydrated();
@@ -58,7 +66,13 @@ export function PlansScreen() {
 
   const [reloadKey, setReloadKey] = useState(0);
   const [list, setList] = useState<ListState>(EMPTY_LIST);
-  const [loadingMore, setLoadingMore] = useState(false);
+  /**
+   * 지금 화면에 깔린 목록의 세대 번호. 첫 페이지를 새로 부를 때마다(달 변경, 다시 시도)
+   * 하나 올린다. 더 보기는 떠날 때의 번호를 쥐고 가서, 돌아왔을 때 번호가 바뀌었으면
+   * 아무것도 건드리지 않는다. 달만 비교하면 10월→9월→10월로 돌아온 뒤 도착한
+   * 첫 번째 10월 요청의 응답이 새 10월 목록에 붙는다 — 그래서 달이 아니라 세대를 본다.
+   */
+  const generationRef = useRef(0);
   const [summary, setSummary] = useState<PlanSummary | null>(null);
 
   /**
@@ -80,6 +94,7 @@ export function PlansScreen() {
     if (status !== "authenticated" || month === null) return;
 
     let cancelled = false;
+    generationRef.current += 1;
     setList(EMPTY_LIST);
 
     void (async () => {
@@ -90,11 +105,12 @@ export function PlansScreen() {
           items: page.items,
           nextCursor: page.nextCursor,
           loading: false,
+          loadingMore: false,
           error: null,
         });
       } catch (caught) {
         if (cancelled) return;
-        setList({ items: [], nextCursor: null, loading: false, error: messageOf(caught) });
+        setList({ ...EMPTY_LIST, loading: false, error: messageOf(caught) });
       }
     })();
 
@@ -115,23 +131,32 @@ export function PlansScreen() {
     [pathname, query, router],
   );
 
+  /*
+   * 더 보기는 누른 순간의 목록에 속한 요청이다. 기다리는 사이 달을 바꾸면 그 응답은
+   * 새 달 목록과 상관이 없다 — 붙이면 9월 목록에 10월 기록이 섞이고, 그 응답의 커서가
+   * 9월 더 보기를 10월 다음 페이지로 보낸다. 그래서 결과도, 실패도, 진행 중 표시를
+   * 끄는 것도 세대가 그대로일 때만 한다.
+   */
   const loadMore = useCallback(async () => {
     const cursor = list.nextCursor;
-    if (month === null || cursor === null || loadingMore) return;
-    setLoadingMore(true);
+    if (month === null || cursor === null || list.loadingMore) return;
+    const generation = generationRef.current;
+    const isCurrent = () => generationRef.current === generation;
+    setList((prev) => ({ ...prev, loadingMore: true }));
     try {
       const page = await loadPlanPage({ month, cursor });
+      if (!isCurrent()) return;
       setList((prev) => ({
         ...prev,
         items: [...prev.items, ...page.items],
         nextCursor: page.nextCursor,
+        loadingMore: false,
       }));
     } catch (caught) {
-      setList((prev) => ({ ...prev, error: messageOf(caught) }));
-    } finally {
-      setLoadingMore(false);
+      if (!isCurrent()) return;
+      setList((prev) => ({ ...prev, loadingMore: false, error: messageOf(caught) }));
     }
-  }, [list.nextCursor, loadingMore, month]);
+  }, [list.nextCursor, list.loadingMore, month]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -238,7 +263,6 @@ export function PlansScreen() {
               month={month}
               list={list}
               summary={monthSummary}
-              loadingMore={loadingMore}
               onLoadMore={() => void loadMore()}
               onDelete={handleDelete}
             />
@@ -255,14 +279,12 @@ function PlansBody({
   month,
   list,
   summary,
-  loadingMore,
   onLoadMore,
   onDelete,
 }: {
   month: string;
   list: ListState;
   summary: PlanSummary | null;
-  loadingMore: boolean;
   onLoadMore: () => void;
   onDelete: (id: string) => Promise<void>;
 }) {
@@ -305,8 +327,8 @@ function PlansBody({
 
       {list.nextCursor !== null ? (
         <div className="mt-4 flex justify-center">
-          <Button type="button" variant="outline" disabled={loadingMore} onClick={onLoadMore}>
-            {loadingMore ? "불러오는 중…" : "더 보기"}
+          <Button type="button" variant="outline" disabled={list.loadingMore} onClick={onLoadMore}>
+            {list.loadingMore ? "불러오는 중…" : "더 보기"}
           </Button>
         </div>
       ) : null}

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -318,6 +318,70 @@ describe("아직 못 불러온 기록", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "더 보기" })).not.toBeInTheDocument(),
     );
+  });
+
+  /*
+   * 더 보기는 시작한 달에 속한 요청이다. 10월 다음 페이지를 기다리는 동안 9월로
+   * 넘어갔다면, 늦게 도착한 10월 페이지는 버려야 한다. 붙이면 9월 목록에 10월
+   * 기록이 섞이고, 그 응답의 커서로 9월 더 보기가 10월 다음 페이지를 부른다.
+   */
+  test("달을 바꾼 뒤 늦게 온 옛 달의 더 보기 응답은 버린다", async () => {
+    const PLAN_SEP = plan({
+      id: "s",
+      result: {
+        ...PLAN_A.result,
+        best: { ...PLAN_A.result.best, start: "2026-09-15T11:00:00", end: "2026-09-15T14:00:00" },
+      },
+    });
+    let resolveOctoberMore: (response: Response) => void = () => {};
+    const calls = stubFetch({
+      plans: (url) => {
+        if (url.includes("cursor=c1")) {
+          return new Promise<Response>((resolve) => {
+            resolveOctoberMore = resolve;
+          });
+        }
+        if (url.includes("cursor=s1")) return json({ items: [], next_cursor: null });
+        if (url.includes("month=2026-09")) return json({ items: [PLAN_SEP], next_cursor: "s1" });
+        return json({ items: [PLAN_A], next_cursor: "c1" });
+      },
+      summary: (month) => json({ month, count: 2, total_savings_won: 1559 }),
+    });
+    const user = userEvent.setup();
+
+    const { rerender } = renderScreen();
+    await screen.findByText("10월 10일 (토)");
+
+    // 10월 다음 페이지를 부른 채로 응답을 붙잡아 둔다.
+    await user.click(screen.getByRole("button", { name: "더 보기" }));
+    await screen.findByRole("button", { name: "불러오는 중…" });
+
+    // 그사이 9월로 넘어간다 (URL이 바뀌면 화면이 다시 그려진다).
+    search = new URLSearchParams("month=2026-09");
+    rerender(
+      <SessionProvider>
+        <PlansScreen />
+      </SessionProvider>,
+    );
+    await screen.findByText("9월 15일 (화)");
+
+    // 이제야 10월 페이지가 도착한다.
+    await act(async () => {
+      resolveOctoberMore(json({ items: [PLAN_B], next_cursor: "c2" }));
+    });
+
+    expect(screen.queryByText("10월 7일 (수)")).not.toBeInTheDocument();
+    expect(screen.queryByText("10월 10일 (토)")).not.toBeInTheDocument();
+    expect(screen.getByText("9월 15일 (화)")).toBeInTheDocument();
+
+    // 9월의 더 보기는 멀쩡하다 — 눌러지고, 9월 커서로 부른다.
+    const more = screen.getByRole("button", { name: "더 보기" });
+    expect(more).toBeEnabled();
+    await user.click(more);
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.includes("cursor=s1"))).toBe(true),
+    );
+    expect(calls.some((call) => call.url.includes("cursor=c2"))).toBe(false);
   });
 
   /*
