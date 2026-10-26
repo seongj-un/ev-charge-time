@@ -16,3 +16,7 @@ class InsufficientTimeError(DomainError):
 
 class InvalidPriceError(DomainError):
     """입력한 단가로는 계산할 수 없다 (예: 할인액보다 낮은 공용 급속 단가)."""
+
+
+class HolidayDataMissingError(DomainError):
+    """그 연도의 공휴일 목록이 없어 요금 구간을 판정할 수 없다."""

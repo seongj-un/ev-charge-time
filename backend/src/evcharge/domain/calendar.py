@@ -7,7 +7,7 @@ from typing import Literal, Protocol
 
 import yaml
 
-from .errors import TariffConfigError
+from .errors import HolidayDataMissingError, TariffConfigError
 from .tariff import Tariff
 
 Season = Literal["summer", "spring_fall", "winter"]
@@ -24,6 +24,9 @@ class HolidayProvider(Protocol):
 @dataclass(frozen=True)
 class YamlHolidayProvider:
     days: frozenset[date]
+    # 목록이 빠짐없이 담고 있는 연도. 여기 없는 연도를 "공휴일 없음"으로 보면
+    # 공휴일이 평일 요금으로 조용히 계산된다 — 차라리 계산을 거절한다.
+    years: frozenset[int]
 
     @classmethod
     def load(cls, path: Path) -> YamlHolidayProvider:
@@ -32,10 +35,24 @@ class YamlHolidayProvider:
         except FileNotFoundError as exc:
             raise TariffConfigError(f"공휴일 설정 파일이 없습니다: {path}") from exc
 
-        entries = (raw or {}).get("holidays") or {}
-        return cls(days=frozenset(_as_date(key) for key in entries))
+        raw = raw or {}
+        days = frozenset(_as_date(key) for key in raw.get("holidays") or {})
+        years = frozenset(int(year) for year in raw.get("years") or [])
+        stray = sorted({day.year for day in days} - years)
+        if stray:
+            raise TariffConfigError(
+                f"공휴일 설정의 years에 없는 연도의 날짜가 있습니다: {stray}"
+            )
+        return cls(days=days, years=years)
 
     def is_holiday(self, day: date) -> bool:
+        if day.year not in self.years:
+            # 이 문장은 422의 detail로 화면에 그대로 뜬다.
+            covered = ", ".join(f"{year}년" for year in sorted(self.years))
+            raise HolidayDataMissingError(
+                f"{day.year}년 공휴일 정보가 아직 없어서 요금을 계산할 수 없어요. "
+                f"지금은 {covered} 날짜만 계산할 수 있어요."
+            )
         return day in self.days
 
 

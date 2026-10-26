@@ -190,3 +190,11 @@ def test_absurd_magnitudes_are_422_not_500(client, overrides):
 
     assert response.status_code == 422
     assert response.status_code != 500
+
+
+
+def test_a_window_in_a_year_without_holiday_data_is_422(client):
+    response = post(client, earliest_start="2028-01-03T18:00", deadline="2028-01-04T08:00")
+
+    assert response.status_code == 422
+    assert "2028" in response.json()["detail"]

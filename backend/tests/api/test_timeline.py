@@ -51,3 +51,11 @@ def test_non_finite_base_price_is_422(client):
         params={"day": "2026-10-17", "mode": "public_fast", "public_base_price": "inf"},
     )
     assert response.status_code == 422
+
+
+
+def test_a_day_without_holiday_data_is_422_with_a_sentence(client):
+    response = client.get("/api/timeline", params={"day": "2028-01-03"})
+
+    assert response.status_code == 422
+    assert "2028" in response.json()["detail"]

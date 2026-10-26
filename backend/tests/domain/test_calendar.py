@@ -201,18 +201,66 @@ def _first_saturday_of_october(year: int) -> date:
     return day.replace(day=1 + (5 - day.weekday()) % 7)
 
 
-def test_weekend_discount_still_applies_in_the_sunset_year(tariff, holidays):
+class _NoHolidays:
+    """일몰 연도는 공휴일 데이터가 없는 먼 미래라, 토요일만 쓰고 공휴일은 없다고 둔다."""
+
+    def is_holiday(self, day: date) -> bool:
+        return False
+
+
+def test_weekend_discount_still_applies_in_the_sunset_year(tariff):
     last_year = tariff.get("weekend_discount_sunset")["until_year"]
     saturday = _first_saturday_of_october(last_year)
 
     assert saturday.weekday() == 5
-    assert is_discount_hour(at(saturday.year, 10, saturday.day, 12), tariff, holidays) is True
+    assert is_discount_hour(at(saturday.year, 10, saturday.day, 12), tariff, _NoHolidays()) is True
 
 
-def test_weekend_discount_ends_the_year_after_the_sunset_year(tariff, holidays):
+def test_weekend_discount_ends_the_year_after_the_sunset_year(tariff):
     after = tariff.get("weekend_discount_sunset")["until_year"] + 1
     saturday = _first_saturday_of_october(after)
 
     assert saturday.weekday() == 5
     for hour in (11, 12, 13):
-        assert is_discount_hour(at(after, 10, saturday.day, hour), tariff, holidays) is False
+        assert is_discount_hour(at(after, 10, saturday.day, hour), tariff, _NoHolidays()) is False
+
+
+
+# ── 공휴일 데이터의 범위 ──────────────────────────────────────────────────────
+#
+# 목록에 2026년만 있었는데 API는 아무 연도나 받았다. 2027-01-01(신정)이 평일
+# 요금으로 계산됐다 — 14일 앞까지 계획할 수 있으니 12월 중순부터 실제로 걸린다.
+# 목록에 없는 연도는 조용히 "공휴일 없음"으로 보지 않고 계산을 거절한다.
+
+
+@pytest.mark.parametrize(
+    "day,name",
+    [
+        (date(2026, 5, 1), "노동절 — 2026년부터 관공서 공휴일"),
+        (date(2026, 6, 3), "제9회 전국동시지방선거"),
+        (date(2026, 7, 17), "제헌절 — 2026년부터 다시 공휴일"),
+        (date(2027, 1, 1), "신정"),
+        (date(2027, 2, 9), "설날 대체공휴일"),
+        (date(2027, 5, 3), "노동절 대체공휴일"),
+        (date(2027, 5, 13), "부처님오신날"),
+        (date(2027, 7, 19), "제헌절 대체공휴일"),
+        (date(2027, 9, 15), "추석"),
+        (date(2027, 10, 11), "한글날 대체공휴일"),
+        (date(2027, 12, 27), "기독탄신일 대체공휴일"),
+    ],
+)
+def test_holiday_list_has_the_official_2026_and_2027_days(holidays, day, name):
+    assert holidays.is_holiday(day), name
+
+
+def test_an_ordinary_2027_weekday_is_not_a_holiday(holidays):
+    assert holidays.is_holiday(date(2027, 1, 4)) is False  # 월요일
+
+
+def test_a_year_without_holiday_data_is_refused_not_treated_as_no_holidays(holidays):
+    from evcharge.domain.errors import DomainError
+
+    with pytest.raises(DomainError) as caught:
+        holidays.is_holiday(date(2028, 1, 3))
+
+    assert "2028" in str(caught.value)
