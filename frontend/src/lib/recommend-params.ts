@@ -21,6 +21,13 @@ export type RecommendForm = {
   deadline: string;
   mode: Mode;
   /**
+   * 공용 급속 단가(원/kWh). 공용 급속일 때만 쓴다.
+   *
+   * 공용 급속은 충전사업자마다 단가가 달라 공식 값이 하나로 없다. 기본 설정의
+   * 백엔드는 이 값 없이 공용 급속을 계산하지 않는다.
+   */
+  publicBasePrice?: number;
+  /**
    * 고른 차량. 저장할 때만 쓴다.
    *
    * 추천 요청에는 싣지 않는다 — vehicle_id가 붙은 요청은 로그인을 요구해서,
@@ -42,6 +49,9 @@ export function toSearchParams(form: RecommendForm): URLSearchParams {
     deadline: form.deadline,
     mode: form.mode,
   });
+  if (form.mode === "public_fast" && form.publicBasePrice !== undefined) {
+    params.set("public_base_price", String(form.publicBasePrice));
+  }
   if (form.vehicleId) params.set("vehicle_id", form.vehicleId);
   return params;
 }
@@ -70,6 +80,12 @@ export function fromSearchParams(
     return null;
   }
 
+  // 단가는 없어도 되지만(백엔드 설정에 기본값이 있을 수 있다), 있는데 못 읽으면
+  // 반쪽짜리 조건이다. 0 이하도 단가가 아니다.
+  const rawPrice = params.get("public_base_price");
+  const publicBasePrice = rawPrice === null ? null : readNumber(rawPrice);
+  if (rawPrice !== null && (publicBasePrice === null || publicBasePrice <= 0)) return null;
+
   const vehicleId = params.get("vehicle_id");
   return {
     batteryKwh,
@@ -79,6 +95,7 @@ export function fromSearchParams(
     earliestStart,
     deadline,
     mode,
+    ...(mode === "public_fast" && publicBasePrice !== null ? { publicBasePrice } : {}),
     ...(vehicleId ? { vehicleId } : {}),
   };
 }
@@ -91,7 +108,7 @@ export function fromSearchParams(
  * 추천이 돌아온다.
  */
 export function toRecommendRequest(form: RecommendForm): RecommendRequest {
-  return {
+  const request: RecommendRequest = {
     battery_kwh: form.batteryKwh,
     charger_kw: form.chargerKw,
     soc_now: form.socNow,
@@ -100,6 +117,10 @@ export function toRecommendRequest(form: RecommendForm): RecommendRequest {
     deadline: form.deadline,
     mode: form.mode,
   };
+  if (form.mode === "public_fast" && form.publicBasePrice !== undefined) {
+    request.public_base_price = form.publicBasePrice;
+  }
+  return request;
 }
 
 /**
@@ -117,6 +138,21 @@ export function toSavePlanRequest(
 
 const DAY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
+/*
+ * 시각 계산은 전부 "한국 벽시계"로 한다.
+ *
+ * 백엔드는 표준시 없는 시각을 한국 시각으로 읽는다. 브라우저의 getHours()·setHours()는
+ * 기기 시간대를 따르므로, 해외(또는 UTC로 맞춘 기기)에서 기본값이 9시간 어긋났다 —
+ * UTC 기기에서 한국 18:15에 열면 "09:30부터"가 채워졌다. 한국은 서머타임이 없어 늘
+ * UTC+9이므로, 순간에 9시간을 더한 Date의 UTC 필드(getUTC*)를 한국 벽시계로 쓴다.
+ * 이 Date들은 "순간"이 아니라 벽시계 값을 담는 그릇이다 — 밖으로는 문자열만 내보낸다.
+ */
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function kstWallClock(instant: Date): Date {
+  return new Date(instant.getTime() + KST_OFFSET_MS);
+}
+
 /**
  * 특정 날짜로 계획할 때 채워 둘 시각.
  *
@@ -130,53 +166,60 @@ export function timesForDay(day: string): { earliestStart: string; deadline: str
   const matched = DAY_PATTERN.exec(day);
   if (!matched) return null;
   const [, year, month, date] = matched;
-  const start = new Date(Number(year), Number(month) - 1, Number(date), 18, 0, 0, 0);
+  const start = new Date(Date.UTC(Number(year), Number(month) - 1, Number(date), 18, 0, 0, 0));
   // Date가 2026-13-99 같은 값을 조용히 굴려 버린다. 되읽어 확인한다.
-  if (start.getMonth() !== Number(month) - 1 || start.getDate() !== Number(date)) return null;
+  if (start.getUTCMonth() !== Number(month) - 1 || start.getUTCDate() !== Number(date)) {
+    return null;
+  }
   const end = new Date(start);
-  end.setDate(end.getDate() + 1);
-  end.setHours(8, 0, 0, 0);
-  return { earliestStart: toLocalInput(start), deadline: toLocalInput(end) };
+  end.setUTCDate(end.getUTCDate() + 1);
+  end.setUTCHours(8, 0, 0, 0);
+  return { earliestStart: formatWallClock(start), deadline: formatWallClock(end) };
 }
 
 /** 처음 열었을 때 채워 둘 값. 디자인의 예시(70 kWh · 7 kW · 30% → 60%)를 따른다. */
 export function defaultForm(now: Date): RecommendForm {
-  const start = ceilToHalfHour(now);
+  const start = ceilToHalfHour(kstWallClock(now));
   return {
     batteryKwh: 70,
     chargerKw: 7,
     socNow: 30,
     socTarget: 60,
-    earliestStart: toLocalInput(start),
-    deadline: toLocalInput(nextMorning(start)),
+    earliestStart: formatWallClock(start),
+    deadline: formatWallClock(nextMorning(start)),
     mode: "self_low",
   };
 }
 
-/** datetime-local이 먹는 "YYYY-MM-DDTHH:mm" 문자열 */
+/** datetime-local이 먹는 "YYYY-MM-DDTHH:mm" 문자열. 순간을 한국 시각으로 적는다. */
 export function toLocalInput(date: Date): string {
+  return formatWallClock(kstWallClock(date));
+}
+
+/** 벽시계 그릇(UTC 필드)을 "YYYY-MM-DDTHH:mm"로 */
+function formatWallClock(wall: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+    `${wall.getUTCFullYear()}-${pad(wall.getUTCMonth() + 1)}-${pad(wall.getUTCDate())}` +
+    `T${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}`
   );
 }
 
-function ceilToHalfHour(date: Date): Date {
-  const result = new Date(date);
-  result.setSeconds(0, 0);
-  const minutes = result.getMinutes();
+function ceilToHalfHour(wall: Date): Date {
+  const result = new Date(wall);
+  result.setUTCSeconds(0, 0);
+  const minutes = result.getUTCMinutes();
   if (minutes === 0 || minutes === 30) return result;
-  result.setMinutes(minutes < 30 ? 30 : 60);
+  result.setUTCMinutes(minutes < 30 ? 30 : 60);
   return result;
 }
 
 /** 대부분 "밤에 꽂아두고 아침에 나간다". 기본 완료 시각을 그다음 아침 8시로 둔다. */
 function nextMorning(from: Date): Date {
   const morning = new Date(from);
-  morning.setHours(8, 0, 0, 0);
+  morning.setUTCHours(8, 0, 0, 0);
   if (morning <= from) {
-    morning.setDate(morning.getDate() + 1);
+    morning.setUTCDate(morning.getUTCDate() + 1);
   }
   return morning;
 }

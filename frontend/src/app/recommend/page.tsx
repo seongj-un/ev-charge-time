@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import type { Mode } from "@/lib/api/types";
+import { fromSearchParams, type RecommendForm } from "@/lib/recommend-params";
 
 import { ChargeForm } from "@/components/recommend/ChargeForm";
 import { PageContainer } from "@/components/shell/AppShell";
@@ -29,9 +30,14 @@ const GUIDES = [
 const MODES: Mode[] = ["self_low", "self_high", "public_fast"];
 
 /**
- * 하루 단가 화면의 "이 날짜로 추천받기"가 ?day=·?mode=를 달고 보낸다.
+ * 이 화면으로 들어오는 쿼리는 두 갈래다.
+ *
+ * - 결과 화면의 "조건 고치기"는 조건 전체(battery_kwh·…·mode)를 달고 온다. 그걸 다
+ *   읽어 폼을 채운다 — 예전에는 day·mode만 읽어서 돌아오는 순간 넣었던 값이 날아갔다.
+ * - 하루 단가 화면의 "이 날짜로 추천받기"는 ?day=·?mode=(·?public_base_price=)를 단다.
+ *
  * 서버에서 읽어 폼에 내려준다 — useSearchParams를 쓰면 이 화면이 동적이 되고
- * Suspense 경계가 필요해지는데, 값 두 개 읽자고 그럴 이유가 없다.
+ * Suspense 경계가 필요해지는데, 쿼리 몇 개 읽자고 그럴 이유가 없다.
  */
 export default async function RecommendPage({
   searchParams,
@@ -39,14 +45,27 @@ export default async function RecommendPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const day = typeof params.day === "string" ? params.day : undefined;
-  const rawMode = typeof params.mode === "string" ? params.mode : undefined;
-  const mode = MODES.includes(rawMode as Mode) ? (rawMode as Mode) : undefined;
+  const read = (key: string) => (typeof params[key] === "string" ? params[key] : null);
 
-  return renderPage(day, mode);
+  // 조건이 통째로 왔으면 그게 우선이다. 하나라도 모양이 안 맞으면 null이라 아래로 간다.
+  const initialForm = fromSearchParams({ get: read });
+
+  const day = read("day") ?? undefined;
+  const rawMode = read("mode");
+  const mode = MODES.includes(rawMode as Mode) ? (rawMode as Mode) : undefined;
+  // 하루 단가에서 공용 급속으로 넘어오면 거기서 넣은 단가도 따라온다.
+  const rawPrice = Number(read("public_base_price"));
+  const price = mode === "public_fast" && rawPrice > 0 && Number.isFinite(rawPrice) ? rawPrice : undefined;
+
+  return renderPage(day, mode, initialForm, price);
 }
 
-function renderPage(initialDay?: string, initialMode?: Mode) {
+function renderPage(
+  initialDay?: string,
+  initialMode?: Mode,
+  initialForm?: RecommendForm | null,
+  initialPrice?: number,
+) {
   return (
     <PageContainer className="pb-6">
       {/* 모바일에는 상단 내비가 없다(탭바가 대신한다). 그래서 로고를 화면이 직접 단다. */}
@@ -67,7 +86,12 @@ function renderPage(initialDay?: string, initialMode?: Mode) {
       </h1>
 
       <div className="mt-6 lg:mt-0 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">
-        <ChargeForm initialDay={initialDay} initialMode={initialMode} />
+        <ChargeForm
+          initialDay={initialDay}
+          initialMode={initialMode}
+          initialForm={initialForm}
+          initialPrice={initialPrice}
+        />
 
         <aside className="hidden lg:flex lg:flex-col lg:gap-4">
           {GUIDES.map((guide) => (

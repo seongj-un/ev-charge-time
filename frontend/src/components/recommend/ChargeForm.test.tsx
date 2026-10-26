@@ -8,6 +8,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { SessionProvider } from "@/components/auth/SessionProvider";
 
+import { fromSearchParams, type RecommendForm } from "@/lib/recommend-params";
+
 import { ChargeForm } from "./ChargeForm";
 
 /*
@@ -270,5 +272,109 @@ describe("ChargeForm", () => {
       expect(screen.getByLabelText("내 차량")).toBeDisabled();
       expect(screen.getByText(/로그인 없이 값을 직접 입력해도/)).toBeInTheDocument();
     });
+  });
+});
+
+/*
+ * 공용 급속은 충전사업자마다 단가가 달라 공식 값이 하나로 없다. 기본 설정의 백엔드는
+ * 단가 없이 공용 급속을 계산하지 않는데, 예전 폼에는 단가 칸이 없어서 공용 급속을
+ * 고르면 결과 화면에서 항상 실패했다.
+ */
+describe("공용 급속 단가", () => {
+  beforeEach(() => {
+    push.mockClear();
+  });
+
+  test("공용 급속을 고르면 단가 칸이 생기고, 단가가 URL에 실린다", async () => {
+    const user = setup();
+    fillTimes();
+    expect(screen.queryByLabelText("공용 급속 단가")).toBeNull();
+
+    await user.click(screen.getByRole("radio", { name: "공공 급속" }));
+    await user.type(screen.getByLabelText("공용 급속 단가"), "350");
+    await submit(user);
+
+    expect(push).toHaveBeenCalledTimes(1);
+    const url = new URL(push.mock.calls[0][0], "http://x");
+    expect(url.searchParams.get("mode")).toBe("public_fast");
+    expect(url.searchParams.get("public_base_price")).toBe("350");
+  });
+
+  test("공용 급속인데 단가가 비었으면 넘어가지 않고 그 칸에 알린다", async () => {
+    const user = setup();
+    fillTimes();
+
+    await user.click(screen.getByRole("radio", { name: "공공 급속" }));
+    await submit(user);
+
+    expect(push).not.toHaveBeenCalled();
+    expect(screen.getByText("충전기에 적힌 kWh당 요금을 입력해 주세요")).toBeInTheDocument();
+  });
+
+  test("자가 충전으로 돌아가면 단가는 URL에 싣지 않는다", async () => {
+    const user = setup();
+    fillTimes();
+
+    await user.click(screen.getByRole("radio", { name: "공공 급속" }));
+    await user.type(screen.getByLabelText("공용 급속 단가"), "350");
+    await user.click(screen.getByRole("radio", { name: "자가 저압" }));
+    await submit(user);
+
+    const url = new URL(push.mock.calls[0][0], "http://x");
+    expect(url.searchParams.has("public_base_price")).toBe(false);
+  });
+});
+
+/*
+ * 결과 화면의 "조건 고치기"는 조건을 URL에 달고 입력 화면으로 돌아온다. 입력 화면이
+ * 그걸 읽지 않으면 방금 넣은 배터리·충전량·시각이 전부 기본값으로 돌아간다.
+ */
+describe("조건을 들고 돌아왔을 때", () => {
+  beforeEach(() => {
+    push.mockClear();
+  });
+
+  const BACK: RecommendForm = {
+    batteryKwh: 77.4,
+    chargerKw: 11,
+    socNow: 25,
+    socTarget: 90,
+    earliestStart: "2026-11-02T21:30",
+    deadline: "2026-11-03T07:00",
+    mode: "public_fast",
+    publicBasePrice: 347,
+  };
+
+  function setupWith(initialForm: RecommendForm) {
+    stubAnonymous();
+    const user = userEvent.setup();
+    render(
+      <SessionProvider>
+        <ChargeForm initialForm={initialForm} />
+      </SessionProvider>,
+    );
+    return user;
+  }
+
+  test("모든 칸을 그 조건으로 채운다", () => {
+    setupWith(BACK);
+
+    expect(screen.getByLabelText("배터리 용량")).toHaveValue("77.4");
+    expect(screen.getByLabelText("충전기 출력")).toHaveValue("11");
+    expect(screen.getByLabelText("현재 충전량")).toHaveValue("25");
+    expect(screen.getByLabelText("목표 충전량")).toHaveValue("90");
+    expect(screen.getByLabelText("충전 시작 가능")).toHaveValue("2026-11-02T21:30");
+    expect(screen.getByLabelText("이때까지 완료")).toHaveValue("2026-11-03T07:00");
+    expect(screen.getByRole("radio", { name: "공공 급속" })).toBeChecked();
+    expect(screen.getByLabelText("공용 급속 단가")).toHaveValue("347");
+  });
+
+  test("그대로 다시 제출하면 같은 조건으로 넘어간다", async () => {
+    const user = setupWith(BACK);
+
+    await submit(user);
+
+    const url = new URL(push.mock.calls[0][0], "http://x");
+    expect(fromSearchParams(url.searchParams)).toEqual(BACK);
   });
 });

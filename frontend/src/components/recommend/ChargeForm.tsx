@@ -37,6 +37,8 @@ type Draft = {
   earliestStart: string | null;
   deadline: string | null;
   mode: Mode;
+  /** 공용 급속 단가(원/kWh). 공용 급속일 때만 칸이 보이고 검사한다. */
+  publicBasePrice: string;
 };
 
 /** 기본 시각까지 채워 넣은, 화면에 실제로 그려지는 값 */
@@ -54,8 +56,28 @@ const MODE_OPTIONS: { value: Mode; label: string }[] = [
   { value: "public_fast", label: MODE_LABEL.public_fast },
 ];
 
-/** 숫자 기본값은 defaultForm이 정한 것을 그대로 쓴다 — 기본값이 두 군데 생기지 않게. */
-function initialDraft(): Draft {
+/** 공용 급속 단가의 상한. 백엔드 schemas.MAX_PRICE_PER_KWH와 같다. */
+const MAX_PRICE_PER_KWH = 10_000;
+
+/**
+ * 숫자 기본값은 defaultForm이 정한 것을 그대로 쓴다 — 기본값이 두 군데 생기지 않게.
+ *
+ * 결과 화면의 "조건 고치기"로 돌아왔으면 그 조건이 처음 값이다. 시각까지 채워 두므로
+ * 마운트 뒤의 '지금' 기본값이 끼어들지 않는다.
+ */
+function initialDraft(from?: RecommendForm | null): Draft {
+  if (from) {
+    return {
+      batteryKwh: String(from.batteryKwh),
+      chargerKw: String(from.chargerKw),
+      socNow: String(from.socNow),
+      socTarget: String(from.socTarget),
+      earliestStart: from.earliestStart,
+      deadline: from.deadline,
+      mode: from.mode,
+      publicBasePrice: from.publicBasePrice === undefined ? "" : String(from.publicBasePrice),
+    };
+  }
   const base = defaultForm(new Date(0));
   return {
     batteryKwh: String(base.batteryKwh),
@@ -65,6 +87,7 @@ function initialDraft(): Draft {
     earliestStart: null,
     deadline: null,
     mode: base.mode,
+    publicBasePrice: "",
   };
 }
 
@@ -127,15 +150,26 @@ function vehicleHintFor(
 export function ChargeForm({
   initialDay,
   initialMode,
+  initialForm,
+  initialPrice,
 }: {
   /** 하루 단가 화면에서 "이 날짜로 추천받기"로 넘어온 날짜 (YYYY-MM-DD) */
   initialDay?: string;
   initialMode?: Mode;
+  /** 결과 화면의 "조건 고치기"가 달고 온 조건. 있으면 모든 칸을 이걸로 채운다. */
+  initialForm?: RecommendForm | null;
+  /** 하루 단가 화면에서 공용 급속으로 넘어올 때 거기서 넣은 단가 */
+  initialPrice?: number;
 } = {}) {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(() => {
-    const base = initialDraft();
-    return initialMode ? { ...base, mode: initialMode } : base;
+    const base = initialDraft(initialForm);
+    if (initialForm) return base;
+    return {
+      ...base,
+      ...(initialMode ? { mode: initialMode } : {}),
+      ...(initialPrice !== undefined ? { publicBasePrice: String(initialPrice) } : {}),
+    };
   });
   /** 제출을 한 번이라도 눌렀는지. 누르기 전에는 빨간 글씨를 띄우지 않는다. */
   const [submitted, setSubmitted] = useState(false);
@@ -143,14 +177,15 @@ export function ChargeForm({
 
   const { status } = useSession();
   const { vehicles, loaded: vehiclesLoaded } = useMyVehicles();
-  const [vehicleId, setVehicleId] = useState("");
+  const [vehicleId, setVehicleId] = useState(initialForm?.vehicleId ?? "");
   /**
    * 차량 값이 실린 칸을 사용자가 건드렸는지.
    *
    * 차량 목록은 마운트 뒤에 도착한다. 그 사이 이미 고쳐 둔 값을 기본 차량으로
    * 덮어쓰면 방금 친 숫자가 눈앞에서 바뀐다.
    */
-  const [specTouched, setSpecTouched] = useState(false);
+  // 조건을 들고 돌아왔으면 그 값이 사용자가 고른 것이다. 기본 차량이 덮지 않는다.
+  const [specTouched, setSpecTouched] = useState(Boolean(initialForm));
 
   /*
    * 넘어온 날짜가 있으면 그 날 기준이 기본값이다. 없으면 '지금' 기준인데,
@@ -294,6 +329,19 @@ export function ChargeForm({
         onChange={(mode) => setSpec("mode", mode)}
       />
 
+      {conditions.mode === "public_fast" ? (
+        <Field
+          className="mt-5"
+          label="공용 급속 단가"
+          suffix="원/kWh"
+          inputMode="decimal"
+          value={conditions.publicBasePrice}
+          onChange={(event) => set("publicBasePrice", event.target.value)}
+          hint="공용 급속은 충전사업자마다 요금이 달라요. 충전기에 적힌 kWh당 요금을 넣어 주세요."
+          error={shown.publicBasePrice}
+        />
+      ) : null}
+
       {/* 모바일 시안은 이 네 칸만 흰 카드로 묶는다. 데스크톱은 바깥 카드 하나뿐이라 배경을 지운다. */}
       <div className="mt-5 rounded-card border border-line bg-surface p-4 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
         <div className="grid grid-cols-2 gap-3 lg:gap-5">
@@ -397,6 +445,17 @@ function validate(conditions: Conditions): { errors: Errors; form: RecommendForm
     errors.socTarget = "목표 충전량은 현재보다 커야 해요";
   }
 
+  // 공용 급속은 공식 단가가 없다. 단가 없이 넘기면 결과 화면에서 실패한다.
+  const isPublicFast = conditions.mode === "public_fast";
+  const publicBasePrice = isPublicFast ? parseNumber(conditions.publicBasePrice) : null;
+  if (isPublicFast) {
+    if (publicBasePrice === null) {
+      errors.publicBasePrice = "충전기에 적힌 kWh당 요금을 입력해 주세요";
+    } else if (publicBasePrice <= 0 || publicBasePrice > MAX_PRICE_PER_KWH) {
+      errors.publicBasePrice = `단가는 0보다 크고 ${MAX_PRICE_PER_KWH.toLocaleString("ko-KR")}원 이하여야 해요`;
+    }
+  }
+
   if (!conditions.earliestStart) {
     errors.earliestStart = "충전 시작 가능 시각을 입력해 주세요";
   }
@@ -427,6 +486,7 @@ function validate(conditions: Conditions): { errors: Errors; form: RecommendForm
           earliestStart: conditions.earliestStart,
           deadline: conditions.deadline,
           mode: conditions.mode,
+          ...(isPublicFast && publicBasePrice !== null ? { publicBasePrice } : {}),
         }
       : null,
   };
