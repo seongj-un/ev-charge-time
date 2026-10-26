@@ -38,7 +38,15 @@ from pydantic import BaseModel, Field, ValidationError
 
 from ..domain.pricing import KST
 from ..infra.llm import LlmClient, LlmError
-from .schemas import ChatResponse, Mode, RecommendRequest, RecommendResponse
+from .schemas import (
+    MAX_BATTERY_KWH,
+    MAX_CHARGER_KW,
+    MAX_PRICE_PER_KWH,
+    ChatResponse,
+    Mode,
+    RecommendRequest,
+    RecommendResponse,
+)
 
 # 추천 계산에 반드시 있어야 하는 항목. mode·efficiency는
 # ``RecommendRequest``에 기본값이 있으므로 "모자란 항목"이 아니다.
@@ -59,7 +67,12 @@ FIELD_LABELS: dict[str, str] = {
     "charger_kw": "충전기 출력(kW)",
     "earliest_start": "충전을 시작할 수 있는 가장 이른 시각",
     "deadline": "충전을 마쳐야 하는 시각",
+    "public_base_price": "공용 급속 충전 단가(원/kWh)",
 }
+
+# 공용 급속은 충전사업자마다 단가가 달라 하나의 공식 값이 없다. 방식이
+# public_fast면 이 항목도 있어야 계산할 수 있다.
+PUBLIC_FAST_PRICE = "public_base_price"
 
 MODE_LABELS: dict[str, str] = {
     "self_low": "자가 충전(저압)",
@@ -118,6 +131,10 @@ class ExtractedConditions(BaseModel):
     efficiency: float | None = Field(
         default=None, description="충전 효율. 0 초과 1 이하. 질문에 없으면 null"
     )
+    public_base_price: float | None = Field(
+        default=None,
+        description="공용 급속 충전 단가(원/kWh). 질문에 단가를 말하지 않았으면 null",
+    )
 
 
 @dataclass
@@ -132,6 +149,7 @@ class NormalizedConditions:
     deadline: datetime | None = None
     mode: Mode | None = None
     efficiency: float | None = None
+    public_base_price: float | None = None
 
 
 SYSTEM_INSTRUCTION = """\
@@ -153,7 +171,9 @@ SYSTEM_INSTRUCTION = """\
    집(자택·아파트)에서 충전하면 self_low, 공용 급속·충전소면 public_fast다.
    확신이 없으면 null로 둔다.
 6. 차종·배터리 용량·충전기 출력을 질문에서 말하지 않았다면 null이다.
-   차종 이름만으로 용량을 추측하지 마라.\
+   차종 이름만으로 용량을 추측하지 마라.
+7. 공용 급속 충전 단가를 말했으면 public_base_price에 원/kWh 숫자로 쓴다
+   ("kWh당 350원" → 350). 말하지 않았으면 null이다. 단가를 추측하지 마라.\
 """
 
 
@@ -220,12 +240,15 @@ def answer(
 
     result, request = build_recommendation(request)
     if result is None:
-        # 차량 기본값까지 병합했는데도 배터리 용량·충전기 출력이 비었다.
+        # 차량 기본값까지 병합했는데도 배터리 용량·충전기 출력이 비었거나,
+        # (기본 차량에서 온) 공용 급속 방식인데 단가가 없다.
         missing = [
             name
             for name in ("battery_kwh", "charger_kw")
             if getattr(request, name, None) is None
         ]
+        if request.mode == "public_fast" and request.public_base_price is None:
+            missing.append(PUBLIC_FAST_PRICE)
         return ChatResponse(answer=_ask_back(missing), recommendation=None, missing_fields=missing)
 
     return ChatResponse(
@@ -278,21 +301,22 @@ def _normalize(extracted: ExtractedConditions, now: datetime) -> NormalizedCondi
     않으면 그쪽에서 ValidationError가 나고, 사용자는 답 대신 422를 본다.
     """
     return NormalizedConditions(
-        battery_kwh=_positive(extracted.battery_kwh),
+        battery_kwh=_positive(extracted.battery_kwh, high=MAX_BATTERY_KWH),
         soc_now=_in_range(extracted.soc_now, low=0, high=100, include_low=True),
         soc_target=_in_range(extracted.soc_target, low=0, high=100, include_high=True),
-        charger_kw=_positive(extracted.charger_kw),
+        charger_kw=_positive(extracted.charger_kw, high=MAX_CHARGER_KW),
         earliest_start=_moment_value(extracted.earliest_start),
         deadline=_moment_value(extracted.deadline),
         mode=_mode(extracted.mode),
         efficiency=_in_range(extracted.efficiency, low=0, high=1, include_high=True),
+        public_base_price=_positive(extracted.public_base_price, high=MAX_PRICE_PER_KWH),
     )
 
 
-def _positive(value: float | None) -> float | None:
-    if value is None:
-        return None
-    return float(value) if value > 0 else None
+def _positive(value: float | None, *, high: float) -> float | None:
+    """0 초과 ``high`` 이하. 상한은 ``RecommendRequest``와 같다 — 여기서 걸러야
+    스키마에서 튕겨 모든 항목을 통째로 되묻는 일이 없다."""
+    return _in_range(value, low=0, high=high, include_high=True)
 
 
 def _in_range(
@@ -394,6 +418,8 @@ def _to_request(conditions: NormalizedConditions) -> RecommendRequest | None:
         payload["mode"] = conditions.mode
     if conditions.efficiency is not None:
         payload["efficiency"] = conditions.efficiency
+    if conditions.public_base_price is not None:
+        payload["public_base_price"] = conditions.public_base_price
 
     try:
         return RecommendRequest.model_validate(payload)
@@ -417,6 +443,8 @@ def _missing_fields(
         if has_default_vehicle and name in ("battery_kwh", "charger_kw"):
             continue
         missing.append(name)
+    if conditions.mode == "public_fast" and conditions.public_base_price is None:
+        missing.append(PUBLIC_FAST_PRICE)
 
     if missing:
         return missing

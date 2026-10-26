@@ -16,6 +16,7 @@ from sqlalchemy import case, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession
 
+from ...domain.errors import TariffNotConfiguredError
 from ...domain.pricing import KST
 from ...infra.db import get_session
 from ...infra.kma_api import KmaApiClient
@@ -162,7 +163,14 @@ def chat(
             # 아직도 비었다 = 되물어야 한다. compute_recommendation에 넘기면
             # 422가 되는데, 자연어 질의에서는 오류 대신 되묻는 편이 맞다.
             return None, request
-        return compute_recommendation(request), request
+        try:
+            return compute_recommendation(request), request
+        except TariffNotConfiguredError:
+            # 공용 급속인데 단가가 없다(방식이 기본 차량에서 온 경우 등). 설정에
+            # 기준단가가 있으면 여기 오지 않는다. 같은 이유로 오류 대신 되묻는다.
+            if request.mode == "public_fast" and request.public_base_price is None:
+                return None, request
+            raise
 
     return chat_service.answer(
         conditions,

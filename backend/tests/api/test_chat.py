@@ -615,3 +615,91 @@ def test_a_model_failure_log_does_not_carry_the_original_exception(
     assert response.status_code == 503
     assert "자연어 질의 실패" in caplog.text
     assert secret not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# 공용 급속 단가 — 추출·전달하고, 없으면 되묻는다
+# ---------------------------------------------------------------------------
+#
+# 공용 급속은 충전사업자마다 단가가 달라 단가 없이는 계산할 수 없다. 예전에는
+# 추출 스키마에 단가 자리가 없어서 사용자가 "350원"이라고 말해도 버려졌고,
+# 계산 단계에서 422(단가를 알려 달라는 문장)가 났다.
+
+
+def test_a_public_fast_price_in_the_question_reaches_the_calculation(
+    client, db_session, fake_llm
+):
+    _login(client, db_session)
+    fake_llm.payload = {**FULL_EXTRACTION, "mode": "public_fast", "public_base_price": 350}
+
+    response = _ask(client, "공용 급속(350원/kWh)으로 내일 출근 전까지 80% 채우려면?")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["missing_fields"] == []
+    # 10월 7일(수) 18시~ — 할인 없는 평일이라 70kWh × 50% × 350원
+    assert body["recommendation"]["best"]["cost_won"] == 35 * 350
+
+
+def test_public_fast_without_a_price_is_asked_back(client, db_session, fake_llm):
+    _login(client, db_session)
+    fake_llm.payload = {**FULL_EXTRACTION, "mode": "public_fast", "public_base_price": None}
+
+    response = _ask(client)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["recommendation"] is None
+    assert body["missing_fields"] == ["public_base_price"]
+    assert "단가" in body["answer"]
+
+
+def test_a_missing_price_is_asked_together_with_other_missing_fields(
+    client, db_session, fake_llm
+):
+    """한 번에 모아서 묻는다 — 답하자마자 또 다른 걸 되물으면 대화가 늘어진다."""
+    _login(client, db_session)
+    fake_llm.payload = {
+        **FULL_EXTRACTION,
+        "mode": "public_fast",
+        "public_base_price": None,
+        "soc_target": None,
+    }
+
+    body = _ask(client).json()
+
+    assert body["missing_fields"] == ["soc_target", "public_base_price"]
+
+
+def test_a_public_fast_default_vehicle_asks_for_the_price(client, db_session, fake_llm):
+    """방식은 기본 차량에서 왔고 질문에는 단가가 없다 → 단가를 되묻는다."""
+    user = _login(client, db_session)
+    db_session.add(
+        Vehicle(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            name="출장용",
+            battery_kwh=70.0,
+            charger_kw=50.0,
+            mode="public_fast",
+            is_default=True,
+        )
+    )
+    db_session.commit()
+    fake_llm.payload = {**FULL_EXTRACTION, "mode": None, "public_base_price": None}
+
+    response = _ask(client)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["recommendation"] is None
+    assert body["missing_fields"] == ["public_base_price"]
+
+
+def test_an_absurd_public_fast_price_is_dropped_and_asked_back(client, db_session, fake_llm):
+    _login(client, db_session)
+    fake_llm.payload = {**FULL_EXTRACTION, "mode": "public_fast", "public_base_price": 1e300}
+
+    body = _ask(client).json()
+
+    assert body["missing_fields"] == ["public_base_price"]
