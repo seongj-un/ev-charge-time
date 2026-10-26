@@ -134,3 +134,13 @@ def test_real_config_marks_the_kepco_sourced_items_verified():
         "power_fund_rate",
     ]:
         assert kepco_sourced not in unverified, f"{kepco_sourced}가 미확인으로 남아있다"
+
+
+def test_power_fund_rate_is_the_current_statutory_rate_not_the_pdf_value():
+    """전력산업기반기금은 2025-07부터 2.7%다. 요금표 PDF(2023-11-09)의 3.7%는
+    두 번 인하되기 전 값이라, PDF를 다시 옮겨 적다 되돌리는 실수를 막는다."""
+    from evcharge.settings import get_settings
+
+    tariff = Tariff.load(get_settings().tariff_path)
+
+    assert tariff.get("power_fund_rate") == pytest.approx(0.027)
