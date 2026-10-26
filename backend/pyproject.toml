@@ -122,3 +122,12 @@ extend-immutable-calls = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["evcharge"]
+
+# ---------------------------------------------------------------------------
+# mutmut (뮤테이션 테스트). 의존성에는 넣지 않았다 — 필요할 때만
+# `uv pip install mutmut`로 설치해서 `mutmut run`. 결과는 mutants/에 쌓인다.
+# settings.py가 BACKEND_ROOT/config/*.yaml을 읽으므로 config/도 함께 복사한다.
+# ---------------------------------------------------------------------------
+[tool.mutmut]
+paths_to_mutate = ["src/evcharge/"]
+also_copy = ["config/"]

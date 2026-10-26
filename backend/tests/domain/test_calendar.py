@@ -186,3 +186,33 @@ def test_midday_11_to_15_is_no_longer_peak_outside_winter(tariff, holidays):
         assert band_at(at(2026, 7, 15, hour), tariff, holidays) == "middle"
     # 15시부터 최대부하가 시작된다.
     assert band_at(at(2026, 10, 7, 15), tariff, holidays) == "peak"
+
+
+# ── 주말 할인 일몰 연도 ──────────────────────────────────────────────────────
+#
+# 할인은 weekend_discount_sunset.until_year "까지"다. 그 해는 할인이 살아 있고
+# 다음 해부터 없다. 이 경계를 보는 테스트가 없어서, 비교를 `>=`로 바꾸거나
+# 일몰 뒤에도 할인을 돌려줘도 아무것도 깨지지 않았다(뮤테이션 테스트로 확인).
+# 연도는 설정에서 읽는다 — 일몰 연도가 확인되어 바뀌어도 테스트는 그대로다.
+
+
+def _first_saturday_of_october(year: int) -> date:
+    day = date(year, 10, 1)
+    return day.replace(day=1 + (5 - day.weekday()) % 7)
+
+
+def test_weekend_discount_still_applies_in_the_sunset_year(tariff, holidays):
+    last_year = tariff.get("weekend_discount_sunset")["until_year"]
+    saturday = _first_saturday_of_october(last_year)
+
+    assert saturday.weekday() == 5
+    assert is_discount_hour(at(saturday.year, 10, saturday.day, 12), tariff, holidays) is True
+
+
+def test_weekend_discount_ends_the_year_after_the_sunset_year(tariff, holidays):
+    after = tariff.get("weekend_discount_sunset")["until_year"] + 1
+    saturday = _first_saturday_of_october(after)
+
+    assert saturday.weekday() == 5
+    for hour in (11, 12, 13):
+        assert is_discount_hour(at(after, 10, saturday.day, hour), tariff, holidays) is False
