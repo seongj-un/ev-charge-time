@@ -162,15 +162,22 @@ export function StationsScreen() {
     setGeo(areaState(found));
   }, []);
 
-  // 마운트 때 한 번 물어보고, 못 얻으면 기본 지역으로 넘어간다.
+  /*
+   * 마운트 때 한 번 물어보고, 못 얻으면 기본 지역으로 넘어간다.
+   *
+   * 답을 기다리는 동안(최대 8초) 사용자가 먼저 지역을 골랐다면 그 선택이
+   * 이긴다. 뒤늦게 온 위치가 덮어쓰면 고른 지역이 말없이 다른 곳으로 바뀐다.
+   */
   useEffect(() => {
     let alive = true;
     void askDeviceLocation().then((coords) => {
       if (!alive) return;
-      setGeo(
-        coords === null
-          ? areaState(DEFAULT_AREA)
-          : { kind: "ready", coords, origin: { kind: "device" } },
+      setGeo((prev) =>
+        prev.kind !== "asking"
+          ? prev
+          : coords === null
+            ? areaState(DEFAULT_AREA)
+            : { kind: "ready", coords, origin: { kind: "device" } },
       );
     });
     return () => {
@@ -221,6 +228,7 @@ export function StationsScreen() {
       .finally(() => setBusyId(null));
   }
 
+  const currentAreaId = geo.kind === "ready" && geo.origin.kind === "area" ? geo.origin.area.id : null;
   const visible = stations === null ? [] : filterStations(stations, filter);
   const hasUnknownStatus = visible.some((item) =>
     (item.chargers ?? []).some((charger) => !statusView(charger.status).known),
@@ -241,35 +249,42 @@ export function StationsScreen() {
         <div className="min-w-0">
 
           {/*
-           * 어디를 기준으로 찾는지 늘 보이게 둔다.
+           * 어디를 기준으로 찾는지 늘 보이게 두고, 지역 고르개는 **늘** 둔다.
            *
            * 기기 위치를 못 얻어도 화면이 죽지 않아야 한다 — 사이트 권한이
            * "허용"인데 OS가 막으면 PERMISSION_DENIED가 오고, 사용자는
            * 브라우저에서 고칠 수 없다. 그때 기본 지역으로 넘어가되 "내 주변"인
            * 척하지 않는 것이 중요하다.
+           *
+           * 위치를 얻었을 때 고르개를 숨기던 시절이 있었는데, 캐시가 전남·광주만
+           * 담고 있어서 다른 지역에서 위치를 허용한 사람은 빈 목록만 보고 갈 곳이
+           * 없었다. 그래서 내 위치는 기본값일 뿐이고, 고르개의 맨 위 항목으로
+           * "내 위치"를 보여 준다. 그 항목은 고를 수 없다 — 위치를 다시 묻는 건
+           * 옆의 버튼이 한다. 고르개에서 고르게 하면 실패했을 때 고르개가
+           * 엉뚱한 값을 가리킨다.
            */}
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            {geo.kind === "ready" && geo.origin.kind === "device" && geoNotice === null ? (
-              <span className="rounded-pill bg-brand/10 px-3 py-2 text-sm font-bold text-brand">
-                내 위치 기준
-              </span>
-            ) : (
-              <label className="flex items-center gap-2 text-sm text-ink-2">
-                <span className="font-bold text-ink">지역</span>
-                <select
-                  aria-label="지역"
-                  value={geo.kind === "ready" && geo.origin.kind === "area" ? geo.origin.area.id : DEFAULT_AREA.id}
-                  onChange={(event) => selectArea(event.target.value)}
-                  className="rounded-field border border-line bg-field px-3 py-2 text-sm text-ink outline-none focus-visible:border-brand"
-                >
-                  {AREAS.map((area) => (
-                    <option key={area.id} value={area.id}>
-                      {area.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+            <label className="flex items-center gap-2 text-sm text-ink-2">
+              <span className="font-bold text-ink">지역</span>
+              <select
+                aria-label="지역"
+                value={currentAreaId ?? ""}
+                onChange={(event) => selectArea(event.target.value)}
+                className={`rounded-field border border-line bg-field px-3 py-2 text-sm outline-none focus-visible:border-brand
+                  ${currentAreaId === null && geo.kind === "ready" ? "font-bold text-brand" : "text-ink"}`}
+              >
+                {currentAreaId === null ? (
+                  <option value="" disabled>
+                    {geo.kind === "asking" ? "위치 확인 중…" : "내 위치 기준"}
+                  </option>
+                ) : null}
+                {AREAS.map((area) => (
+                  <option key={area.id} value={area.id}>
+                    {area.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <Button
               type="button"
@@ -377,12 +392,33 @@ export function StationsScreen() {
                * 지금 캐시는 전남·광주만 담고 있어서, 서울에서 열면 빈 목록이
                * 온다 — 그걸 "주변에 없다"고 하면 거짓말이 된다. 어느 쪽인지
                * 프론트가 알 수 없으므로 둘 다 말하고 지역을 고를 길을 준다.
+               *
+               * "지역을 바꿔 보세요"라고만 하면 어디서 바꾸는지 찾아야 한다. 말한
+               * 자리에서 바로 누를 수 있게 수집된 지역을 늘어놓는다. 지금 보는
+               * 지역은 빼야 한다 — 눌러도 같은 빈 화면이면 고장으로 읽힌다.
                */
               <div className="rounded-card border border-line bg-surface px-5 py-8 text-center">
                 <p className="text-ink-2">이 근처에서 충전소를 찾지 못했어요</p>
                 <p className="mt-2 text-sm text-ink-3">
-                  지금은 전남·광주 지역 충전소만 수집돼 있어요. 위쪽에서 지역을 바꿔 보세요.
+                  지금은 전남·광주 지역 충전소만 수집돼 있어요. 아래 지역에서 찾아보세요.
                 </p>
+                <div
+                  role="group"
+                  aria-label="수집된 지역"
+                  className="mt-4 flex flex-wrap justify-center gap-2"
+                >
+                  {AREAS.filter((area) => area.id !== currentAreaId).map((area) => (
+                    <button
+                      key={area.id}
+                      type="button"
+                      onClick={() => selectArea(area.id)}
+                      className="rounded-pill border border-line bg-surface px-4 py-2 text-sm font-bold text-ink-2 transition-colors
+                        hover:bg-canvas focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                    >
+                      {area.name}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : visible.length === 0 ? (
               <p className="rounded-card border border-line bg-surface px-5 py-8 text-center text-ink-2">

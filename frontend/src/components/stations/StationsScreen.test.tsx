@@ -254,6 +254,83 @@ describe("주변 충전소 — 위치", () => {
     await waitFor(() => expect(callsTo(calls, "GET", "/api/chargers")).toHaveLength(1));
   });
 
+  /*
+   * 위치를 얻었다고 지역을 못 고르게 되면 막다른 길이다. 캐시는 전남·광주만
+   * 담고 있어서, 서울에서 위치를 허용한 사람은 빈 목록만 보고 갈 곳이 없었다.
+   * 기본은 내 위치로 찾되, 지역은 언제든 바꿀 수 있어야 한다.
+   */
+  test("위치를 얻어도 지역을 고를 수 있고, 고르면 그 지역 좌표로 찾는다", async () => {
+    const user = userEvent.setup();
+    stubGeolocation(SEOUL);
+    const calls = renderScreen(routes(NOT_IMPLEMENTED));
+
+    // 처음엔 내 위치로 찾는다.
+    await waitFor(() => expect(callsTo(calls, "GET", "/api/chargers")).toHaveLength(1));
+    expect(callsTo(calls, "GET", "/api/chargers")[0].url).toContain(`lat=${SEOUL.lat}`);
+
+    const picker = screen.getByRole("combobox", { name: /지역/ });
+    // 내 위치로 찾는 중이라는 걸 고르개가 밝힌다 — 빛가람인 척하지 않는다.
+    expect(within(picker).getByRole("option", { selected: true })).toHaveTextContent(/내 위치/);
+
+    const 목포 = AREAS.find((a) => a.id === "mokpo")!;
+    await user.selectOptions(picker, 목포.id);
+
+    await waitFor(() => {
+      const urls = callsTo(calls, "GET", "/api/chargers").map((c) => c.url);
+      expect(urls.at(-1)).toContain(`lat=${목포.lat}`);
+      expect(urls.at(-1)).toContain(`lng=${목포.lng}`);
+    });
+    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue(목포.id);
+  });
+
+  test("지역을 골랐다가 내 위치로 돌아올 수 있다", async () => {
+    const user = userEvent.setup();
+    stubGeolocation(SEOUL);
+    const calls = renderScreen(routes(NOT_IMPLEMENTED));
+
+    await waitFor(() => expect(callsTo(calls, "GET", "/api/chargers")).toHaveLength(1));
+    await user.selectOptions(screen.getByRole("combobox", { name: /지역/ }), "mokpo");
+    await waitFor(() =>
+      expect(callsTo(calls, "GET", "/api/chargers").at(-1)?.url).toContain("lat=34.8118"),
+    );
+    await user.click(screen.getByRole("button", { name: /내 위치/ }));
+
+    await waitFor(() => {
+      const urls = callsTo(calls, "GET", "/api/chargers").map((c) => c.url);
+      expect(urls.at(-1)).toContain(`lat=${SEOUL.lat}`);
+    });
+  });
+
+  /*
+   * 위치 응답이 늦게 오는 동안 사용자가 먼저 지역을 골랐다면, 뒤늦게 온 위치가
+   * 그 선택을 덮어쓰면 안 된다. 고른 지역이 말없이 다른 곳으로 바뀐다.
+   */
+  test("위치 응답보다 먼저 고른 지역을 늦게 온 위치가 덮어쓰지 않는다", async () => {
+    const user = userEvent.setup();
+    let answer: ((position: { coords: { latitude: number; longitude: number } }) => void) | null =
+      null;
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition(onSuccess: typeof answer) {
+          answer = onSuccess;
+        },
+      },
+    });
+    const calls = renderScreen(routes(NOT_IMPLEMENTED));
+
+    const picker = await screen.findByRole("combobox", { name: /지역/ });
+    await user.selectOptions(picker, "mokpo");
+    await waitFor(() => expect(answer).not.toBeNull());
+    await act(async () => {
+      answer!({ coords: { latitude: SEOUL.lat, longitude: SEOUL.lng } });
+    });
+
+    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue("mokpo");
+    const urls = callsTo(calls, "GET", "/api/chargers").map((c) => c.url);
+    expect(urls.some((u) => u.includes(`lat=${SEOUL.lat}`))).toBe(false);
+  });
+
   test("각주에 좌표를 저장하지 않는다는 것을 밝힌다", async () => {
     stubGeolocation(SEOUL);
     renderScreen(routes(NOT_IMPLEMENTED));
@@ -372,6 +449,48 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
 
     expect(await screen.findByText("이 근처에서 충전소를 찾지 못했어요")).toBeInTheDocument();
     expect(screen.getByText(/전남·광주 지역 충전소만 수집/)).toBeInTheDocument();
+  });
+
+  /*
+   * 빈 목록이 "지역을 바꿔 보세요"라고 말한다면, 바꿀 수단이 바로 거기 있어야
+   * 한다. 위치를 허용한 서울 사용자가 실제로 이 화면에서 갈 곳을 잃었다.
+   */
+  test("빈 목록에서 바로 수집된 지역으로 옮겨 찾을 수 있다", async () => {
+    const user = userEvent.setup();
+    stubGeolocation(SEOUL);
+    const calls = renderScreen(routes({ body: [] }));
+
+    await screen.findByText("이 근처에서 충전소를 찾지 못했어요");
+    const 목포 = AREAS.find((a) => a.id === "mokpo")!;
+    const shortcuts = screen.getByRole("group", { name: /수집된 지역/ });
+    await user.click(within(shortcuts).getByRole("button", { name: 목포.name }));
+
+    await waitFor(() => {
+      const urls = callsTo(calls, "GET", "/api/chargers").map((c) => c.url);
+      expect(urls.at(-1)).toContain(`lat=${목포.lat}`);
+      expect(urls.at(-1)).toContain(`lng=${목포.lng}`);
+    });
+    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue(목포.id);
+  });
+
+  test("빈 목록의 지역 바로가기에 지금 보는 지역은 빼고 보여준다", async () => {
+    const user = userEvent.setup();
+    stubGeolocation({ kind: "denied" });
+    renderScreen(routes({ body: [] }));
+
+    await screen.findByText("이 근처에서 충전소를 찾지 못했어요");
+    const shortcuts = screen.getByRole("group", { name: /수집된 지역/ });
+    expect(
+      within(shortcuts).queryByRole("button", { name: DEFAULT_AREA.name }),
+    ).not.toBeInTheDocument();
+    await user.click(within(shortcuts).getByRole("button", { name: "목포" }));
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("group", { name: /수집된 지역/ })).getByRole("button", {
+          name: DEFAULT_AREA.name,
+        }),
+      ).toBeInTheDocument(),
+    );
   });
 
   test("별을 누르면 즐겨찾기에 넣고, 다시 누르면 뺀다", async () => {
