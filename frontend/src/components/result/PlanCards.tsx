@@ -11,7 +11,7 @@ import { planSummarySentence } from "./plan-text";
  *
  * 모바일은 [검정][지금 바로][추천][라임 절감액] 네 장,
  * 데스크톱은 [검정][지금 바로][라임 추천] 세 장이다.
- * "추천" 카드는 모바일에서 흰 카드 + 초록 테두리, 데스크톱에서 라임 카드로 바뀐다 —
+ * "추천" 카드는 모바일에서 흰 카드 + 브랜드(네이비) 테두리, 데스크톱에서 라임 카드로 바뀐다 —
  * 같은 금액을 두 번 그리지 않으려고 카드 하나에 클래스만 갈아 끼웠다.
  */
 export function PlanCards({
@@ -64,7 +64,7 @@ export function PlanCards({
       </Card>
 
       <Card className="p-4 lg:p-6">
-        <p className="text-xs font-bold text-ink-3 lg:text-sm">
+        <p className="text-sm font-bold text-ink-2">
           지금 바로 · <span className="tnum">{formatHm(baseline_now.start)}</span>
         </p>
         <p className="tnum mt-3 text-2xl font-bold lg:mt-5 lg:text-[30px]">
@@ -85,7 +85,7 @@ export function PlanCards({
           saves ? "lg:border-transparent lg:bg-accent" : "lg:border-line"
         }`}
       >
-        <p className="text-xs font-bold text-brand lg:text-sm lg:text-ink">
+        <p className="text-sm font-bold text-brand lg:text-ink">
           <span className="lg:hidden">
             추천 · <span className="tnum">{formatHm(best.start)}</span>
           </span>

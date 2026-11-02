@@ -246,7 +246,7 @@ export function TimelineScreen({
     <PageContainer className="pb-8">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-4">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-extrabold tracking-tight text-ink lg:text-[28px]">
+          <h1 className="text-title text-ink lg:text-title-lg">
             하루 단가
           </h1>
           {/*
@@ -306,13 +306,13 @@ export function TimelineScreen({
         {/* 차트 */}
         <Card className="p-4 lg:p-6">
           <div className="flex items-start justify-between gap-3">
-            <h2 className="text-[15px] font-bold text-ink lg:text-base">
+            <h2 className="text-base font-bold text-ink">
               시간별 단가
-              <span className="ml-2 hidden text-sm font-medium text-ink-3 lg:inline">
+              <span className="ml-2 hidden text-sm font-medium text-ink-2 lg:inline">
                 원/kWh
               </span>
             </h2>
-            <span className="text-xs text-ink-3 lg:hidden">원/kWh</span>
+            <span className="text-sm text-ink-2 lg:hidden">원/kWh</span>
             {data ? (
               <div className="hidden lg:block">
                 <BandLegend

@@ -33,7 +33,7 @@ export function PriceListCard({
               style={{ background: BAND_COLOR[row.key] }}
               aria-hidden
             />
-            <span className="flex-1 text-[15px] font-bold text-ink">
+            <span className="flex-1 text-base font-bold text-ink">
               {BAND_KEY_LONG_LABEL[row.key]}
             </span>
             <span className="tnum text-lg font-bold text-ink">{formatBandPrice(row)}</span>
@@ -47,7 +47,7 @@ export function PriceListCard({
        * 이 단가들은 확정됐고 각주만 남아 거짓말이 됐다. 이제 서버가 알려주는
        * 미확인 항목에서 문장을 만들고, 남은 게 없으면 출처만 적는다.
        */}
-      <p className="border-t border-line px-4 py-3 text-xs leading-relaxed text-ink-3 lg:px-5">
+      <p className="border-t border-line px-4 py-3 text-sm leading-relaxed text-ink-2 lg:px-5">
         <span className="hidden lg:inline">원/kWh · </span>
         {note ?? "출처: 한국전력공사 전기요금표"}
       </p>

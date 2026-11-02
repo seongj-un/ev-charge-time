@@ -29,7 +29,7 @@ export function DayStepper({
 }) {
   return (
     <div
-      className={`flex items-center gap-2 rounded-card border border-line bg-surface p-2 lg:gap-1 lg:rounded-pill lg:p-1.5 ${className}`}
+      className={`flex items-center gap-2 rounded-card border border-line bg-surface p-2 lg:gap-1 lg:rounded-field lg:p-1.5 ${className}`}
     >
       <StepButton label="이전 날" disabled={day === null} onClick={() => onShift(-1)}>
         <ChevronLeftIcon />
@@ -41,12 +41,12 @@ export function DayStepper({
         ) : (
           /* 고정폭(.tnum)은 단가·시각처럼 세로로 줄 세워 읽는 숫자용이다.
              한글이 섞인 날짜에 걸면 글자 사이가 벌어져 디자인과 어긋난다. */
-          <p className="text-[15px] font-bold text-ink lg:text-base">
+          <p className="text-base font-bold text-ink">
             {formatKoreanDate(day)}
           </p>
         )}
         {subtitle ? (
-          <p className="mt-0.5 text-xs text-ink-3 lg:hidden">{subtitle}</p>
+          <p className="mt-0.5 text-sm text-ink-2 lg:hidden">{subtitle}</p>
         ) : null}
       </div>
 
@@ -74,9 +74,9 @@ function StepButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-10 shrink-0 place-items-center rounded-field bg-canvas text-ink transition-colors hover:bg-sunken active:bg-sunken disabled:opacity-45
+      className="grid size-11 shrink-0 place-items-center rounded-field bg-canvas text-ink transition-colors hover:bg-sunken active:bg-sunken disabled:opacity-45
         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand
-        lg:size-9 lg:rounded-pill"
+        lg:size-11 lg:rounded-lg"
     >
       {children}
     </button>

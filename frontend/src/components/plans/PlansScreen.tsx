@@ -179,13 +179,13 @@ export function PlansScreen() {
         <Link
           href="/me"
           aria-label="마이페이지로"
-          className="-ml-1 rounded-pill p-1 text-ink-2 transition-colors hover:text-ink
+          className="-ml-2 inline-flex size-11 items-center justify-center rounded-lg text-ink-2 transition-colors duration-150 hover:text-ink
             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand lg:hidden"
         >
           <ChevronLeftIcon className="size-5" />
         </Link>
 
-        <h1 className="text-xl font-bold lg:text-[26px]">충전 기록</h1>
+        <h1 className="text-title lg:text-title-lg">충전 기록</h1>
 
         {status === "authenticated" && month !== null ? (
           <div className="ml-auto flex items-center gap-2">
@@ -198,7 +198,7 @@ export function PlansScreen() {
       </div>
 
       {!hydrated || status === "loading" ? (
-        <p role="status" className="mt-6 text-sm text-ink-3">
+        <p role="status" className="mt-6 text-sm text-ink-2">
           충전 기록을 불러오고 있어요…
         </p>
       ) : null}
@@ -212,7 +212,7 @@ export function PlansScreen() {
 
       {status === "anonymous" ? (
         <Card className="mt-5 p-6 lg:mt-6 lg:p-8">
-          <h2 className="text-lg font-bold">로그인이 필요해요</h2>
+          <h2 className="text-section">로그인이 필요해요</h2>
           <p className="mt-2 max-w-[32rem] text-sm leading-relaxed text-ink-2">
             충전 기록은 계정에 저장됩니다. 로그인하면 저장한 계획과 달별 절감액을 볼 수 있어요.
             추천 자체는 로그인 없이도 그대로 쓸 수 있습니다.
@@ -235,7 +235,7 @@ export function PlansScreen() {
 
           {list.loading ? (
             <div role="status" className="mt-4 space-y-3 lg:mt-5">
-              <p className="text-sm text-ink-3">기록을 불러오고 있어요…</p>
+              <p className="text-sm text-ink-2">기록을 불러오고 있어요…</p>
               <div className="h-[92px] animate-pulse rounded-card bg-sunken" />
               <div className="h-[92px] animate-pulse rounded-card bg-sunken" />
             </div>
@@ -243,7 +243,7 @@ export function PlansScreen() {
 
           {list.error ? (
             <Card className="mt-4 p-6 lg:mt-5">
-              <h2 className="text-base font-bold">기록을 불러오지 못했어요</h2>
+              <h2 className="text-lg font-bold">기록을 불러오지 못했어요</h2>
               <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-ink-2">
                 {list.error}
               </p>
@@ -367,20 +367,20 @@ function SummaryCards({ summary }: { summary: PlanSummary | null }) {
   return (
     <div className="mt-5 grid grid-cols-2 gap-3 lg:mt-6 lg:gap-5">
       <Card className="p-4 lg:p-6">
-        <p className="text-xs font-bold text-ink-2 lg:text-sm">저장한 계획</p>
+        <p className="text-sm font-bold text-ink-2">저장한 계획</p>
         <p className="mt-1 text-2xl font-bold lg:mt-2 lg:text-[32px]">
           {summary ? (
             <>
               <span className="tnum">{summary.count}</span>건
             </>
           ) : (
-            <span className="text-ink-3">—</span>
+            <span className="text-ink-2">—</span>
           )}
         </p>
       </Card>
 
       <Card tone="accent" className="p-4 lg:p-6">
-        <p className="text-xs font-bold lg:text-sm">예상 절감 합계</p>
+        <p className="text-sm font-bold">예상 절감 합계</p>
         <p className="mt-1 text-2xl font-bold lg:mt-2 lg:text-[32px]">
           {summary ? (
             <span className="tnum">{formatWon(summary.total_savings_won)}</span>
@@ -406,7 +406,7 @@ function Footnote({ items }: { items: SavedPlan[] }) {
   const version = versions.length === 1 ? versions[0] : null;
 
   return (
-    <p className="mt-8 text-xs leading-relaxed text-ink-3 lg:mt-10">
+    <p className="mt-8 text-sm leading-relaxed text-ink-2 lg:mt-10">
       저장한 계획이며 실제 충전 기록이 아니에요. 금액은 저장 당시 요금표
       {version ? <span className="tnum">({version})</span> : null} 기준이라, 지금 다시
       계산하면 달라질 수 있어요.

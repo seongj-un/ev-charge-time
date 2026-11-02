@@ -23,8 +23,10 @@ export function TabBar() {
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex flex-col items-center gap-1 py-2.5 text-[11px] font-bold transition-colors
-                  ${active ? "text-brand" : "text-ink-3 hover:text-ink-2"}`}
+                // 활성 표시: 브랜드 글자 + 위쪽 짧은 선 (데스크톱 상단 내비와 같은 시그니처)
+                className={`relative flex min-h-14 flex-col items-center justify-center gap-1 py-2 text-xs font-bold transition-colors duration-150
+                  before:absolute before:left-1/2 before:top-0 before:h-0.5 before:w-8 before:-translate-x-1/2 before:rounded-full before:content-['']
+                  ${active ? "text-brand before:bg-brand" : "text-ink-2 before:bg-transparent hover:text-ink"}`}
               >
                 <Icon className="size-6" />
                 {item.short}

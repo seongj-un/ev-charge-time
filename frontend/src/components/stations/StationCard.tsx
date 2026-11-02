@@ -69,10 +69,10 @@ function ChargerRow({ charger }: { charger: Charger }) {
  */
 function ChargerList({ chargers }: { chargers: Charger[] | null }) {
   if (chargers === null) {
-    return <p className="text-sm text-ink-3">충전기 정보를 아직 불러오지 못했어요</p>;
+    return <p className="text-sm text-ink-2">충전기 정보를 아직 불러오지 못했어요</p>;
   }
   if (chargers.length === 0) {
-    return <p className="text-sm text-ink-3">등록된 충전기가 없어요</p>;
+    return <p className="text-sm text-ink-2">등록된 충전기가 없어요</p>;
   }
   return (
     <div className="flex flex-col gap-1.5">
@@ -97,20 +97,20 @@ export function StationCard({ station, favorite, signInHref, children }: Props) 
   const meta = metaLine([station.address, station.operator, station.available_hours]);
 
   return (
-    <li className="rounded-card border border-line bg-surface p-4">
+    <li className="rounded-card border border-line bg-surface p-4 lg:p-5">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             {missing ? (
               // 이름 자리에 station_id를 키워 넣지 않는다. 없는 이름을 지어내는 것과 같다.
-              <p className="text-sm font-bold text-ink-3">{name}</p>
+              <p className="text-sm font-bold text-ink-2">{name}</p>
             ) : (
               <h3 className="text-base font-bold text-ink">{name}</h3>
             )}
-            {distance ? <span className="tnum text-sm text-ink-3">{distance}</span> : null}
+            {distance ? <span className="tnum text-sm text-ink-2">{distance}</span> : null}
           </div>
 
-          <p className="mt-0.5 text-xs text-ink-3">
+          <p className="mt-0.5 text-sm text-ink-2">
             <span className="tnum">{station.station_id}</span>
           </p>
 
@@ -130,7 +130,7 @@ export function StationCard({ station, favorite, signInHref, children }: Props) 
             aria-label={`${missing ? `충전소 ${station.station_id}` : name} 즐겨찾기`}
             disabled={favorite.busy}
             onClick={favorite.onToggle}
-            className="shrink-0 rounded-full p-2 text-ink-3 transition-colors hover:bg-canvas focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
+            className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-ink-2 transition-colors duration-150 hover:bg-canvas focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
           >
             <StarIcon filled={favorite.pressed} />
           </button>
@@ -139,7 +139,7 @@ export function StationCard({ station, favorite, signInHref, children }: Props) 
           <Link
             href={signInHref}
             aria-label={`로그인하고 ${missing ? `충전소 ${station.station_id}` : name} 즐겨찾기`}
-            className="shrink-0 rounded-full p-2 text-ink-3 transition-colors hover:bg-canvas"
+            className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-ink-2 transition-colors duration-150 hover:bg-canvas"
           >
             <StarIcon filled={false} />
           </Link>

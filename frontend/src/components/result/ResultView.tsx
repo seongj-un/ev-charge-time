@@ -172,7 +172,7 @@ export function ResultView({ query }: { query: string }) {
           ) : null}
 
           {chart.status === "error" ? (
-            <p className="mt-3 text-sm text-ink-3 lg:mt-5">
+            <p className="mt-3 text-sm text-ink-2 lg:mt-5">
               시간대별 단가를 불러오지 못했습니다. 위 추천 시각과 금액은 그대로입니다.
             </p>
           ) : null}
@@ -191,10 +191,10 @@ export function ResultView({ query }: { query: string }) {
                 "어디가 잠정치냐"는 질문에 답할 수 있어야 한다.
               */}
               <details className="mt-1.5">
-                <summary className="cursor-pointer text-xs font-bold">
+                <summary className="cursor-pointer text-sm font-bold">
                   확인 전 항목 <span className="tnum">{unverifiedItems.length}</span>건
                 </summary>
-                <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs">
+                <ul className="mt-1 list-disc space-y-0.5 pl-4 text-sm">
                   {unverifiedItems.map((item) => (
                     <li key={item}>{item}</li>
                   ))}
@@ -204,7 +204,7 @@ export function ResultView({ query }: { query: string }) {
           ) : null}
 
           {assumptions ? (
-            <p className="mt-4 text-xs leading-relaxed text-ink-3">{assumptions}</p>
+            <p className="mt-4 text-sm leading-relaxed text-ink-2">{assumptions}</p>
           ) : null}
 
           <ResultActions />

@@ -58,13 +58,13 @@ export function SignInRequired({
   return (
     <PageContainer className="pb-10">
       <section className="mx-auto w-full max-w-[520px] py-8 text-center lg:py-16">
-        <h1 className="text-2xl font-bold tracking-tight text-ink lg:text-[28px]">
+        <h1 className="text-title text-ink lg:text-title-lg">
           로그인이 필요해요
         </h1>
-        <p className="mt-2.5 text-sm leading-relaxed text-ink-2">{description}</p>
+        <p className="mt-3 text-base leading-relaxed text-ink-2">{description}</p>
 
         <div className="mt-6 flex flex-col gap-2.5 lg:flex-row lg:justify-center">
-          <ButtonLink href={`/login${query}`} variant="dark" size="lg">
+          <ButtonLink href={`/login${query}`} variant="primary" size="lg">
             로그인
           </ButtonLink>
           <ButtonLink href={`/signup${query}`} variant="outline" size="lg">
@@ -73,7 +73,7 @@ export function SignInRequired({
         </div>
 
         {/* 막다른 길로 두지 않는다. 추천은 로그인 없이도 전부 쓸 수 있다. */}
-        <p className="mt-8 text-sm text-ink-3">
+        <p className="mt-8 text-sm text-ink-2">
           추천은 로그인 없이도 쓸 수 있어요.{" "}
           <Link href="/recommend" className="font-bold text-brand underline underline-offset-2">
             충전 시간 추천받기
@@ -89,7 +89,7 @@ export function ServerUnreachable({ title }: { title: string }) {
   return (
     <PageContainer className="pb-10">
       <section className="mx-auto w-full max-w-[560px] py-8 lg:py-12">
-        <h1 className="text-2xl font-bold tracking-tight text-ink lg:text-[28px]">{title}</h1>
+        <h1 className="text-title text-ink lg:text-title-lg">{title}</h1>
         <Notice className="mt-5">
           서버에 연결하지 못했습니다. 백엔드가 실행 중인지 확인하세요.
         </Notice>
@@ -145,7 +145,7 @@ export function DangerButton({
   return (
     <button
       type="button"
-      className={`inline-flex h-11 items-center justify-center rounded-pill px-4 text-sm font-bold text-danger transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-45 ${TONE} ${className}`}
+      className={`inline-flex h-11 items-center justify-center rounded-field px-4 text-sm font-bold text-danger transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-45 ${TONE} ${className}`}
       {...props}
     />
   );

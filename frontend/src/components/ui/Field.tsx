@@ -2,9 +2,10 @@ import type { ComponentProps, ReactNode } from "react";
 import { useId } from "react";
 
 const CONTROL =
-  "w-full rounded-field bg-field border border-line px-3.5 h-12 text-ink " +
-  "placeholder:text-ink-3 focus:outline-2 focus:outline-offset-0 focus:outline-brand " +
-  "focus:border-brand transition-colors";
+  "w-full rounded-field bg-field border border-line px-4 h-12 text-ink " +
+  "placeholder:text-ink-3 hover:border-ink-3 " +
+  "focus:outline-2 focus:outline-offset-0 focus:outline-brand focus:border-brand " +
+  "disabled:cursor-not-allowed disabled:opacity-60 transition-colors duration-150";
 
 /** 라벨 + 입력 한 벌. 라벨과 입력의 id 연결을 매번 손으로 하지 않으려고 묶었다. */
 export function Field({
@@ -28,7 +29,7 @@ export function Field({
 
   return (
     <div className={className}>
-      <label htmlFor={id} className="block text-sm font-bold text-ink-2 mb-2">
+      <label htmlFor={id} className="block text-sm font-bold text-ink mb-2">
         {label}
       </label>
       <div className="relative">
@@ -36,24 +37,24 @@ export function Field({
           id={id}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy || undefined}
-          className={`${CONTROL} tnum ${suffix ? "pr-10" : ""} ${
+          className={`${CONTROL} tnum ${suffix ? "pr-14" : ""} ${
             error ? "border-danger outline-danger" : ""
           }`}
           {...props}
         />
         {suffix ? (
-          <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-ink-3 pointer-events-none">
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-ink-2 pointer-events-none">
             {suffix}
           </span>
         ) : null}
       </div>
       {hint ? (
-        <p id={`${id}-hint`} className="mt-1.5 text-xs text-ink-3">
+        <p id={`${id}-hint`} className="mt-2 text-sm text-ink-2">
           {hint}
         </p>
       ) : null}
       {error ? (
-        <p id={`${id}-error`} className="mt-1.5 text-xs text-danger">
+        <p id={`${id}-error`} className="mt-2 text-sm font-medium text-danger">
           {error}
         </p>
       ) : null}
@@ -72,13 +73,13 @@ export function SelectField({
   const id = useId();
   return (
     <div className={className}>
-      <label htmlFor={id} className="block text-sm font-bold text-ink-2 mb-2">
+      <label htmlFor={id} className="block text-sm font-bold text-ink mb-2">
         {label}
       </label>
-      <select id={id} className={`${CONTROL} appearance-none pr-10`} {...props}>
+      <select id={id} className={`${CONTROL} appearance-none pr-14`} {...props}>
         {children}
       </select>
-      {hint ? <p className="mt-1.5 text-xs text-ink-3">{hint}</p> : null}
+      {hint ? <p className="mt-2 text-sm text-ink-2">{hint}</p> : null}
     </div>
   );
 }

@@ -74,7 +74,7 @@ export function SolarOverlay({ hours, columns, assumptions, className = "" }: Pr
          * 짐작할 수 없다. 안 보여주면 정밀한 지역 예측이라고 읽는다 —
          * unverified_tariff_items와 같은 성격이라 같은 방식으로 다룬다.
          */
-        <ul role="note" className="mt-2 flex flex-col gap-0.5 text-xs leading-relaxed text-ink-3">
+        <ul role="note" className="mt-2 flex flex-col gap-0.5 text-sm leading-relaxed text-ink-2">
           {assumptions.map((line) => (
             <li key={line}>· {line}</li>
           ))}

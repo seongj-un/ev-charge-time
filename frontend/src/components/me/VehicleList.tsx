@@ -60,7 +60,7 @@ export function VehicleList({
               {confirming ? (
                 <div className="mt-3 lg:mt-0 lg:shrink-0 lg:text-right">
                   <p className="text-sm font-bold text-ink">정말 삭제할까요?</p>
-                  <p className="mt-0.5 text-xs text-ink-3">되돌릴 수 없어요.</p>
+                  <p className="mt-0.5 text-sm text-ink-2">되돌릴 수 없어요.</p>
                   <div className="mt-2 flex gap-2">
                     <DangerButton
                       tone="outline"

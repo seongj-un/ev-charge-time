@@ -35,10 +35,10 @@ export function DiscountBanner({
       <div className="flex items-start gap-2.5">
         <SunIcon className="size-5 shrink-0 lg:hidden" />
         <div className="min-w-0">
-          <p className="text-[13px] leading-snug font-bold lg:text-base">
+          <p className="text-sm leading-snug font-bold lg:text-base">
             {range} {DISCOUNT_RATE_LABEL}
             {/* 모바일은 한 줄로 붙이고, 데스크톱은 아래 문장으로 푼다 (디자인 p-04 / p-17) */}
-            <span className="text-xs font-medium lg:hidden"> · {scope}</span>
+            <span className="text-sm font-medium lg:hidden"> · {scope}</span>
           </p>
           <p className="mt-1.5 hidden text-sm lg:block">{scope}에 적용돼요.</p>
         </div>

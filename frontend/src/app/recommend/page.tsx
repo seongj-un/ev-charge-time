@@ -79,13 +79,13 @@ function renderPage(
        * 화면 전체의 이름은 여전히 이 문장이다. 지우지 않고 sr-only로 남겨
        * 어느 폭에서든 h1이 하나씩 있게 한다.
        */}
-      <h1 className="mt-3 text-[28px] font-bold leading-[1.25] tracking-tight lg:sr-only lg:mt-0">
+      <h1 className="mt-4 text-title lg:sr-only lg:mt-0">
         언제 충전하면
         <br />
         가장 쌀까요?
       </h1>
 
-      <div className="mt-6 lg:mt-0 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">
+      <div className="mt-6 lg:mt-0 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-10">
         <ChargeForm
           initialDay={initialDay}
           initialMode={initialMode}
@@ -95,8 +95,8 @@ function renderPage(
 
         <aside className="hidden lg:flex lg:flex-col lg:gap-4">
           {GUIDES.map((guide) => (
-            <Card key={guide.title} tone="sunken" className="p-5">
-              <h2 className="text-sm font-bold text-ink">{guide.title}</h2>
+            <Card key={guide.title} tone="sunken" className="p-6">
+              <h2 className="text-base font-bold text-ink">{guide.title}</h2>
               <p className="mt-2 text-sm leading-relaxed text-ink-2">{guide.body}</p>
             </Card>
           ))}

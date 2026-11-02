@@ -153,15 +153,15 @@ export function MeSummary() {
 
   return (
     <MeLayout>
-      <h1 className="text-2xl font-bold tracking-tight text-ink lg:text-[32px]">
+      <h1 className="text-title text-ink lg:text-title-lg">
         {user.nickname ?? user.email} 님
       </h1>
-      <p className="mt-1 text-sm text-ink-3">{user.email}</p>
+      <p className="mt-2 text-base text-ink-2">{user.email}</p>
 
-      <div className="mt-5 grid gap-3 lg:mt-6 lg:grid-cols-3 lg:items-start lg:gap-5">
+      <div className="mt-6 grid gap-3 lg:mt-8 lg:grid-cols-3 lg:items-start lg:gap-6">
         {/* 기본 차량 — 모바일은 검정 카드(p-08), 데스크톱은 흰 카드(p-21) */}
-        <Card tone="ink" className="p-5 lg:border lg:border-line lg:bg-surface lg:text-ink">
-          <p className="text-xs font-bold text-white/60 lg:text-ink-3">기본 차량</p>
+        <Card tone="ink" className="p-5 lg:border lg:border-line lg:bg-surface lg:p-6 lg:text-ink">
+          <p className="text-sm font-bold text-white/70 lg:text-ink-2">기본 차량</p>
           {defaultVehicle ? (
             <>
               <p className="mt-2 text-xl font-bold lg:text-[22px]">{defaultVehicle.name}</p>
@@ -205,9 +205,9 @@ export function MeSummary() {
          * 모바일은 흰 칸 + 라임 칸 두 장(p-08), 데스크톱은 한 카드 안의 두 줄(p-21).
          * 같은 내용을 두 번 그리지 않으려고 안쪽 그리드를 lg에서 한 열로 접는다.
          */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-1 lg:gap-0 lg:rounded-card lg:border lg:border-line lg:bg-surface lg:p-5">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-1 lg:gap-0 lg:rounded-card lg:border lg:border-line lg:bg-surface lg:p-6">
           <Card className="p-4 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
-            <p className="text-xs font-bold text-ink-3">
+            <p className="text-sm font-bold text-ink-2">
               이번 달 저장<span className="hidden lg:inline">한 계획</span>
             </p>
             <p className="tnum mt-2 text-xl font-bold text-ink lg:text-[22px]">{countText}</p>
@@ -217,7 +217,7 @@ export function MeSummary() {
             tone="accent"
             className="p-4 lg:mt-2 lg:rounded-none lg:bg-transparent lg:p-0"
           >
-            <p className="text-xs font-bold text-ink/70 lg:text-ink-3">예상 절감 합계</p>
+            <p className="text-sm font-bold text-ink/70 lg:text-ink-2">예상 절감 합계</p>
             <p className="tnum mt-2 text-xl font-bold lg:mt-0.5 lg:text-base">{savingsText}</p>
           </Card>
 
@@ -230,8 +230,8 @@ export function MeSummary() {
         </div>
 
         {/* 즐겨찾는 충전소. 로딩과 실패는 실제 0곳과 구분한다. */}
-        <Card className="hidden p-5 lg:block">
-          <p className="text-xs font-bold text-ink-3">즐겨찾는 충전소</p>
+        <Card className="hidden p-6 lg:block">
+          <p className="text-sm font-bold text-ink-2">즐겨찾는 충전소</p>
           <p className="tnum mt-2 text-xl font-bold text-ink lg:text-[22px]">
             {typeof favoriteCount === "number" ? `${favoriteCount}곳` : "—"}
           </p>
@@ -276,9 +276,9 @@ export function MeSummary() {
             href={item.href}
             className="flex items-center justify-between gap-3 rounded-card border border-line bg-surface px-4 py-4"
           >
-            <span className="text-[15px] font-bold text-ink">{item.label}</span>
+            <span className="text-base font-bold text-ink">{item.label}</span>
             <span className="flex items-center gap-2">
-              <ChevronRightIcon className="size-5 text-ink-3" />
+              <ChevronRightIcon className="size-5 text-ink-2" />
             </span>
           </Link>
         ))}
@@ -288,7 +288,7 @@ export function MeSummary() {
       <section className="mt-6 lg:mt-10">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:rounded-card lg:border lg:border-line lg:bg-surface lg:p-6">
           <div className="hidden lg:block">
-            <h2 className="text-base font-bold text-ink">계정</h2>
+            <h2 className="text-lg font-bold text-ink">계정</h2>
             <p className="mt-1 text-sm text-ink-2">
               탈퇴하면 차량·충전 기록·즐겨찾기가 모두 삭제돼요.
             </p>

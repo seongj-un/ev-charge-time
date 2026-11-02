@@ -113,7 +113,7 @@ export function PriceBarChart({
                 <div
                   aria-hidden
                   data-chart-tooltip
-                  className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-ink px-2.5 py-1.5 text-xs font-bold text-white shadow-lg"
+                  className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-ink px-2.5 py-1.5 text-xs font-bold text-white shadow-float"
                 >
                   <span className="tnum">{column.hour}시</span> ·{" "}
                   {BAND_KEY_LABEL[column.bandKey]} ·{" "}
@@ -131,7 +131,7 @@ export function PriceBarChart({
           {columns.map((column, index) => (
             <div
               key={index}
-              className="tnum flex-1 text-center text-[11px] text-ink-3"
+              className="tnum flex-1 text-center text-xs text-ink-2"
             >
               {index % labelEvery === 0 ? column.hour : ""}
             </div>
@@ -174,7 +174,7 @@ export function BandLegend({
   className?: string;
 }) {
   return (
-    <ul className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-2 ${className}`}>
+    <ul className={`flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-ink-2 ${className}`}>
       {keys.map((key) => (
         <li key={key} className="flex items-center gap-1.5">
           <span

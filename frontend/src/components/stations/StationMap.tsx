@@ -83,11 +83,12 @@ export function StationMap({ center, stations, className = "" }: Props) {
       if (!alive || !group) return;
 
       group.clearLayers();
+      const brand = brandColor();
       group.addLayer(
         L.circleMarker([center.lat, center.lng], {
           radius: 7,
-          color: "#0c5949",
-          fillColor: "#0c5949",
+          color: brand,
+          fillColor: brand,
           fillOpacity: 1,
           weight: 3,
         }).bindPopup("찾는 기준점"),
@@ -127,6 +128,16 @@ export function StationMap({ center, stations, className = "" }: Props) {
       aria-label="충전소 위치 지도"
     />
   );
+}
+
+/**
+ * Leaflet 마커는 SVG 속성으로 색을 받아 CSS 클래스(`bg-brand`)를 쓸 수 없다.
+ * 그래서 globals.css의 `--color-brand` 토큰 값을 읽어 넘긴다 — 메인색이 바뀌어도 기준점이 따라간다.
+ * 토큰을 못 읽는 환경(스타일 미적용)에서만 승인된 네이비 값을 쓴다.
+ */
+function brandColor(): string {
+  const value = getComputedStyle(document.documentElement).getPropertyValue("--color-brand").trim();
+  return value || "#243a5e";
 }
 
 /** 충전소 이름이 팝업 HTML에 그대로 들어간다. 외부 API가 준 문자열이다. */

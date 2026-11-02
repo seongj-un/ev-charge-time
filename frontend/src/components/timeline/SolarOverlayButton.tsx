@@ -51,10 +51,10 @@ export function SolarOverlayButton({
         px-4 py-3.5 text-sm text-ink-2 transition-colors disabled:opacity-100
         enabled:hover:bg-canvas enabled:border-solid
         ${on ? "bg-accent/20" : ""}
-        lg:w-auto lg:justify-start lg:rounded-pill lg:px-4 lg:py-2.5 lg:text-[13px] ${className}`}
+        lg:min-h-11 lg:w-auto lg:justify-start lg:rounded-field lg:px-4 lg:py-2.5 lg:text-sm ${className}`}
     >
       <span className="font-bold">태양광 발전 예측 겹쳐 보기</span>
-      <span className="text-ink-3">
+      <span className="text-ink-2">
         <span className="hidden lg:inline">· </span>
         {note}
       </span>

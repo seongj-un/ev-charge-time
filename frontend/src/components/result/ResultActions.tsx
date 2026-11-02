@@ -38,14 +38,14 @@ export function ResultActions() {
       <div className="lg:rounded-card lg:border lg:border-line lg:bg-surface lg:p-6">
         <div className="lg:flex lg:items-center lg:justify-between lg:gap-4">
           <div className="hidden lg:block">
-            <h2 className="text-base font-bold">어디서 충전할까요?</h2>
+            <h2 className="text-lg font-bold">어디서 충전할까요?</h2>
             <p className="mt-1 text-sm text-ink-2">가까운 충전소와 충전기 상태를 확인하세요.</p>
           </div>
           <ButtonLink
             href="/stations"
             variant="outline"
             size="lg"
-            className="w-full text-sm lg:h-11 lg:w-auto lg:shrink-0 lg:border-transparent lg:bg-brand lg:text-white lg:hover:bg-brand/90"
+            className="w-full text-sm lg:h-12 lg:w-auto lg:shrink-0 lg:border-transparent lg:bg-brand lg:text-white lg:hover:bg-ink"
           >
             주변 충전소
           </ButtonLink>
@@ -119,7 +119,7 @@ function SavePlanAction() {
     <div className="col-span-2 lg:col-span-1 lg:rounded-card lg:border lg:border-line lg:bg-surface lg:p-6">
       <div className="lg:flex lg:items-center lg:justify-between lg:gap-4">
         <div className="lg:min-w-0">
-          <h2 className="hidden text-base font-bold lg:block">이 계획을 저장할까요?</h2>
+          <h2 className="hidden text-lg font-bold lg:block">이 계획을 저장할까요?</h2>
           <p
             className={`mb-2.5 text-sm text-ink-2 lg:mt-1 lg:mb-0 ${
               descriptionOnDesktopOnly ? "hidden lg:block" : ""
@@ -134,7 +134,7 @@ function SavePlanAction() {
           <ButtonLink
             href={loginHref}
             size="lg"
-            className="w-full text-sm lg:h-11 lg:w-auto lg:shrink-0 lg:bg-ink lg:hover:bg-ink/90"
+            className="w-full text-sm lg:h-12 lg:w-auto lg:shrink-0 lg:bg-ink lg:hover:bg-ink/90"
           >
             <SaveIcon className="size-5 lg:hidden" />
             로그인하고 저장
@@ -145,7 +145,7 @@ function SavePlanAction() {
             size="lg"
             onClick={() => void save()}
             disabled={form === null || status === "loading" || state.status === "saving"}
-            className="w-full text-sm lg:h-11 lg:w-auto lg:shrink-0 lg:bg-ink lg:hover:bg-ink/90"
+            className="w-full text-sm lg:h-12 lg:w-auto lg:shrink-0 lg:bg-ink lg:hover:bg-ink/90"
           >
             <SaveIcon className="size-5 lg:hidden" />
             충전 기록에 저장
@@ -154,7 +154,7 @@ function SavePlanAction() {
       </div>
 
       {form === null ? (
-        <p className="mt-2.5 text-xs text-ink-3">
+        <p className="mt-2.5 text-sm text-ink-2">
           주소에 충전 조건이 들어 있지 않아 저장할 수 없어요.
         </p>
       ) : null}

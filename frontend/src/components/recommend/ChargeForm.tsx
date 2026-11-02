@@ -269,7 +269,7 @@ export function ChargeForm({
        */
       className="pb-2 lg:rounded-card lg:border lg:border-line lg:bg-surface lg:p-8"
     >
-      <h2 className="hidden lg:block mb-6 text-2xl font-bold tracking-tight">충전 조건 입력</h2>
+      <h2 className="hidden lg:block mb-8 text-section">충전 조건 입력</h2>
 
       {/* SelectField가 라벨을 직접 그리므로, 같은 줄 오른쪽에 링크를 얹는다. */}
       <div className="relative">
@@ -279,7 +279,9 @@ export function ChargeForm({
           onChange={(event) => pickVehicle(event.target.value)}
           disabled={!canPickVehicle}
           /* 못 누르는 칸이 눌리는 칸처럼 보이면 안 된다. 공유 컴포넌트는 못 고치니 여기서 입힌다. */
-          className={canPickVehicle ? "" : "[&_select]:cursor-not-allowed [&_select]:text-ink-3"}
+          className={`[&>label]:mb-0 [&>label]:flex [&>label]:min-h-11 [&>label]:items-center ${
+            canPickVehicle ? "" : "[&_select]:cursor-not-allowed [&_select]:text-ink-3"
+          }`}
           hint={vehicleHint}
         >
           <option value="">차량 정보 직접 입력</option>
@@ -291,7 +293,7 @@ export function ChargeForm({
         </SelectField>
         <Link
           href={vehicleLinkHref}
-          className="absolute right-0 top-0 text-sm font-bold text-brand underline underline-offset-4 hover:text-brand/80"
+          className="absolute right-0 top-0 inline-flex min-h-11 min-w-11 items-center justify-end text-sm font-bold text-brand underline underline-offset-4 hover:text-ink"
         >
           {vehicleLinkLabel}
         </Link>
@@ -301,7 +303,7 @@ export function ChargeForm({
        * 모바일 시안에는 이 두 칸이 없다. 차량 선택이 아직 501이라 어디선가 받지 않으면
        * 추천 자체를 못 하므로, 차량 선택 바로 아래(= 차량 정보 자리)에 그대로 노출한다.
        */}
-      <div className="mt-5 grid grid-cols-2 gap-3 lg:gap-5">
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:gap-5">
         <Field
           label="배터리 용량"
           suffix="kWh"
@@ -321,7 +323,7 @@ export function ChargeForm({
       </div>
 
       <SegmentedControl
-        className="mt-5"
+        className="mt-6"
         name="mode"
         label="충전 방식"
         value={conditions.mode}
@@ -331,7 +333,7 @@ export function ChargeForm({
 
       {conditions.mode === "public_fast" ? (
         <Field
-          className="mt-5"
+          className="mt-6"
           label="공용 급속 단가"
           suffix="원/kWh"
           inputMode="decimal"
@@ -343,7 +345,7 @@ export function ChargeForm({
       ) : null}
 
       {/* 모바일 시안은 이 네 칸만 흰 카드로 묶는다. 데스크톱은 바깥 카드 하나뿐이라 배경을 지운다. */}
-      <div className="mt-5 rounded-card border border-line bg-surface p-4 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
+      <div className="mt-6 rounded-card border border-line bg-surface p-4 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
         <div className="grid grid-cols-2 gap-3 lg:gap-5">
           <Field
             label="현재 충전량"
@@ -363,7 +365,7 @@ export function ChargeForm({
           />
         </div>
 
-        <div className="mt-4 grid gap-4 lg:mt-5 lg:grid-cols-2 lg:gap-5">
+        <div className="mt-4 grid gap-4 lg:mt-6 lg:grid-cols-2 lg:gap-5">
           <Field
             label="충전 시작 가능"
             type="datetime-local"
@@ -381,9 +383,9 @@ export function ChargeForm({
         </div>
       </div>
 
-      <div className="mt-5 flex flex-col gap-4 lg:mt-8 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mt-6 flex flex-col gap-4 lg:mt-8 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex items-baseline justify-between gap-3 lg:block">
-          <p className="text-sm text-ink-3">필요 충전량</p>
+          <p className="text-sm text-ink-2">필요 충전량</p>
           <p className="tnum text-base font-bold lg:mt-1.5 lg:text-lg" aria-live="polite">
             {summarize(conditions)}
           </p>

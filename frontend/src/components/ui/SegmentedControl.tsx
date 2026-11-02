@@ -21,16 +21,16 @@ export function SegmentedControl<T extends string>({
 }) {
   return (
     <fieldset className={className}>
-      <legend className="block text-sm font-bold text-ink-2 mb-2">{label}</legend>
-      <div className="flex rounded-field bg-sunken p-1 gap-1">
+      <legend className="block text-sm font-bold text-ink mb-2">{label}</legend>
+      <div className="flex rounded-field bg-sunken p-0.5 gap-0.5">
         {options.map((option) => {
           const selected = option.value === value;
           return (
             <label
               key={option.value}
-              className={`flex-1 cursor-pointer rounded-[9px] px-2 py-2.5 text-center text-sm font-bold transition-colors
+              className={`flex min-h-11 flex-1 cursor-pointer items-center justify-center rounded-[10px] px-2 text-center text-sm font-bold transition-colors duration-150
                 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-brand
-                ${selected ? "bg-surface text-ink shadow-sm" : "text-ink-3 hover:text-ink-2"}`}
+                ${selected ? "bg-surface text-ink shadow-raised" : "text-ink-2 hover:text-ink"}`}
             >
               <input
                 type="radio"
