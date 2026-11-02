@@ -17,14 +17,14 @@ export function AuthNav() {
   const { status, user } = useSession();
 
   if (status === "loading") {
-    return <div className="h-11 w-40 animate-pulse rounded-pill bg-sunken" aria-hidden />;
+    return <div className="h-11 w-40 animate-pulse rounded-field bg-sunken" aria-hidden />;
   }
 
   if (status === "authenticated" && user) {
     return (
       <Link
         href="/me"
-        className="flex items-center gap-2 rounded-pill bg-sunken px-4 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-line"
+        className="flex h-11 items-center gap-2 rounded-field border border-line bg-surface px-4 text-sm font-bold text-ink transition-colors duration-150 hover:bg-canvas"
       >
         <PersonIcon className="size-4" />
         {user.nickname ?? user.email} 님 · 마이페이지
@@ -37,7 +37,7 @@ export function AuthNav() {
       <ButtonLink href="/login" variant="ghost" className="text-sm">
         로그인
       </ButtonLink>
-      <ButtonLink href="/signup" variant="dark" className="text-sm">
+      <ButtonLink href="/signup" variant="outline" className="text-sm">
         회원가입
       </ButtonLink>
     </>

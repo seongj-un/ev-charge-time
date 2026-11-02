@@ -25,7 +25,7 @@ export function MeSidebar() {
 
   return (
     <nav aria-label="마이페이지 메뉴" className="hidden lg:block">
-      <p className="px-4 text-sm font-bold text-ink-3">마이페이지</p>
+      <p className="px-4 text-sm font-bold text-ink-2">마이페이지</p>
       <ul className="mt-4 flex flex-col gap-1">
         {ME_NAV.map((item) => {
           const active = pathname === item.href;
@@ -34,9 +34,12 @@ export function MeSidebar() {
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`block rounded-pill px-4 py-2.5 text-[15px] font-bold transition-colors ${
-                  active ? "bg-surface text-ink" : "text-ink-2 hover:bg-surface/70"
-                }`}
+                className={`relative flex min-h-11 items-center rounded-field px-4 text-base font-bold transition-colors duration-150
+                  before:absolute before:left-0 before:top-3 before:bottom-3 before:w-0.5 before:rounded-full before:content-[''] ${
+                    active
+                      ? "bg-surface text-brand before:bg-brand"
+                      : "text-ink-2 before:bg-transparent hover:bg-surface/70 hover:text-ink"
+                  }`}
               >
                 {item.label}
               </Link>

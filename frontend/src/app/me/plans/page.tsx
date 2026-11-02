@@ -29,8 +29,8 @@ export default function Page() {
 function PlansFallback() {
   return (
     <PageContainer className="pb-10">
-      <h1 className="text-xl font-bold lg:text-[26px]">충전 기록</h1>
-      <p role="status" className="mt-6 text-sm text-ink-3">
+      <h1 className="text-title lg:text-title-lg">충전 기록</h1>
+      <p role="status" className="mt-6 text-sm text-ink-2">
         충전 기록을 불러오고 있어요…
       </p>
     </PageContainer>

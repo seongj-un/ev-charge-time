@@ -11,7 +11,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-dvh">
       <TopNav />
-      <main className="pb-24 lg:pb-16">{children}</main>
+      <main className="pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-16">{children}</main>
       <TabBar />
     </div>
   );
@@ -26,7 +26,7 @@ export function PageContainer({
   className?: string;
 }) {
   return (
-    <div className={`mx-auto w-full max-w-[1280px] px-5 pt-5 lg:px-8 lg:pt-8 ${className}`}>
+    <div className={`mx-auto w-full max-w-[1280px] px-5 pt-6 sm:px-6 lg:px-8 lg:pt-10 ${className}`}>
       {children}
     </div>
   );

@@ -24,7 +24,7 @@ export function Notice({
 }) {
   return (
     <div
-      className={`flex gap-2 rounded-field bg-warn-bg px-3.5 py-3 text-sm text-warn-fg ${className}`}
+      className={`flex gap-2 rounded-field bg-warn-bg px-4 py-3 text-sm text-warn-fg ${className}`}
     >
       <InfoIcon />
       <div className="leading-relaxed">{children}</div>

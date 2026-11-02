@@ -28,7 +28,7 @@ export function ComingSoon({
   return (
     <section className="mx-auto w-full max-w-[640px] pb-10">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-bold tracking-tight lg:text-[32px]">{title}</h1>
+        <h1 className="text-title lg:text-title-lg">{title}</h1>
         <Badge tone="off">준비 중</Badge>
       </div>
 

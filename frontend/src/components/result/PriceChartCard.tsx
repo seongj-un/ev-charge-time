@@ -47,7 +47,7 @@ export function PriceChartCard({
           <h2 className="text-base font-bold lg:text-lg">
             충전 가능 시간<span className="hidden lg:inline">의 단가</span>
           </h2>
-          <span className="tnum text-xs text-ink-3 lg:text-sm">{axisRangeLabel(axis)}</span>
+          <span className="tnum text-sm text-ink-2">{axisRangeLabel(axis)}</span>
         </div>
 
         <div className="order-last lg:order-none lg:col-start-2 lg:row-start-1 lg:justify-self-end">
@@ -72,7 +72,7 @@ export function PriceChartCard({
         </div>
       </div>
 
-      <p className="mt-3 text-[11px] text-ink-3">단가 단위: 원/kWh · 부가 요금 제외</p>
+      <p className="mt-3 text-sm text-ink-2">단가 단위: 원/kWh · 부가 요금 제외</p>
     </Card>
   );
 }

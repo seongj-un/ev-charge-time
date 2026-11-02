@@ -99,19 +99,19 @@ export function LoginForm({ nextPath }: { nextPath?: string | null }) {
    * 탭바 자리)와 PageContainer의 pt-5(20px). 어긋나도 링크 위치만 조금 달라진다.
    */
   return (
-    <section className="mx-auto flex min-h-[calc(100dvh-116px)] w-full max-w-[420px] flex-col pb-6 lg:min-h-0 lg:pt-[12vh]">
+    <section className="mx-auto flex min-h-[calc(100dvh-116px)] w-full max-w-[420px] flex-col pb-6 lg:min-h-0 lg:pt-[8vh]">
       <div className="lg:rounded-card lg:border lg:border-line lg:bg-surface lg:p-8">
         {/* 모바일은 폼이 화면을 다 덮는다. 빠져나갈 길이 없으면 막다른 길이 된다. */}
         <Link
           href="/"
           aria-label="닫기"
-          className="-ml-2 mb-3 inline-flex size-10 items-center justify-center rounded-pill text-ink transition-colors hover:bg-sunken lg:hidden"
+          className="-ml-2 mb-3 inline-flex size-11 items-center justify-center rounded-lg text-ink transition-colors duration-150 hover:bg-sunken lg:hidden"
         >
           <CloseIcon />
         </Link>
 
-        <h1 className="text-[28px] font-bold tracking-tight">로그인</h1>
-        <p className="mt-2 text-sm text-ink-2">
+        <h1 className="text-title">로그인</h1>
+        <p className="mt-3 text-base text-ink-2">
           추천 결과를 저장하고 내 차량을 불러오려면 로그인하세요.
         </p>
 
@@ -148,7 +148,7 @@ export function LoginForm({ nextPath }: { nextPath?: string | null }) {
           />
           <Button
             type="submit"
-            variant="dark"
+            variant="primary"
             size="lg"
             className="w-full"
             disabled={pending || offline}
@@ -194,13 +194,13 @@ function AlreadySignedIn() {
   return (
     <section className="mx-auto w-full max-w-[420px] lg:pt-10">
       <div className="lg:rounded-card lg:border lg:border-line lg:bg-surface lg:p-8">
-        <h1 className="text-[28px] font-bold tracking-tight">이미 로그인했어요</h1>
-        <p className="mt-2 text-sm text-ink-2">
+        <h1 className="text-title">이미 로그인했어요</h1>
+        <p className="mt-3 text-base text-ink-2">
           {user?.nickname ?? user?.email} 님으로 로그인한 상태입니다. 다른 계정을 쓰려면
           마이페이지에서 로그아웃하세요.
         </p>
         <div className="mt-6">
-          <ButtonLink href="/me" variant="dark" size="lg" className="w-full">
+          <ButtonLink href="/me" variant="primary" size="lg" className="w-full">
             마이페이지로 가기
           </ButtonLink>
         </div>

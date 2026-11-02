@@ -95,11 +95,11 @@ export function VehicleForm({
           type="button"
           onClick={onCancel}
           aria-label="목록으로"
-          className="-ml-2 rounded-pill p-1.5 text-ink transition-colors hover:bg-sunken lg:hidden"
+          className="-ml-2 inline-flex size-11 items-center justify-center rounded-lg text-ink transition-colors duration-150 hover:bg-sunken lg:hidden"
         >
           <ChevronLeftIcon />
         </button>
-        <h2 className="text-lg font-bold text-ink">{editing ? "차량 수정" : "차량 추가"}</h2>
+        <h2 className="text-section text-ink">{editing ? "차량 수정" : "차량 추가"}</h2>
       </div>
 
       <Field

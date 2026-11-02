@@ -122,14 +122,14 @@ export function AskScreen() {
 
   return (
     <PageContainer className="pb-10">
-      <h1 className="text-xl font-bold lg:text-[26px]">질문으로 충전 시간 찾기</h1>
-      <p className="mt-2 max-w-[42rem] text-sm leading-relaxed text-ink-2">
+      <h1 className="text-title lg:text-title-lg">질문으로 충전 시간 찾기</h1>
+      <p className="mt-3 max-w-[42rem] text-base leading-relaxed text-ink-2">
         말하듯 물어보면 조건을 읽어 추천합니다. 예를 들어 &ldquo;70kWh 배터리를 7kW로 30%에서
         60%까지, 오늘 저녁 6시부터 내일 아침 8시 사이에&rdquo;처럼요.
       </p>
 
       {status === "loading" ? (
-        <p role="status" className="mt-6 text-sm text-ink-3">
+        <p role="status" className="mt-6 text-sm text-ink-2">
           불러오고 있어요…
         </p>
       ) : null}
@@ -162,7 +162,7 @@ export function AskScreen() {
               rows={3}
               disabled={blocked.kind === "rate-limited"}
               placeholder="내일 출근 전까지 80% 채우려면 언제 충전해?"
-              className="w-full resize-y rounded-field border border-line bg-field px-3.5 py-3 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-3 focus-visible:border-brand disabled:opacity-60"
+              className="w-full resize-y rounded-field border border-line bg-field px-4 py-3 text-base leading-relaxed text-ink placeholder:text-ink-3 hover:border-ink-3 focus-visible:border-brand focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-60"
             />
             <div className="flex items-center gap-3">
               <Button
@@ -175,7 +175,7 @@ export function AskScreen() {
                * 한도를 미리 적는다. 20번째 질문에서 처음 알게 되면 시연 도중에
                * 막히고, 그때는 되돌릴 방법이 없다.
                */}
-              <span className="text-xs text-ink-3">시간당 20번까지 물어볼 수 있어요</span>
+              <span className="text-sm text-ink-2">시간당 20번까지 물어볼 수 있어요</span>
             </div>
           </form>
         </>
@@ -187,7 +187,7 @@ export function AskScreen() {
 function SignInCard() {
   return (
     <Card className="mt-5 p-6 lg:mt-6 lg:p-8">
-      <h2 className="text-lg font-bold">로그인이 필요해요</h2>
+      <h2 className="text-section">로그인이 필요해요</h2>
       <p className="mt-2 max-w-[32rem] text-sm leading-relaxed text-ink-2">
         질문은 계정마다 시간당 20번으로 제한됩니다. 한 사람이 공용 한도를 다 쓰면 다른
         사람의 질문이 전부 막히기 때문이에요. 조건을 직접 입력하는 추천은 로그인 없이도
@@ -252,7 +252,7 @@ function Transcript({
 function Missing({ fields }: { fields: string[] }) {
   return (
     <div className="mt-2.5 rounded-card bg-sunken px-4 py-3">
-      <p className="text-xs font-bold text-ink-2">더 알려주실 것</p>
+      <p className="text-sm font-bold text-ink-2">더 알려주실 것</p>
       <ul
         aria-label="더 알려주실 것"
         className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-sm text-ink"
@@ -286,28 +286,28 @@ function PlanCard({ plan }: { plan: RecommendResponse }) {
       aria-label="추천 충전 시간"
       className="mt-2.5 border border-line p-4 lg:p-5"
     >
-      <p className="text-xs text-ink-3">{formatKoreanDate(plan.best.start)}</p>
+      <p className="text-sm text-ink-2">{formatKoreanDate(plan.best.start)}</p>
       <p className="mt-1 text-lg font-bold tnum">
         {formatHm(plan.best.start)} – {formatHm(plan.best.end)}
       </p>
 
       <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
         <div>
-          <dt className="text-xs text-ink-3">충전량</dt>
+          <dt className="text-sm text-ink-2">충전량</dt>
           <dd className="tnum font-bold">{formatKwh(plan.best.energy_kwh)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-3">예상 요금</dt>
+          <dt className="text-sm text-ink-2">예상 요금</dt>
           <dd className="tnum font-bold">{formatWon(plan.best.cost_won)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-3">바로 충전 대비</dt>
+          <dt className="text-sm text-ink-2">바로 충전 대비</dt>
           <dd className="tnum font-bold text-brand">{formatWon(plan.savings_won)} 절감</dd>
         </div>
       </dl>
 
       {plan.assumptions.length > 0 ? (
-        <ul className="mt-3 flex flex-col gap-0.5 text-xs leading-relaxed text-ink-3">
+        <ul className="mt-3 flex flex-col gap-0.5 text-sm leading-relaxed text-ink-2">
           {plan.assumptions.map((line) => (
             <li key={line}>· {line}</li>
           ))}

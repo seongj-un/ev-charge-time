@@ -34,7 +34,7 @@ export function PlanRecordList({
     <div className="mt-4 lg:mt-5 lg:overflow-hidden lg:rounded-card lg:border lg:border-line lg:bg-surface">
       <div
         data-testid="plan-table-header"
-        className={`hidden lg:grid ${GRID_COLUMNS} gap-x-4 border-b border-line bg-sunken/40 px-5 py-3 text-xs font-bold text-ink-2`}
+        className={`hidden lg:grid ${GRID_COLUMNS} gap-x-4 border-b border-line bg-sunken/40 px-5 py-3 text-sm font-bold text-ink-2`}
       >
         <span>충전 날짜</span>
         <span>차량</span>
@@ -95,23 +95,23 @@ function PlanRecordRow({
         <div className="min-w-0 lg:contents">
           <div className="flex min-w-0 items-baseline gap-1.5 lg:contents">
             <p className="text-sm text-ink-2 lg:text-ink">{date}</p>
-            <span className="text-sm text-ink-3 lg:hidden" aria-hidden>
+            <span className="text-sm text-ink-2 lg:hidden" aria-hidden>
               ·
             </span>
             <p className="truncate text-sm text-ink-2">{vehicleLabel(plan)}</p>
           </div>
 
           {/* 저장일은 버리지 않는다 — "언제 세운 계획인지"도 알아야 한다. */}
-          <p className="mt-0.5 text-xs text-ink-3 lg:hidden">{savedOn}에 저장</p>
+          <p className="mt-0.5 text-sm text-ink-2 lg:hidden">{savedOn}에 저장</p>
 
           <p className="mt-1 text-xl font-bold tnum lg:mt-0 lg:text-base">{time}</p>
 
           <div className="mt-1 flex flex-wrap items-baseline gap-1.5 lg:contents">
-            <span className="text-xs text-ink-3 lg:hidden">예상</span>
+            <span className="text-sm text-ink-2 lg:hidden">예상</span>
             <p className="text-sm tnum text-ink-2 lg:text-ink">
               {formatWon(plan.result.best.cost_won)}
             </p>
-            <span className="text-xs text-ink-3 lg:hidden" aria-hidden>
+            <span className="text-sm text-ink-2 lg:hidden" aria-hidden>
               ·
             </span>
             <p className="text-sm font-bold tnum text-band-light">
@@ -124,9 +124,9 @@ function PlanRecordRow({
           type="button"
           onClick={() => setConfirming(true)}
           aria-label={`${date} ${time} 기록 삭제`}
-          className="justify-self-end rounded-pill p-2 text-ink-3 transition-colors hover:text-danger
+          className="justify-self-end inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-ink-2 transition-colors duration-150 hover:text-danger
             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand
-            lg:px-2 lg:py-1"
+            "
         >
           <TrashIcon className="size-5 lg:hidden" />
           <span className="hidden text-sm font-bold text-danger lg:inline">삭제</span>
@@ -136,7 +136,7 @@ function PlanRecordRow({
       {confirming ? (
         <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-2 rounded-field bg-sunken px-3.5 py-3">
           <p className="text-sm font-bold">정말 삭제할까요?</p>
-          <p className="text-xs text-ink-2">되돌릴 수 없어요.</p>
+          <p className="text-sm text-ink-2">되돌릴 수 없어요.</p>
           <div className="ml-auto flex gap-2">
             <Button type="button" variant="outline" onClick={() => setConfirming(false)}>
               취소

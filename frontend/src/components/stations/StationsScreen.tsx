@@ -237,7 +237,7 @@ export function StationsScreen() {
   return (
     <PageContainer className="pb-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold tracking-tight text-ink lg:text-[28px]">
+        <h1 className="text-title text-ink lg:text-title-lg">
           주변 충전소
         </h1>
         <ButtonLink href="/me/favorites" variant="ghost" className="text-sm">
@@ -270,7 +270,7 @@ export function StationsScreen() {
                 aria-label="지역"
                 value={currentAreaId ?? ""}
                 onChange={(event) => selectArea(event.target.value)}
-                className={`rounded-field border border-line bg-field px-3 py-2 text-sm outline-none focus-visible:border-brand
+                className={`min-h-12 rounded-field border border-line bg-field px-3 py-2 text-sm focus-visible:border-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand
                   ${currentAreaId === null && geo.kind === "ready" ? "font-bold text-brand" : "text-ink"}`}
               >
                 {currentAreaId === null ? (
@@ -316,7 +316,7 @@ export function StationsScreen() {
                 return (
                   <label
                     key={option.value}
-                    className={`cursor-pointer rounded-pill px-4 py-2 text-sm font-bold transition-colors
+                    className={`inline-flex min-h-11 cursor-pointer items-center rounded-pill px-4 text-sm font-bold transition-colors duration-150
                       has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-brand
                       ${selected ? "bg-ink text-white" : "border border-line bg-surface text-ink-2"}`}
                   >
@@ -332,7 +332,7 @@ export function StationsScreen() {
                 );
               })}
 
-              <label className="ml-auto flex cursor-pointer items-center gap-2 text-sm text-ink-2">
+              <label className="ml-auto flex min-h-11 cursor-pointer items-center gap-2 text-sm text-ink-2">
                 <input
                   type="checkbox"
                   checked={filter.availableOnly}
@@ -351,13 +351,13 @@ export function StationsScreen() {
             * 그 경계를 숨기면 "왜 이게 급속이지"에 답할 수 없다.
             */}
           {filter.type !== "all" ? (
-            <p className="mt-2 text-xs text-ink-3">
+            <p className="mt-2 text-sm text-ink-2">
               충전기 출력 기준으로 나눠요 — 급속 {FAST_MIN_KW} kW 이상, 완속 그 미만.
             </p>
           ) : null}
 
           {filter.availableOnly ? (
-            <p className="mt-2 text-xs text-ink-3">
+            <p className="mt-2 text-sm text-ink-2">
               지금 충전대기인 충전기가 있는 곳만 남겨요. 공식 코드표에 없는 상태 코드는 세지 않아요.
             </p>
           ) : null}
@@ -399,7 +399,7 @@ export function StationsScreen() {
                */
               <div className="rounded-card border border-line bg-surface px-5 py-8 text-center">
                 <p className="text-ink-2">이 근처에서 충전소를 찾지 못했어요</p>
-                <p className="mt-2 text-sm text-ink-3">
+                <p className="mt-2 text-sm text-ink-2">
                   지금은 전남·광주 지역 충전소만 수집돼 있어요. 아래 지역에서 찾아보세요.
                 </p>
                 <div
@@ -412,7 +412,7 @@ export function StationsScreen() {
                       key={area.id}
                       type="button"
                       onClick={() => selectArea(area.id)}
-                      className="rounded-pill border border-line bg-surface px-4 py-2 text-sm font-bold text-ink-2 transition-colors
+                      className="inline-flex min-h-11 items-center rounded-pill border border-line bg-surface px-4 text-sm font-bold text-ink-2 transition-colors duration-150
                         hover:bg-canvas focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                     >
                       {area.name}
@@ -447,13 +447,13 @@ export function StationsScreen() {
           </div>
 
           {hasUnknownStatus ? (
-            <p className="mt-3 text-xs leading-relaxed text-ink-3">
+            <p className="mt-3 text-sm leading-relaxed text-ink-2">
               공식 코드표에 없는 상태 코드는 원문 그대로 보여드려요. 뜻을 넘겨짚으면
               없는 자리를 찾아가게 돼요.
             </p>
           ) : null}
 
-          <p className="mt-4 text-xs leading-relaxed text-ink-3">
+          <p className="mt-4 text-sm leading-relaxed text-ink-2">
             {statusUpdatedLabel(latestStatusUpdate(stations ?? []))} · 출처: 한국환경공단
             전기자동차 충전소 정보 · 위치는 조회에만 쓰고 저장하지 않아요
           </p>

@@ -70,7 +70,7 @@ export function FavoritesScreen() {
   return (
     <MeLayout>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold tracking-tight text-ink lg:text-[28px]">
+        <h1 className="text-title text-ink lg:text-title-lg">
           즐겨찾는 충전소
         </h1>
         <ButtonLink href="/stations" variant="ghost" className="text-sm">
@@ -123,7 +123,7 @@ export function FavoritesScreen() {
             ))}
           </ul>
 
-          <p className="mt-4 text-xs leading-relaxed text-ink-3">
+          <p className="mt-4 text-sm leading-relaxed text-ink-2">
             {updatedAt} · 출처: 한국환경공단 전기자동차 충전소 정보. 이름·주소는 주변
             충전소 조회가 열리면 채워져요.
           </p>

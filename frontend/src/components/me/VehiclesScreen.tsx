@@ -177,11 +177,11 @@ export function VehiclesScreen() {
         <Link
           href="/me"
           aria-label="마이페이지"
-          className="-ml-2 rounded-pill p-1.5 text-ink transition-colors hover:bg-sunken lg:hidden"
+          className="-ml-2 inline-flex size-11 items-center justify-center rounded-lg text-ink transition-colors duration-150 hover:bg-sunken lg:hidden"
         >
           <ChevronLeftIcon />
         </Link>
-        <h1 className="text-2xl font-bold tracking-tight text-ink lg:text-[32px]">내 차량</h1>
+        <h1 className="text-title text-ink lg:text-title-lg">내 차량</h1>
       </header>
 
       <div className="mt-5 lg:mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-6">
@@ -218,7 +218,7 @@ export function VehiclesScreen() {
                 onMakeDefault={(vehicle) => void handleMakeDefault(vehicle)}
                 onDelete={(vehicle) => void handleDelete(vehicle)}
               />
-              <p className="mt-3 text-xs leading-relaxed text-ink-3">
+              <p className="mt-3 text-sm leading-relaxed text-ink-2">
                 기본 차량은 1대예요. 다른 차량을 기본으로 바꾸면 기존 기본은 해제돼요.
               </p>
             </>

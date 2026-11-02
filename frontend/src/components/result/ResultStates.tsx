@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/Card";
 export function NoConditionState() {
   return (
     <Card className="mt-6 p-6 text-center lg:mt-10 lg:p-10">
-      <h1 className="text-lg font-bold lg:text-xl">충전 조건이 없어요</h1>
+      <h1 className="text-section">충전 조건이 없어요</h1>
       <p className="mx-auto mt-2 max-w-[28rem] text-sm leading-relaxed text-ink-2">
         주소에 충전 조건이 들어 있지 않아 추천을 계산할 수 없습니다. 배터리 용량과 충전
         가능한 시간을 넣으면 가장 싼 시간을 찾아드려요.
@@ -29,7 +29,7 @@ export function NoConditionState() {
 export function ResultSkeleton() {
   return (
     <div role="status" aria-live="polite" className="mt-5 lg:mt-6">
-      <p className="text-sm text-ink-3">추천을 계산하고 있어요…</p>
+      <p className="text-sm text-ink-2">추천을 계산하고 있어요…</p>
 
       <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-5">
         <div className="col-span-2 h-[168px] animate-pulse rounded-card bg-sunken lg:col-span-1" />
@@ -59,7 +59,7 @@ export function ResultErrorState({
 }) {
   return (
     <Card className="mt-5 p-6 lg:mt-6 lg:p-8">
-      <h2 className="text-lg font-bold">추천을 불러오지 못했어요</h2>
+      <h2 className="text-section">추천을 불러오지 못했어요</h2>
       {/* 검증 실패가 여러 건이면 줄바꿈으로 이어져 온다 (client.ts) — 줄을 살려 둔다. */}
       <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-ink-2">{message}</p>
 
