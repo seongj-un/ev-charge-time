@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 
 import { formatPricePerKwh } from "@/lib/format";
+import { motionDelay } from "@/lib/motion";
 
 import { BAND_KEY_LABEL, BAND_COLOR, type BandKey } from "./bands";
 
@@ -101,8 +102,10 @@ export function PriceBarChart({
                 aria-label={label}
                 onFocus={() => setHovered(index)}
                 onBlur={() => setHovered(null)}
-                className="w-full rounded-t-[3px] transition-opacity focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+                // 처음 그려질 때 왼쪽부터 차례로 자라난다 (motion-grow).
+                className="motion-grow w-full rounded-t-[3px] transition-opacity focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
                 style={{
+                  ...motionDelay(index * 22),
                   height: `${Math.max(ratio * 100, 2)}%`,
                   background: BAND_COLOR[column.bandKey],
                   opacity: hovered === null || hovered === index ? 1 : 0.55,

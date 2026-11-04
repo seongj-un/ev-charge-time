@@ -101,6 +101,20 @@ describe("디자인 계약", () => {
     expect(map).toContain("#7c7d80");
   });
 
+  test("움직임 줄이기 설정에서 등장 애니메이션의 길이와 지연을 모두 없앤다", () => {
+    const css = sources.find((source) => source.path === "app/globals.css")?.text ?? "";
+    const reduced = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(reduced).toContain("animation-duration: 0.01ms !important");
+    expect(reduced).toContain("animation-delay: 0ms !important");
+    // 등장 애니메이션은 transform·opacity만 움직인다 (레이아웃을 밀지 않는다)
+    for (const name of ["motion-rise", "motion-grow", "motion-pop"]) {
+      const frames = css.match(new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] ?? "";
+      expect(frames).not.toBe("");
+      const props = [...frames.matchAll(/([a-z-]+)\s*:/g)].map((match) => match[1]);
+      expect(props.every((prop) => prop === "opacity" || prop === "transform")).toBe(true);
+    }
+  });
+
   test("다크 모드를 넣지 않는다", () => {
     const css = sources.find((source) => source.path === "app/globals.css")?.text ?? "";
     expect(css).toContain("color-scheme: light only");

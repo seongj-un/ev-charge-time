@@ -9,6 +9,7 @@ import { todayInSeoul } from "@/components/timeline/timeline-view";
 import { fetchTimeline } from "@/lib/api/endpoints";
 import { MODE_LABEL, SEASON_LABEL, type TimelineResponse } from "@/lib/api/types";
 import { formatKoreanDate, formatPricePerKwh } from "@/lib/format";
+import { motionDelay } from "@/lib/motion";
 
 import { formatRun, hourInSeoul, summarizeDay } from "./today-view";
 
@@ -144,11 +145,11 @@ function DayStrip({
     <figure className="mt-6">
       <div className="relative" aria-hidden>
         <div className="grid grid-cols-24 gap-[3px]">
-          {cells.map((cell) => (
+          {cells.map((cell, index) => (
             <div key={cell.hour} className="relative h-12 lg:h-14">
               <div
-                className={`h-full rounded-[4px] ${cell.hour === nowHour ? "ring-2 ring-ink ring-offset-2 ring-offset-surface" : ""}`}
-                style={{ background: BAND_COLOR[cell.bandKey] }}
+                className={`motion-grow h-full rounded-[4px] ${cell.hour === nowHour ? "ring-2 ring-ink ring-offset-2 ring-offset-surface" : ""}`}
+                style={{ background: BAND_COLOR[cell.bandKey], ...motionDelay(160 + index * 18) }}
               />
             </div>
           ))}

@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/Badge";
 import type { RecommendResponse } from "@/lib/api/types";
 import { formatHm, formatSignedWon, formatWon } from "@/lib/format";
+import { motionDelay } from "@/lib/motion";
 import type { RecommendForm } from "@/lib/recommend-params";
 
 import { planSummarySentence } from "./plan-text";
@@ -32,7 +33,7 @@ export function PlanCards({
   return (
     <section
       aria-label="추천 결과 요약"
-      className="overflow-hidden rounded-panel border border-line bg-surface shadow-panel lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"
+      className="motion-rise overflow-hidden rounded-panel border border-line bg-surface shadow-panel lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"
     >
       <div className="p-5 sm:p-6 lg:p-9">
         <div className="flex items-center justify-between gap-3">
@@ -82,8 +83,9 @@ export function PlanCards({
             saves ? "bg-accent text-ink" : "bg-sunken text-ink"
           }`}
         >
+          {/* 결과가 들어오면 절감액이 마지막에 살짝 튀어나온다 — 화면의 답이 여기라는 신호. */}
           <p className="text-base font-bold">{saves ? "이만큼 아껴요" : "요금 차이가 없어요"}</p>
-          <p className="tnum text-[32px] font-bold leading-none tracking-tight lg:text-[40px]">
+          <p className="motion-pop tnum text-[32px] font-bold leading-none tracking-tight lg:text-[40px]" style={motionDelay(260)}>
             {formatSignedWon(savings_won)}
           </p>
         </div>
