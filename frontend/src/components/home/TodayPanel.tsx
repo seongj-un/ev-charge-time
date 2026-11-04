@@ -42,7 +42,7 @@ export function TodayPanel() {
   }, []);
 
   return (
-    <div className="rounded-panel bg-surface p-5 text-ink shadow-panel sm:p-6 lg:p-7">
+    <div className="rounded-panel border border-line bg-surface p-5 text-ink shadow-panel sm:p-6 lg:p-7">
       {state.status === "loading" ? <PanelSkeleton /> : null}
       {state.status === "error" ? <PanelError /> : null}
       {state.status === "ready" ? <PanelReady timeline={state.timeline} hour={state.hour} /> : null}
@@ -60,7 +60,7 @@ function PanelReady({ timeline, hour }: { timeline: TimelineResponse; hour: numb
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-extrabold">오늘 전기차 충전 요금</h2>
+        <h2 className="text-base font-bold">오늘 전기차 충전 요금</h2>
         <p className="text-sm font-bold text-ink-2">
           {formatKoreanDate(timeline.day)} · {SEASON_LABEL[timeline.season]} {dayKind}
         </p>
@@ -72,7 +72,7 @@ function PanelReady({ timeline, hour }: { timeline: TimelineResponse; hour: numb
             지금 <span className="tnum">{String(now.hour).padStart(2, "0")}</span>시
           </p>
           <p className="mt-1 flex items-baseline gap-1.5">
-            <span className="tnum text-figure lg:text-[56px]">{formatPricePerKwh(now.price)}</span>
+            <span className="tnum text-figure lg:text-[48px]">{formatPricePerKwh(now.price)}</span>
             <span className="text-sm font-bold text-ink-2">원/kWh</span>
           </p>
         </div>
@@ -93,7 +93,7 @@ function PanelReady({ timeline, hour }: { timeline: TimelineResponse; hour: numb
       <dl className="mt-6 grid grid-cols-2 gap-3">
         <div className="rounded-card bg-brand-soft p-4">
           <dt className="text-sm font-bold text-ink-2">가장 싼 시간</dt>
-          <dd className="mt-1.5 text-base font-extrabold">
+          <dd className="mt-1.5 text-base font-bold">
             {summary.cheapest.map(formatRun).join(", ")}
           </dd>
           <dd className="tnum mt-0.5 text-sm font-bold text-band-light">
@@ -102,7 +102,7 @@ function PanelReady({ timeline, hour }: { timeline: TimelineResponse; hour: numb
         </div>
         <div className="rounded-card bg-sunken p-4">
           <dt className="text-sm font-bold text-ink-2">가장 비싼 시간</dt>
-          <dd className="mt-1.5 text-base font-extrabold">
+          <dd className="mt-1.5 text-base font-bold">
             {summary.priciest.map(formatRun).join(", ")}
           </dd>
           <dd className="tnum mt-0.5 text-sm font-bold text-band-peak">
@@ -114,7 +114,7 @@ function PanelReady({ timeline, hour }: { timeline: TimelineResponse; hour: numb
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
         <p className="text-sm text-ink-2">
           {MODE_LABEL[timeline.mode]} 기준 · 같은 날에도{" "}
-          <strong className="tnum font-extrabold text-ink">{summary.ratio.toFixed(1)}배</strong> 차이
+          <strong className="tnum font-bold text-ink">{summary.ratio.toFixed(1)}배</strong> 차이
         </p>
         <Link
           href="/timeline"
@@ -187,7 +187,7 @@ function PanelSkeleton() {
 function PanelError() {
   return (
     <div className="flex min-h-[320px] flex-col items-start justify-center gap-3" role="status">
-      <h2 className="text-base font-extrabold">오늘 요금을 불러오지 못했어요</h2>
+      <h2 className="text-base font-bold">오늘 요금을 불러오지 못했어요</h2>
       <p className="text-sm text-ink-2">
         서버에 잠시 닿지 않아요. 하루 단가 화면에서 다시 시도할 수 있어요.
       </p>

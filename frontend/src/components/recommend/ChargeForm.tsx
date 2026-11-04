@@ -263,8 +263,8 @@ export function ChargeForm({
     <form
       noValidate
       onSubmit={handleSubmit}
-      // 화면 머리(네이비 띠) 위로 올라앉는 판. 맨 아래 네이비 줄이 요약과 제출을 든다.
-      className="overflow-hidden rounded-panel bg-surface shadow-panel"
+      // 흰 판 하나. 맨 아래 줄이 요약과 제출을 든다.
+      className="overflow-hidden rounded-panel border border-line bg-surface shadow-panel"
     >
       <div className="divide-y divide-line px-5 sm:px-6 lg:px-8">
         <FormSection title="차량" description="저장한 차량을 고르거나 직접 넣어요.">
@@ -380,14 +380,14 @@ export function ChargeForm({
         </FormSection>
       </div>
 
-      <div className="flex flex-col gap-4 bg-brand-deep px-5 py-5 text-white sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 lg:py-6">
+      <div className="flex flex-col gap-4 border-t border-line bg-field px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 lg:py-6">
         <div className="flex items-baseline justify-between gap-3 lg:block">
-          <p className="text-sm font-bold text-on-brand-2">필요 충전량</p>
-          <p className="tnum text-lg font-extrabold lg:mt-1 lg:text-2xl" aria-live="polite">
+          <p className="text-sm font-bold text-ink-2">필요 충전량</p>
+          <p className="tnum text-lg font-bold lg:mt-1 lg:text-2xl" aria-live="polite">
             {summarize(conditions)}
           </p>
         </div>
-        <Button type="submit" variant="accent" size="lg" className="w-full lg:w-auto lg:px-8">
+        <Button type="submit" size="lg" className="w-full lg:w-auto lg:px-8">
           최적 시간 찾기
         </Button>
       </div>
@@ -421,7 +421,7 @@ function FormSection({
 }
 
 /**
- * 배터리 그림. 지금(네이비)에서 목표(라임)까지 채울 만큼이 한눈에 보이게 한다.
+ * 배터리 그림. 지금(메인색)에서 목표(라임)까지 채울 만큼이 한눈에 보이게 한다.
  * 숫자는 바로 위 입력 칸에 이미 있으니 그림은 aria-hidden이다. 값이 이상하면 그리지 않는다.
  */
 function BatteryGauge({ now, target }: { now: number | null; target: number | null }) {
@@ -431,7 +431,7 @@ function BatteryGauge({ now, target }: { now: number | null; target: number | nu
 
   return (
     <div className="mt-5 flex items-center gap-1.5" aria-hidden>
-      <div className="relative h-9 flex-1 overflow-hidden rounded-[10px] border-2 border-ink/80 bg-sunken p-[3px]">
+      <div className="relative h-9 flex-1 overflow-hidden rounded-[10px] border-2 border-ink/70 bg-sunken p-[3px]">
         <div className="relative h-full w-full">
           <div className="absolute inset-y-0 left-0 rounded-[5px] bg-brand" style={{ width: `${from}%` }} />
           <div

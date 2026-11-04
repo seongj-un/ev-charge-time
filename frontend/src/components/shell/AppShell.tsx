@@ -35,11 +35,8 @@ export function PageContainer({
 }
 
 /**
- * 화면 머리 — 상단 내비에 이어지는 네이비 띠. 제목·설명·조작이 여기 올라간다.
- *
- * 띠 아래쪽은 일부러 넉넉히 비운다. 본문(PageBody)이 그 자리로 올라와 겹치면서
- * "머리 위에 판이 얹힌" 모양이 된다. 평평한 크림 바탕에 카드만 늘어서던 게
- * 이전 디자인이 밋밋했던 이유라, 모든 화면이 이 구조를 공유한다.
+ * 화면 머리 — 제목·설명·조작. 모든 화면이 같은 자리·크기로 제목을 단다.
+ * 머리 아래는 흰 바탕 띠로 구분해, 카드가 늘어선 본문과 섞이지 않게 한다.
  */
 export function PageHero({
   title,
@@ -54,19 +51,19 @@ export function PageHero({
   eyebrow?: ReactNode;
   /** 제목 오른쪽(데스크톱) / 아래(모바일)에 놓이는 조작 */
   actions?: ReactNode;
-  /** 제목 아래 띠 안에 더 넣을 것 (요약 칩 등) */
+  /** 제목 아래에 더 넣을 것 (요약 칩 등) */
   children?: ReactNode;
   className?: string;
 }) {
   return (
-    <section className={`bg-brand-deep text-white ${className}`}>
-      <div className="mx-auto w-full max-w-[1280px] px-5 pt-6 pb-16 sm:px-6 lg:px-8 lg:pt-12 lg:pb-24">
+    <section className={`border-b border-line bg-surface ${className}`}>
+      <div className="mx-auto w-full max-w-[1280px] px-5 py-6 sm:px-6 lg:px-8 lg:py-10">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
           <div className="min-w-0">
-            {eyebrow ? <div className="mb-3 text-sm font-bold text-accent">{eyebrow}</div> : null}
-            <h1 className="text-title text-white lg:text-title-lg">{title}</h1>
+            {eyebrow ? <div className="mb-2 text-sm font-bold text-brand">{eyebrow}</div> : null}
+            <h1 className="text-title lg:text-title-lg">{title}</h1>
             {description ? (
-              <p className="mt-3 max-w-[60ch] text-base leading-relaxed text-on-brand-2">{description}</p>
+              <p className="mt-2 max-w-[60ch] text-base leading-relaxed text-ink-2">{description}</p>
             ) : null}
           </div>
           {actions ? <div className="shrink-0">{actions}</div> : null}
@@ -77,10 +74,10 @@ export function PageHero({
   );
 }
 
-/** PageHero 아래 본문. 머리 띠 위로 올라와 겹친다. */
+/** PageHero 아래 본문. */
 export function PageBody({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`relative mx-auto -mt-10 w-full max-w-[1280px] px-5 sm:px-6 lg:-mt-14 lg:px-8 ${className}`}>
+    <div className={`mx-auto mt-6 w-full max-w-[1280px] px-5 sm:px-6 lg:mt-8 lg:px-8 ${className}`}>
       {children}
     </div>
   );

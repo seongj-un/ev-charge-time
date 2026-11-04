@@ -149,8 +149,8 @@ export function ResultView({ query }: { query: string }) {
 
   return (
     <>
-      <section className="bg-brand-deep text-white">
-        <div className="mx-auto w-full max-w-[1280px] px-5 pt-5 pb-16 sm:px-6 lg:px-8 lg:pt-10 lg:pb-24">
+      <section className="border-b border-line bg-surface">
+        <div className="mx-auto w-full max-w-[1280px] px-5 py-5 sm:px-6 lg:px-8 lg:py-8">
           <ResultHeader form={form} query={query} unverified={unverifiedItems.length > 0} />
         </div>
       </section>

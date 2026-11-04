@@ -24,12 +24,12 @@ export function TabBar() {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={`group flex min-h-16 flex-col items-center justify-center gap-1 py-2 text-xs font-bold transition-colors duration-150
-                  ${active ? "text-ink" : "text-ink-2 hover:text-ink"}`}
+                  ${active ? "text-brand" : "text-ink-2 hover:text-ink"}`}
               >
-                {/* 활성 표시: 아이콘 뒤 네이비 칩 + 라임 아이콘. 색만이 아니라 모양(칩)으로도 구분된다. */}
+                {/* 활성 표시: 아이콘 뒤 옅은 메인색 칩 + 메인색 아이콘·글자. 색만이 아니라 모양(칩)으로도 구분된다. */}
                 <span
                   className={`grid h-8 w-12 place-items-center rounded-pill transition-colors duration-150
-                    ${active ? "bg-brand text-accent" : "group-hover:bg-sunken"}`}
+                    ${active ? "bg-brand-soft text-brand" : "group-hover:bg-sunken"}`}
                 >
                   <Icon className="size-[22px]" />
                 </span>

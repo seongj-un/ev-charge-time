@@ -8,7 +8,7 @@ import { ButtonLink } from "@/components/ui/Button";
 /**
  * 홈.
  *
- * 머리(네이비 띠): 질문 + 두 행동 + 오늘의 실제 요금 판(TodayPanel).
+ * 머리: 질문 + 두 행동 + 오늘의 실제 요금 판(TodayPanel).
  * 본문: 화면 네 곳으로 가는 큰 타일 → 2026년 요금 개편 요점 → 출처.
  *
  * 홈은 추천 금액을 지어내지 않는다. 추천은 배터리 잔량·출발 시각 같은 조건이 있어야 나오고,
@@ -80,30 +80,30 @@ const FEATURES = [
 export default function Home() {
   return (
     <>
-      <section className="bg-brand-deep text-white">
-        <div className="mx-auto grid w-full max-w-[1280px] gap-10 px-5 pt-8 pb-20 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] lg:items-center lg:gap-16 lg:px-8 lg:pt-16 lg:pb-28">
+      <section className="border-b border-line bg-surface">
+        <div className="mx-auto grid w-full max-w-[1280px] gap-8 px-5 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,500px)] lg:items-center lg:gap-16 lg:px-8 lg:py-16">
           <div>
-            <p className="inline-flex items-center gap-2 rounded-pill bg-white/10 px-3 py-1.5 text-sm font-bold text-white">
-              <span className="size-2 rounded-full bg-accent" aria-hidden />
+            <p className="inline-flex items-center gap-2 rounded-pill bg-brand-soft px-3 py-1.5 text-sm font-bold text-brand">
+              <span className="size-2 rounded-full bg-brand" aria-hidden />
               <span className="lg:hidden">2026년 요금 개편 반영</span>
               <span className="hidden lg:inline">2026년 계절·시간대별 요금 개편 반영</span>
             </p>
 
-            <h1 className="mt-5 text-display text-white sm:text-[48px] lg:mt-7 lg:text-display-lg">
+            <h1 className="mt-5 text-display sm:text-[44px] lg:mt-6 lg:text-display-lg">
               <span className="block">언제 충전하면</span>{" "}
-              <span className="block text-accent">가장 쌀까요?</span>
+              <span className="block text-brand">가장 쌀까요?</span>
             </h1>
 
-            <p className="mt-5 max-w-[40ch] text-base leading-relaxed text-on-brand-2 lg:mt-7 lg:text-lg">
+            <p className="mt-4 max-w-[40ch] text-base leading-relaxed text-ink-2 lg:mt-6 lg:text-lg">
               충전 조건만 넣으면 요금이 가장 싼 시간을 찾아드려요. 로그인 없이 바로 쓸 수 있어요.
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row lg:mt-10">
-              <ButtonLink href="/recommend" variant="accent" size="lg" className="w-full sm:w-auto">
+              <ButtonLink href="/recommend" size="lg" className="w-full sm:w-auto">
                 충전 시간 추천받기
                 <ArrowRightIcon className="size-5" />
               </ButtonLink>
-              <ButtonLink href="/timeline" variant="onBrand" size="lg" className="w-full sm:w-auto">
+              <ButtonLink href="/timeline" variant="outline" size="lg" className="w-full sm:w-auto">
                 오늘 단가 보기
               </ButtonLink>
             </div>
@@ -113,15 +113,15 @@ export default function Home() {
         </div>
       </section>
 
-      <div className="relative mx-auto -mt-10 w-full max-w-[1280px] px-5 sm:px-6 lg:-mt-14 lg:px-8">
+      <div className="mx-auto mt-6 w-full max-w-[1280px] px-5 sm:px-6 lg:mt-10 lg:px-8">
         <nav aria-label="바로가기" className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-          {TILES.map((tile, index) => (
-            <HomeTile key={tile.href} tile={tile} featured={index === 0} />
+          {TILES.map((tile) => (
+            <HomeTile key={tile.href} tile={tile} />
           ))}
         </nav>
 
-        <section className="mt-16 lg:mt-24" aria-labelledby="changes-heading">
-          <h2 id="changes-heading" className="text-[26px] font-extrabold tracking-tight lg:text-[32px]">
+        <section className="mt-12 lg:mt-16" aria-labelledby="changes-heading">
+          <h2 id="changes-heading" className="text-[22px] font-bold tracking-tight lg:text-[26px]">
             2026년 요금 개편, 이것만 알면 돼요
           </h2>
           <div className="mt-6 grid gap-3 lg:mt-8 lg:grid-cols-3 lg:gap-4">
@@ -154,31 +154,24 @@ export default function Home() {
   );
 }
 
-function HomeTile({ tile, featured }: { tile: Tile; featured: boolean }) {
+function HomeTile({ tile }: { tile: Tile }) {
   const Icon = tile.icon;
   return (
     <Link
       href={tile.href}
-      className={`group flex min-h-[168px] flex-col rounded-card p-4 shadow-panel transition-colors duration-150 sm:p-5 lg:min-h-[200px] lg:p-6
-        focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand
-        ${featured ? "bg-brand text-white hover:bg-brand-line" : "border border-line bg-surface text-ink hover:border-brand/40"}`}
+      className="group flex min-h-[156px] flex-col rounded-card border border-line bg-surface p-4 text-ink transition-colors duration-150
+        hover:border-brand/50 sm:p-5 lg:min-h-[180px] lg:p-6
+        focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
     >
-      <span
-        className={`grid size-10 place-items-center rounded-field ${featured ? "bg-accent text-ink" : "bg-brand-soft text-brand"}`}
-        aria-hidden
-      >
+      <span className="grid size-10 place-items-center rounded-field bg-brand-soft text-brand" aria-hidden>
         <Icon className="size-5" />
       </span>
-      <span className="mt-4 flex items-center gap-1 text-[17px] font-extrabold lg:text-lg">
+      <span className="mt-4 flex items-center gap-1 text-[17px] font-bold">
         {tile.title}
-        <ArrowRightIcon className="size-4 transition-transform duration-150 group-hover:translate-x-0.5" />
+        <ArrowRightIcon className="size-4 text-ink-2 transition-colors duration-150 group-hover:text-brand" />
       </span>
-      <span className={`mt-1.5 text-sm leading-relaxed ${featured ? "text-on-brand-2" : "text-ink-2"}`}>
-        {tile.body}
-      </span>
-      {tile.note ? (
-        <span className={`mt-auto pt-3 text-sm font-bold ${featured ? "text-accent" : "text-ink-2"}`}>{tile.note}</span>
-      ) : null}
+      <span className="mt-1.5 text-sm leading-relaxed text-ink-2">{tile.body}</span>
+      {tile.note ? <span className="mt-auto pt-3 text-sm font-bold text-ink-2">{tile.note}</span> : null}
     </Link>
   );
 }

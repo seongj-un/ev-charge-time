@@ -15,9 +15,9 @@ vi.mock("@/components/auth/SessionProvider", () => ({
 }));
 
 /**
- * 상단·하단 내비는 같은 신호(라임)로 현재 위치를 보여준다:
- * 상단(네이비 띠) — aria-current="page" + 흰 글자 + 아래 라임 선(::after)
- * 하단(흰 탭바)   — aria-current="page" + 아이콘 뒤 네이비 칩 + 라임 아이콘
+ * 상단·하단 내비는 같은 신호(메인색)로 현재 위치를 보여준다:
+ * 상단 — aria-current="page" + 메인색 글자 + 아래 메인색 선(::after)
+ * 하단 — aria-current="page" + 메인색 글자 + 아이콘 뒤 옅은 메인색 칩
  * 색만이 아니라 모양(선·칩)으로도 구분된다.
  */
 const tokens = (element: Element) => element.className.split(/\s+/);
@@ -28,12 +28,12 @@ describe("TopNav 활성 표시", () => {
 
     const current = screen.getByRole("link", { name: "하루 단가" });
     expect(current).toHaveAttribute("aria-current", "page");
-    expect(tokens(current)).toContain("text-white");
-    expect(tokens(current)).toContain("after:bg-accent");
+    expect(tokens(current)).toContain("text-brand");
+    expect(tokens(current)).toContain("after:bg-brand");
 
     const other = screen.getByRole("link", { name: "주변 충전소" });
     expect(other).not.toHaveAttribute("aria-current");
-    expect(tokens(other)).not.toContain("text-white");
+    expect(tokens(other)).not.toContain("text-brand");
     expect(tokens(other)).toContain("after:bg-transparent");
   });
 
@@ -53,7 +53,7 @@ describe("TopNav 활성 표시", () => {
     render(<TopNav />);
 
     const signup = screen.getByRole("link", { name: "회원가입" });
-    expect(tokens(signup)).toContain("border-white/35");
+    expect(tokens(signup)).toContain("border-line");
     expect(tokens(signup).filter((token) => /^bg-(ink|brand|accent)$/.test(token))).toEqual([]);
   });
 });
@@ -66,12 +66,13 @@ describe("TabBar 활성 표시", () => {
     const current = screen.getByRole("link", { name: "충전소" });
     expect(current).toHaveAttribute("aria-current", "page");
     const chip = current.querySelector("span")!;
-    expect(tokens(chip)).toContain("bg-brand");
-    expect(tokens(chip)).toContain("text-accent");
+    expect(tokens(current)).toContain("text-brand");
+    expect(tokens(chip)).toContain("bg-brand-soft");
 
     const home = screen.getByRole("link", { name: "홈" });
     expect(home).not.toHaveAttribute("aria-current");
-    expect(tokens(home.querySelector("span")!)).not.toContain("bg-brand");
+    expect(tokens(home)).not.toContain("text-brand");
+    expect(tokens(home.querySelector("span")!)).not.toContain("bg-brand-soft");
   });
 
   test("홈은 정확히 / 일 때만 활성이다", () => {

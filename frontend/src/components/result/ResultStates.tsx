@@ -29,7 +29,7 @@ export function NoConditionState() {
 export function ResultSkeleton() {
   return (
     <div role="status" aria-live="polite">
-      <div className="overflow-hidden rounded-panel bg-surface shadow-panel lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <div className="overflow-hidden rounded-panel border border-line bg-surface shadow-panel lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <div className="p-5 sm:p-6 lg:p-9">
           <p className="text-sm font-bold text-ink-2">추천을 계산하고 있어요…</p>
           <div className="mt-4 h-11 w-64 animate-pulse rounded-lg bg-sunken lg:mt-6 lg:h-16 lg:w-96" />

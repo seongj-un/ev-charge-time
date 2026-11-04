@@ -3,26 +3,21 @@ import type { ComponentProps, ReactNode } from "react";
 
 /**
  * 버튼 종류.
- *   primary   진한 네이비(브랜드) — 밝은 면 위에서 화면마다 하나뿐인 주 행동 ("최적 시간 찾기")
- *   dark      검정 — 인증 화면의 주 행동 ("로그인", "가입하기")
- *   outline   흰 배경 + 테두리 — 나란히 놓인 보조 행동 ("하루 단가 보기")
- *   ghost     배경 없음 — 링크에 가까운 것
- *   accent    라임 — 네이비 머리 띠 위의 주 행동. 네이비 위에 네이비 버튼은 안 보인다.
- *   onBrand   투명 + 흰 테두리 — 네이비 면 위의 보조 행동
+ *   primary  메인색(블루) — 화면마다 하나뿐인 주 행동 ("최적 시간 찾기")
+ *   dark     검정 — 인증 화면의 주 행동 ("로그인", "가입하기")
+ *   outline  흰 배경 + 테두리 — 나란히 놓인 보조 행동 ("하루 단가 보기")
+ *   ghost    배경 없음 — 링크에 가까운 것
  */
-type Variant = "primary" | "dark" | "outline" | "ghost" | "accent" | "onBrand";
+type Variant = "primary" | "dark" | "outline" | "ghost";
 type Size = "md" | "lg";
 
 const VARIANT: Record<Variant, string> = {
-  // 호버는 팔레트 안의 더 어두운 면(ink)으로 — DESIGN.md button-primary-hover.
-  primary: "bg-brand text-white not-disabled:hover:bg-ink not-disabled:active:bg-ink/90",
+  // 호버는 같은 색의 한 단계 어두운 값으로 — 검정으로 바뀌면 다른 버튼처럼 보인다.
+  primary: "bg-brand text-white not-disabled:hover:bg-brand-hover not-disabled:active:bg-brand-hover",
   dark: "bg-ink text-white not-disabled:hover:bg-ink/90 not-disabled:active:bg-ink/80",
   outline:
     "bg-surface text-ink border border-line not-disabled:hover:border-ink-3 not-disabled:hover:bg-canvas not-disabled:active:bg-sunken",
   ghost: "text-ink not-disabled:hover:bg-sunken/60 not-disabled:active:bg-sunken",
-  accent: "bg-accent text-ink not-disabled:hover:bg-accent-hover not-disabled:active:bg-accent-hover/90",
-  onBrand:
-    "border border-white/35 text-white not-disabled:hover:border-white/70 not-disabled:hover:bg-white/10 not-disabled:active:bg-white/15",
 };
 
 const SIZE: Record<Size, string> = {
@@ -46,21 +41,11 @@ const SIZE: Record<Size, string> = {
  */
 const BASE =
   "inline-flex items-center justify-center gap-2 rounded-field font-bold transition-colors duration-150 " +
-  "focus-visible:outline-2 focus-visible:outline-offset-2 " +
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand " +
   "disabled:opacity-45 disabled:cursor-not-allowed";
 
-/** 초점 윤곽색. 네이비 면 위의 버튼에 네이비 윤곽을 그리면 보이지 않는다. */
-const RING: Record<Variant, string> = {
-  primary: "focus-visible:outline-brand",
-  dark: "focus-visible:outline-brand",
-  outline: "focus-visible:outline-brand",
-  ghost: "focus-visible:outline-brand",
-  accent: "focus-visible:outline-accent",
-  onBrand: "focus-visible:outline-accent",
-};
-
 export function buttonClass(variant: Variant = "primary", size: Size = "md") {
-  return `${BASE} ${VARIANT[variant]} ${RING[variant]} ${SIZE[size]}`;
+  return `${BASE} ${VARIANT[variant]} ${SIZE[size]}`;
 }
 
 type ButtonProps = ComponentProps<"button"> & {

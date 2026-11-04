@@ -14,15 +14,11 @@ export function MobileTopBar() {
   const { status } = useSession();
 
   return (
-    <header className="bg-brand-deep lg:hidden">
+    <header className="sticky top-0 z-30 border-b border-line bg-surface lg:hidden">
       <div className="flex h-14 items-center justify-between px-5 sm:px-6">
         <Logo />
         {status === "anonymous" ? (
-          <Link
-            href="/login"
-            className="inline-flex min-h-11 items-center rounded-field px-2 text-sm font-bold text-white
-              focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
+          <Link href="/login" className="inline-flex min-h-11 items-center rounded-field px-2 text-sm font-bold text-ink-2 hover:text-ink">
             로그인
           </Link>
         ) : null}

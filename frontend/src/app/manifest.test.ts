@@ -12,8 +12,8 @@ describe("manifest", () => {
     expect(result.short_name).toBe(SERVICE_NAME);
     expect(result.start_url).toBe("/");
     expect(result.display).toBe("standalone");
-    expect(result.background_color).toBe("#F1F0EB");
-    expect(result.theme_color).toBe("#F1F0EB");
+    expect(result.background_color).toBe("#F4F6F9");
+    expect(result.theme_color).toBe("#F4F6F9");
   });
 
   test("일반 설치 아이콘과 안전 영역을 갖춘 maskable PNG를 제공한다", () => {

@@ -33,8 +33,8 @@ export function ResultHeader({
       {/* 조건을 그대로 달고 돌아간다 — 입력 화면이 방금 넣은 값을 다시 채울 수 있다. */}
       <Link
         href={`/recommend?${query}`}
-        className="-ml-2 flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg p-1 text-on-brand-2 transition-colors duration-150
-          hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent lg:ml-0 lg:min-w-0 lg:justify-start"
+        className="-ml-2 flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg p-1 text-ink-2 transition-colors duration-150
+          hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand lg:ml-0 lg:min-w-0 lg:justify-start"
       >
         <ChevronLeftIcon className="size-5 lg:size-4" />
         <span className="sr-only lg:not-sr-only lg:text-sm lg:font-bold lg:underline lg:underline-offset-4">
@@ -42,7 +42,7 @@ export function ResultHeader({
         </span>
       </Link>
 
-      <h1 className="text-title text-white lg:text-title-lg">추천 결과</h1>
+      <h1 className="text-title lg:text-title-lg">추천 결과</h1>
 
       <ConditionSummary
         form={form}
@@ -77,7 +77,7 @@ function ConditionSummary({
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-2 lg:gap-0 lg:rounded-pill lg:bg-white/10 lg:px-3.5 lg:py-1.5 ${className}`}
+      className={`flex flex-wrap items-center gap-2 lg:gap-0 lg:rounded-pill lg:bg-off-bg lg:px-3.5 lg:py-1.5 ${className}`}
     >
       <SummaryItem>{formatKoreanDate(form.earliestStart)}</SummaryItem>
       <SummaryDot />
@@ -94,7 +94,7 @@ function ConditionSummary({
 
 function SummaryItem({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-pill bg-white/10 px-2.5 py-1 text-sm font-bold text-white lg:bg-transparent lg:px-0 lg:py-0">
+    <span className="rounded-pill bg-off-bg px-2.5 py-1 text-sm font-bold text-off-fg lg:bg-transparent lg:px-0 lg:py-0">
       {children}
     </span>
   );
@@ -103,7 +103,7 @@ function SummaryItem({ children }: { children: ReactNode }) {
 /** 데스크톱에서 알약 세 개가 한 줄로 붙을 때 쓰는 가운뎃점 */
 function SummaryDot() {
   return (
-    <span className="hidden px-1.5 text-sm font-bold text-on-brand-2 lg:inline" aria-hidden>
+    <span className="hidden px-1.5 text-sm font-bold text-off-fg lg:inline" aria-hidden>
       ·
     </span>
   );

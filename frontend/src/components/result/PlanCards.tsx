@@ -32,7 +32,7 @@ export function PlanCards({
   return (
     <section
       aria-label="추천 결과 요약"
-      className="overflow-hidden rounded-panel bg-surface shadow-panel lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"
+      className="overflow-hidden rounded-panel border border-line bg-surface shadow-panel lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"
     >
       <div className="p-5 sm:p-6 lg:p-9">
         <div className="flex items-center justify-between gap-3">
@@ -43,7 +43,7 @@ export function PlanCards({
         <p className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 lg:mt-6 lg:gap-x-4">
           <span className="tnum text-figure text-ink lg:text-figure-lg">{formatHm(best.start)}</span>
           <span className="sr-only">부터</span>
-          <span className="self-center text-3xl font-extrabold text-ink-2 lg:text-5xl" aria-hidden>
+          <span className="self-center text-3xl font-bold text-ink-2 lg:text-5xl" aria-hidden>
             –
           </span>
           <span className="tnum text-figure text-ink lg:text-figure-lg">{formatHm(best.end)}</span>
@@ -67,13 +67,13 @@ export function PlanCards({
               지금 바로 · <span className="tnum">{formatHm(baseline_now.start)}</span>
               {baselineBand ? <span className="mt-0.5 block font-medium">{baselineBand} 시간대</span> : null}
             </dt>
-            <dd className="tnum text-xl font-extrabold text-ink-2 lg:text-2xl">{formatWon(baseline_now.cost_won)}</dd>
+            <dd className="tnum text-xl font-bold text-ink-2 lg:text-2xl">{formatWon(baseline_now.cost_won)}</dd>
           </div>
           <div className="flex items-baseline justify-between gap-3 py-4 lg:py-5">
             <dt className="text-sm font-bold text-ink">
               추천대로 충전하면 · <span className="tnum">{formatHm(best.start)}</span>
             </dt>
-            <dd className="tnum text-xl font-extrabold text-ink lg:text-2xl">{formatWon(best.cost_won)}</dd>
+            <dd className="tnum text-xl font-bold text-ink lg:text-2xl">{formatWon(best.cost_won)}</dd>
           </div>
         </dl>
 
@@ -82,8 +82,8 @@ export function PlanCards({
             saves ? "bg-accent text-ink" : "bg-sunken text-ink"
           }`}
         >
-          <p className="text-base font-extrabold">{saves ? "이만큼 아껴요" : "요금 차이가 없어요"}</p>
-          <p className="tnum text-[32px] font-extrabold leading-none tracking-tight lg:text-[40px]">
+          <p className="text-base font-bold">{saves ? "이만큼 아껴요" : "요금 차이가 없어요"}</p>
+          <p className="tnum text-[32px] font-bold leading-none tracking-tight lg:text-[40px]">
             {formatSignedWon(savings_won)}
           </p>
         </div>
