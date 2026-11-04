@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 
 /**
- * 디자인에 버튼이 네 종류 있다.
- *   primary  진한 네이비(브랜드) — 화면마다 하나뿐인 주 행동 ("최적 시간 찾기")
+ * 버튼 종류.
+ *   primary  메인색(블루) — 화면마다 하나뿐인 주 행동 ("최적 시간 찾기")
  *   dark     검정 — 인증 화면의 주 행동 ("로그인", "가입하기")
  *   outline  흰 배경 + 테두리 — 나란히 놓인 보조 행동 ("하루 단가 보기")
  *   ghost    배경 없음 — 링크에 가까운 것
@@ -12,8 +12,8 @@ type Variant = "primary" | "dark" | "outline" | "ghost";
 type Size = "md" | "lg";
 
 const VARIANT: Record<Variant, string> = {
-  // 호버는 팔레트 안의 더 어두운 면(ink)으로 — DESIGN.md button-primary-hover.
-  primary: "bg-brand text-white not-disabled:hover:bg-ink not-disabled:active:bg-ink/90",
+  // 호버는 같은 색의 한 단계 어두운 값으로 — 검정으로 바뀌면 다른 버튼처럼 보인다.
+  primary: "bg-brand text-white not-disabled:hover:bg-brand-hover not-disabled:active:bg-brand-hover",
   dark: "bg-ink text-white not-disabled:hover:bg-ink/90 not-disabled:active:bg-ink/80",
   outline:
     "bg-surface text-ink border border-line not-disabled:hover:border-ink-3 not-disabled:hover:bg-canvas not-disabled:active:bg-sunken",

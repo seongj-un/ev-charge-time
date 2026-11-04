@@ -13,20 +13,28 @@
  * "왜 이 초록은 다르지" 같은 질문이 코드리뷰마다 돌아온다.
  */
 @theme {
+  /*
+   * 2026-11 리디자인 — 공모전 시연용 "단정한 서비스" 톤. 흰 카드, 옅은 회색 바탕,
+   * 메인색 하나(블루)로 주 행동·현재 위치·링크를 표시한다. 라임은 절감액과 주말 할인에만.
+   * 이전 남색(#243a5e)은 크림 바탕 위에서 탁해 보여 블루로 바꿨다(사용자 요청).
+   */
+
   /* 면 */
-  --color-canvas: #f1f0eb; /* 페이지 배경 */
-  --color-surface: #fefefe; /* 카드 */
-  --color-sunken: #e6e3dc; /* 세그먼티드 트랙, 지도 자리 */
-  --color-field: #faf9f5; /* 입력 필드 */
-  --color-line: #d9d9d5; /* 테두리 */
+  --color-canvas: #f4f6f9; /* 페이지 배경 */
+  --color-surface: #ffffff; /* 카드 */
+  --color-sunken: #eceff3; /* 세그먼티드 트랙, 지도 자리 */
+  --color-field: #f8f9fb; /* 입력 필드 */
+  --color-line: #e1e5ea; /* 테두리 */
 
   /* 글자 */
   --color-ink: #16171b; /* 본문·제목 */
-  --color-ink-2: #4b4c50; /* 보조 설명 */
-  --color-ink-3: #7c7d80; /* 각주·캡션 */
+  --color-ink-2: #4e5561; /* 보조 설명 */
+  --color-ink-3: #8a909a; /* 각주·캡션 */
 
   /* 브랜드 */
-  --color-brand: #243a5e; /* 주 버튼, 활성 탭 — 딥 네이비(사용자 승인) */
+  --color-brand: #2450d6; /* 주 버튼, 활성 탭, 링크 */
+  --color-brand-hover: #1c40b0;
+  --color-brand-soft: #eaf0fd; /* 아이콘 칩, 강조 면 */
   --color-accent: #c4de3c; /* 절감액 강조, 주말 할인 */
 
   /* 부하 구간 — 차트와 범례가 공유한다 */
@@ -39,23 +47,25 @@
   --color-ok-fg: #275742;
   --color-warn-bg: #f6ead0;
   --color-warn-fg: #644303;
-  --color-off-bg: #e6e3dc;
-  --color-off-fg: #55565b;
+  --color-off-bg: #eceff3;
+  --color-off-fg: #4e5561;
   --color-danger: #b7422e;
 
   --font-sans: "Pretendard Variable", Pretendard, -apple-system, system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 
-  /* 모서리: 8(작은 면) / 12(입력·버튼) / 20(카드) — DESIGN.md Shapes */
+  /* 모서리: 8(작은 면) / 12(입력·버튼) / 20(카드) */
   --radius-card: 20px;
   --radius-field: 12px;
+  --radius-panel: 20px;
   --radius-pill: 999px;
 
-  /* 얕은 그림자는 떠 있는 면(차트 툴팁, 선택된 세그먼트)에만. 색은 ink의 알파뿐이다. */
+  /* 그림자 — 옅게. 주요 판(panel)과 떠 있는 것(툴팁·선택된 세그먼트)만. 색은 ink 알파뿐이다. */
   --shadow-raised: 0 1px 2px rgb(22 23 27 / 0.12);
   --shadow-float: 0 1px 2px rgb(22 23 27 / 0.1), 0 6px 16px rgb(22 23 27 / 0.12);
+  --shadow-panel: 0 1px 2px rgb(22 23 27 / 0.04), 0 4px 16px rgb(22 23 27 / 0.05);
 
-  /* 타이포 스케일 — 페이지 제목 28→32, 소제목 20, 홈 제목 36→56 */
+  /* 타이포 스케일 — 페이지 제목 28→32, 소제목 20, 홈 제목 36→52 */
   --text-title: 1.75rem;
   --text-title--line-height: 1.3;
   --text-title--letter-spacing: -0.025em;
@@ -72,10 +82,19 @@
   --text-display--line-height: 1.2;
   --text-display--letter-spacing: -0.03em;
   --text-display--font-weight: 700;
-  --text-display-lg: 3.5rem;
+  --text-display-lg: 3.25rem;
   --text-display-lg--line-height: 1.15;
   --text-display-lg--letter-spacing: -0.035em;
   --text-display-lg--font-weight: 700;
+  /* 큰 수치(추천 시각·금액). 숫자는 Pretendard 고정폭 숫자로 쓴다 */
+  --text-figure: 2.5rem;
+  --text-figure--line-height: 1;
+  --text-figure--letter-spacing: -0.035em;
+  --text-figure--font-weight: 700;
+  --text-figure-lg: 3.5rem;
+  --text-figure-lg--line-height: 1;
+  --text-figure-lg--letter-spacing: -0.04em;
+  --text-figure-lg--font-weight: 700;
 }
 
 /*
@@ -112,10 +131,17 @@ body {
 }
 
 
-/* 디자인에서 수치는 전부 고정폭이다 — 시각·금액·kWh가 자리를 안 흔든다. */
+/*
+ * 수치는 고정폭 숫자다 — 시각·금액·kWh가 자리를 안 흔든다.
+ *
+ * 예전엔 글꼴 자체를 고정폭(ui-monospace)으로 바꿨는데, 고정폭 글꼴에는 한글이 없어서
+ * 한글 글꼴이 없는 기기(리눅스·일부 안드로이드)에서 "399원"의 '원', "약 3시간"이
+ * 네모(□)로 나왔다. Pretendard의 tabular-nums는 숫자 폭만 맞추고 한글도 그대로 그린다.
+ */
 .tnum {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
 
 @media (prefers-reduced-motion: reduce) {

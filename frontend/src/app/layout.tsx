@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#F1F0EB",
+  themeColor: "#FFFFFF",
   // 요금 표와 차트를 손가락으로 키워 볼 수 있어야 한다. 확대를 막지 않는다.
   width: "device-width",
   initialScale: 1,

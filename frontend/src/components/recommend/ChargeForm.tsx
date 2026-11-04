@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useSyncExternalStore, type FormEvent } from "react";
+import { useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 
 import { useSession, type SessionStatus } from "@/components/auth/SessionProvider";
 import { Button } from "@/components/ui/Button";
@@ -263,138 +263,185 @@ export function ChargeForm({
     <form
       noValidate
       onSubmit={handleSubmit}
-      /*
-       * 데스크톱에서만 폼 전체가 흰 카드다(시안 p-15). 모바일 시안은 캔버스 위에
-       * 바로 놓이므로, 항상 카드로 보이는 Card 대신 lg: 접두사를 붙인 클래스를 쓴다.
-       */
-      className="pb-2 lg:rounded-card lg:border lg:border-line lg:bg-surface lg:p-8"
+      // 흰 판 하나. 맨 아래 줄이 요약과 제출을 든다.
+      className="overflow-hidden rounded-panel border border-line bg-surface shadow-panel"
     >
-      <h2 className="hidden lg:block mb-8 text-section">충전 조건 입력</h2>
+      <div className="divide-y divide-line px-5 sm:px-6 lg:px-8">
+        <FormSection title="차량" description="저장한 차량을 고르거나 직접 넣어요.">
+          {/* SelectField가 라벨을 직접 그리므로, 같은 줄 오른쪽에 링크를 얹는다. */}
+          <div className="relative">
+            <SelectField
+              label="내 차량"
+              value={vehicleId}
+              onChange={(event) => pickVehicle(event.target.value)}
+              disabled={!canPickVehicle}
+              /* 못 누르는 칸이 눌리는 칸처럼 보이면 안 된다. 공유 컴포넌트는 못 고치니 여기서 입힌다. */
+              className={`[&>label]:mb-0 [&>label]:flex [&>label]:min-h-11 [&>label]:items-center ${
+                canPickVehicle ? "" : "[&_select]:cursor-not-allowed [&_select]:text-ink-3"
+              }`}
+              hint={vehicleHint}
+            >
+              <option value="">차량 정보 직접 입력</option>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>
+                  {vehicleOptionLabel(vehicle)}
+                </option>
+              ))}
+            </SelectField>
+            <Link
+              href={vehicleLinkHref}
+              className="absolute right-0 top-0 inline-flex min-h-11 min-w-11 items-center justify-end text-sm font-bold text-brand underline underline-offset-4 hover:text-ink"
+            >
+              {vehicleLinkLabel}
+            </Link>
+          </div>
 
-      {/* SelectField가 라벨을 직접 그리므로, 같은 줄 오른쪽에 링크를 얹는다. */}
-      <div className="relative">
-        <SelectField
-          label="내 차량"
-          value={vehicleId}
-          onChange={(event) => pickVehicle(event.target.value)}
-          disabled={!canPickVehicle}
-          /* 못 누르는 칸이 눌리는 칸처럼 보이면 안 된다. 공유 컴포넌트는 못 고치니 여기서 입힌다. */
-          className={`[&>label]:mb-0 [&>label]:flex [&>label]:min-h-11 [&>label]:items-center ${
-            canPickVehicle ? "" : "[&_select]:cursor-not-allowed [&_select]:text-ink-3"
-          }`}
-          hint={vehicleHint}
-        >
-          <option value="">차량 정보 직접 입력</option>
-          {vehicles.map((vehicle) => (
-            <option key={vehicle.id} value={vehicle.id}>
-              {vehicleOptionLabel(vehicle)}
-            </option>
-          ))}
-        </SelectField>
-        <Link
-          href={vehicleLinkHref}
-          className="absolute right-0 top-0 inline-flex min-h-11 min-w-11 items-center justify-end text-sm font-bold text-brand underline underline-offset-4 hover:text-ink"
-        >
-          {vehicleLinkLabel}
-        </Link>
+          <div className="mt-5 grid grid-cols-2 gap-3 lg:gap-5">
+            <Field
+              label="배터리 용량"
+              suffix="kWh"
+              inputMode="decimal"
+              value={conditions.batteryKwh}
+              onChange={(event) => setSpec("batteryKwh", event.target.value)}
+              error={shown.batteryKwh}
+            />
+            <Field
+              label="충전기 출력"
+              suffix="kW"
+              inputMode="decimal"
+              value={conditions.chargerKw}
+              onChange={(event) => setSpec("chargerKw", event.target.value)}
+              error={shown.chargerKw}
+            />
+          </div>
+
+          <SegmentedControl
+            className="mt-5"
+            name="mode"
+            label="충전 방식"
+            value={conditions.mode}
+            options={MODE_OPTIONS}
+            onChange={(mode) => setSpec("mode", mode)}
+          />
+
+          {conditions.mode === "public_fast" ? (
+            <Field
+              className="mt-5"
+              label="공용 급속 단가"
+              suffix="원/kWh"
+              inputMode="decimal"
+              value={conditions.publicBasePrice}
+              onChange={(event) => set("publicBasePrice", event.target.value)}
+              hint="공용 급속은 충전사업자마다 요금이 달라요. 충전기에 적힌 kWh당 요금을 넣어 주세요."
+              error={shown.publicBasePrice}
+            />
+          ) : null}
+        </FormSection>
+
+        <FormSection title="충전량" description="지금 몇 %에서 몇 %까지 채울지요.">
+          <div className="grid grid-cols-2 gap-3 lg:gap-5">
+            <Field
+              label="현재 충전량"
+              suffix="%"
+              inputMode="decimal"
+              value={conditions.socNow}
+              onChange={(event) => set("socNow", event.target.value)}
+              error={shown.socNow}
+            />
+            <Field
+              label="목표 충전량"
+              suffix="%"
+              inputMode="decimal"
+              value={conditions.socTarget}
+              onChange={(event) => set("socTarget", event.target.value)}
+              error={shown.socTarget}
+            />
+          </div>
+          <BatteryGauge now={parseNumber(conditions.socNow)} target={parseNumber(conditions.socTarget)} />
+        </FormSection>
+
+        <FormSection title="시간" description="이 사이에서 가장 싼 구간을 찾아요.">
+          <div className="grid gap-4 lg:grid-cols-2 lg:gap-5">
+            <Field
+              label="충전 시작 가능"
+              type="datetime-local"
+              value={conditions.earliestStart}
+              onChange={(event) => set("earliestStart", event.target.value)}
+              error={shown.earliestStart}
+            />
+            <Field
+              label="이때까지 완료"
+              type="datetime-local"
+              value={conditions.deadline}
+              onChange={(event) => set("deadline", event.target.value)}
+              error={shown.deadline}
+            />
+          </div>
+        </FormSection>
       </div>
 
-      {/*
-       * 모바일 시안에는 이 두 칸이 없다. 차량 선택이 아직 501이라 어디선가 받지 않으면
-       * 추천 자체를 못 하므로, 차량 선택 바로 아래(= 차량 정보 자리)에 그대로 노출한다.
-       */}
-      <div className="mt-6 grid grid-cols-2 gap-3 lg:gap-5">
-        <Field
-          label="배터리 용량"
-          suffix="kWh"
-          inputMode="decimal"
-          value={conditions.batteryKwh}
-          onChange={(event) => setSpec("batteryKwh", event.target.value)}
-          error={shown.batteryKwh}
-        />
-        <Field
-          label="충전기 출력"
-          suffix="kW"
-          inputMode="decimal"
-          value={conditions.chargerKw}
-          onChange={(event) => setSpec("chargerKw", event.target.value)}
-          error={shown.chargerKw}
-        />
-      </div>
-
-      <SegmentedControl
-        className="mt-6"
-        name="mode"
-        label="충전 방식"
-        value={conditions.mode}
-        options={MODE_OPTIONS}
-        onChange={(mode) => setSpec("mode", mode)}
-      />
-
-      {conditions.mode === "public_fast" ? (
-        <Field
-          className="mt-6"
-          label="공용 급속 단가"
-          suffix="원/kWh"
-          inputMode="decimal"
-          value={conditions.publicBasePrice}
-          onChange={(event) => set("publicBasePrice", event.target.value)}
-          hint="공용 급속은 충전사업자마다 요금이 달라요. 충전기에 적힌 kWh당 요금을 넣어 주세요."
-          error={shown.publicBasePrice}
-        />
-      ) : null}
-
-      {/* 모바일 시안은 이 네 칸만 흰 카드로 묶는다. 데스크톱은 바깥 카드 하나뿐이라 배경을 지운다. */}
-      <div className="mt-6 rounded-card border border-line bg-surface p-4 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
-        <div className="grid grid-cols-2 gap-3 lg:gap-5">
-          <Field
-            label="현재 충전량"
-            suffix="%"
-            inputMode="decimal"
-            value={conditions.socNow}
-            onChange={(event) => set("socNow", event.target.value)}
-            error={shown.socNow}
-          />
-          <Field
-            label="목표 충전량"
-            suffix="%"
-            inputMode="decimal"
-            value={conditions.socTarget}
-            onChange={(event) => set("socTarget", event.target.value)}
-            error={shown.socTarget}
-          />
-        </div>
-
-        <div className="mt-4 grid gap-4 lg:mt-6 lg:grid-cols-2 lg:gap-5">
-          <Field
-            label="충전 시작 가능"
-            type="datetime-local"
-            value={conditions.earliestStart}
-            onChange={(event) => set("earliestStart", event.target.value)}
-            error={shown.earliestStart}
-          />
-          <Field
-            label="이때까지 완료"
-            type="datetime-local"
-            value={conditions.deadline}
-            onChange={(event) => set("deadline", event.target.value)}
-            error={shown.deadline}
-          />
-        </div>
-      </div>
-
-      <div className="mt-6 flex flex-col gap-4 lg:mt-8 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-4 border-t border-line bg-field px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 lg:py-6">
         <div className="flex items-baseline justify-between gap-3 lg:block">
-          <p className="text-sm text-ink-2">필요 충전량</p>
-          <p className="tnum text-base font-bold lg:mt-1.5 lg:text-lg" aria-live="polite">
+          <p className="text-sm font-bold text-ink-2">필요 충전량</p>
+          <p className="tnum text-lg font-bold lg:mt-1 lg:text-2xl" aria-live="polite">
             {summarize(conditions)}
           </p>
         </div>
-        <Button type="submit" size="lg" className="w-full lg:w-auto">
+        <Button type="submit" size="lg" className="w-full lg:w-auto lg:px-8">
           최적 시간 찾기
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * 폼의 한 묶음. 데스크톱은 왼쪽에 묶음 이름, 오른쪽에 칸들 — 칸이 열 개 가까이 되는 폼을
+ * 한 덩어리로 늘어놓으면 어디까지 했는지 안 보인다.
+ */
+function FormSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <fieldset className="py-6 lg:grid lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-8 lg:py-8">
+      <legend className="sr-only">{title}</legend>
+      <div className="mb-4 lg:mb-0" aria-hidden>
+        <p className="text-section">{title}</p>
+        <p className="mt-1 text-sm text-ink-2">{description}</p>
+      </div>
+      <div className="min-w-0">{children}</div>
+    </fieldset>
+  );
+}
+
+/**
+ * 배터리 그림. 지금(메인색)에서 목표(라임)까지 채울 만큼이 한눈에 보이게 한다.
+ * 숫자는 바로 위 입력 칸에 이미 있으니 그림은 aria-hidden이다. 값이 이상하면 그리지 않는다.
+ */
+function BatteryGauge({ now, target }: { now: number | null; target: number | null }) {
+  const valid = now !== null && target !== null && now >= 0 && target <= 100 && target > now;
+  const from = valid ? now : 0;
+  const to = valid ? target : 0;
+
+  return (
+    <div className="mt-5 flex items-center gap-1.5" aria-hidden>
+      <div className="relative h-9 flex-1 overflow-hidden rounded-[10px] border-2 border-ink/70 bg-sunken p-[3px]">
+        <div className="relative h-full w-full">
+          <div className="absolute inset-y-0 left-0 rounded-[5px] bg-brand" style={{ width: `${from}%` }} />
+          <div
+            className="absolute inset-y-0 rounded-[5px] bg-accent"
+            style={{ left: `${from}%`, width: `${to - from}%` }}
+          />
+        </div>
+      </div>
+      <div className="h-3.5 w-1.5 rounded-r-sm bg-ink/80" />
+    </div>
   );
 }
 

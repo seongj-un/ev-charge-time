@@ -1,17 +1,19 @@
 import type { ReactNode } from "react";
 
+import { MobileTopBar } from "./MobileTopBar";
 import { TabBar } from "./TabBar";
 import { TopNav } from "./TopNav";
 
 /**
- * 모바일은 하단 탭바, 데스크톱은 상단 내비. 디자인이 둘을 다르게 그렸다.
- * 본문 아래 여백(pb-24)은 탭바가 마지막 줄을 가리지 않게 하는 것이다.
+ * 모바일은 상단 바 + 하단 탭바, 데스크톱은 상단 내비.
+ * 본문 아래 여백은 탭바가 마지막 줄을 가리지 않게 하는 것이다.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-dvh">
       <TopNav />
-      <main className="pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-16">{children}</main>
+      <MobileTopBar />
+      <main className="pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-20">{children}</main>
       <TabBar />
     </div>
   );
@@ -27,6 +29,55 @@ export function PageContainer({
 }) {
   return (
     <div className={`mx-auto w-full max-w-[1280px] px-5 pt-6 sm:px-6 lg:px-8 lg:pt-10 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * 화면 머리 — 제목·설명·조작. 모든 화면이 같은 자리·크기로 제목을 단다.
+ * 머리 아래는 흰 바탕 띠로 구분해, 카드가 늘어선 본문과 섞이지 않게 한다.
+ */
+export function PageHero({
+  title,
+  description,
+  eyebrow,
+  actions,
+  children,
+  className = "",
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  eyebrow?: ReactNode;
+  /** 제목 오른쪽(데스크톱) / 아래(모바일)에 놓이는 조작 */
+  actions?: ReactNode;
+  /** 제목 아래에 더 넣을 것 (요약 칩 등) */
+  children?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`border-b border-line bg-surface ${className}`}>
+      <div className="mx-auto w-full max-w-[1280px] px-5 py-6 sm:px-6 lg:px-8 lg:py-10">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
+          <div className="min-w-0">
+            {eyebrow ? <div className="mb-2 text-sm font-bold text-brand">{eyebrow}</div> : null}
+            <h1 className="text-title lg:text-title-lg">{title}</h1>
+            {description ? (
+              <p className="mt-2 max-w-[60ch] text-base leading-relaxed text-ink-2">{description}</p>
+            ) : null}
+          </div>
+          {actions ? <div className="shrink-0">{actions}</div> : null}
+        </div>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/** PageHero 아래 본문. */
+export function PageBody({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`mx-auto mt-6 w-full max-w-[1280px] px-5 sm:px-6 lg:mt-8 lg:px-8 ${className}`}>
       {children}
     </div>
   );

@@ -1,26 +1,26 @@
 ---
 version: alpha
 name: Kinetic — charging clarity
-description: Existing Korean-first identity with the user-approved deep navy primary and lime accent, redesigned for readable charging decisions.
+description: Korean-first charging decision app — clean white service UI with a blue primary and lime savings accent, redesigned for the 2026-11-11 competition demo.
 colors:
-  primary: "#243A5E"
-  on-primary: "#FEFEFE"
+  primary: "#2450D6"
+  on-primary: "#FFFFFF"
   accent: "#C4DE3C"
   on-accent: "#16171B"
-  background: "#F1F0EB"
+  background: "#F4F6F9"
   on-background: "#16171B"
-  surface: "#FEFEFE"
+  surface: "#FFFFFF"
   on-surface: "#16171B"
-  sunken: "#E6E3DC"
-  on-sunken: "#4B4C50"
-  field: "#FAF9F5"
+  sunken: "#ECEFF3"
+  on-sunken: "#4E5561"
+  field: "#F8F9FB"
   on-field: "#16171B"
-  border: "#D9D9D5"
-  muted: "#4B4C50"
-  tertiary: "#7C7D80"
+  border: "#E1E5EA"
+  muted: "#4E5561"
+  tertiary: "#8A909A"
   inverse: "#16171B"
-  on-inverse: "#FEFEFE"
-  ring: "#243A5E"
+  on-inverse: "#FFFFFF"
+  ring: "#2450D6"
   band-light: "#2F7C5A"
   band-middle: "#C88918"
   band-peak: "#B7422E"
@@ -28,14 +28,14 @@ colors:
   on-ok: "#275742"
   warning: "#F6EAD0"
   on-warning: "#644303"
-  off: "#E6E3DC"
-  on-off: "#55565B"
+  off: "#ECEFF3"
+  on-off: "#4E5561"
   danger: "#B7422E"
-  on-danger: "#FEFEFE"
+  on-danger: "#FFFFFF"
 typography:
   display:
     fontFamily: "Pretendard Variable, Pretendard, Apple SD Gothic Neo, Malgun Gothic, system-ui, sans-serif"
-    fontSize: 56px
+    fontSize: 52px
     fontWeight: 700
     lineHeight: 1.15
     letterSpacing: "-0.035em"
@@ -62,7 +62,7 @@ typography:
     fontWeight: 400
     lineHeight: 1.6
   number:
-    fontFamily: "ui-monospace, SF Mono, JetBrains Mono, Menlo, monospace"
+    fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif (tabular-nums)"
     fontSize: 32px
     fontWeight: 700
     lineHeight: 1.2
@@ -88,8 +88,8 @@ components:
     height: 48px
     padding: "{spacing.md}"
   button-primary-hover:
-    backgroundColor: "{colors.inverse}"
-    textColor: "{colors.on-inverse}"
+    backgroundColor: "#1C40B0"
+    textColor: "{colors.on-primary}"
   button-secondary:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.on-surface}"
@@ -114,7 +114,7 @@ components:
     textColor: "{colors.on-accent}"
     rounded: "{rounded.lg}"
   nav-active:
-    backgroundColor: "{colors.background}"
+    backgroundColor: "{colors.surface}"
     textColor: "{colors.primary}"
     rounded: "{rounded.md}"
   badge-ok:
@@ -131,13 +131,13 @@ components:
 
 ## Overview
 
-키네틱은 한국어를 사용하는 전기차 운전자가 충전 조건을 입력하고 비용이 낮은 시간대를 판단하는 웹앱이다. 방향은 **차분한·명확한·실용적인 product minimalism**이다. 기존 PDF 유래의 라임·따뜻한 중립색과 Pretendard를 유지하고, 메인색(primary/ring)만 사용자가 승인한 딥 네이비 `#243A5E`를 쓴다. 크림 배경은 새로 도입한 취향이 아니라 기존 브랜드 자산이다. 디스플레이 세리프, 승인된 네이비 외의 새로운 블루, 다크 테마를 도입하지 않는다.
+키네틱은 한국어를 사용하는 전기차 운전자가 충전 조건을 입력하고 비용이 낮은 시간대를 판단하는 웹앱이다. 2026-11-11 본선 시연을 앞두고 **단정한 서비스 UI**로 다시 정했다: 흰 상단 바·흰 카드, 옅은 회색 바탕(`#F4F6F9`), 메인색 블루 `#2450D6` 하나로 주 행동·현재 위치·링크를 표시하고, 라임 `#C4DE3C`은 절감액과 주말 할인에만 쓴다.
 
-사용자 승인 범위: 기존 라임·Pretendard 유지, 공통 디자인 기준 문서화 후 전체 화면 여백·타이포·컴포넌트 리디자인. **Reskin**으로 제한한다. 이후 사용자가 기존 forest 초록(`#0C5949`) 메인색을 딥 네이비 `#243A5E`로 바꾸도록 직접 선택·승인했다(primary/ring만 변경; 라임, 중립색, 부하 구간·상태 의미색, Pretendard는 그대로). 기능, 라우트, 섹션 순서, API, 입력 이름, URL query, 인증 동작, 계산, 메타데이터 및 실제 콘텐츠는 유지한다. 별도 승인 없이 새 의존성·유료 서비스·커밋·푸시·병합·배포를 하지 않는다.
+결정 경과(2026-11-04, 사용자): 이전 reskin(크림 바탕·남색 #243A5E)은 "너무 밋밋함" → 짙은 남색 띠를 쓰는 대담한 시안을 거쳐 → "공모전에 나가니 정상적인 디자인으로" + 메인색 변경 요청. 그래서 장식적 실험(어두운 머리 띠, 큰 그림자, 과한 굵기)은 걷어 내고, 구조 개선(홈의 오늘 요금 판, 묶음으로 나눈 입력 폼, 한 장으로 합친 추천 결과)만 남겼다. 기능, 라우트, API, 입력 이름, URL query, 인증, 계산은 바꾸지 않는다.
 
 ## Signature Element
 
-모든 화면에서 동일하게 쓰는 **짧은 활성 내비게이션 표시**를 시그니처로 삼는다. 데스크톱 상단과 모바일 하단의 현재 위치는 브랜드(네이비) 텍스트와 선/표시의 조합으로 읽히며 `aria-current="page"`를 유지한다. 홈에 장식적 충전기 일러스트, 가짜 앱 스크린샷, 애니메이션을 추가하지 않는다.
+현재 위치 표시를 모든 화면에서 같게 쓴다: 데스크톱 상단은 메인색 글자 + 헤더 아래 테두리에 붙는 2px 메인색 선, 모바일 하단 탭은 아이콘 뒤 옅은 메인색 칩 + 메인색 아이콘·글자. 둘 다 `aria-current="page"`. 홈에 장식적 일러스트·가짜 스크린샷·애니메이션을 추가하지 않는다.
 
 ## Colors
 
@@ -214,7 +214,9 @@ YAML은 현재 `src/app/globals.css` 및 기존 설계 문서의 색상을 보�
 - 소형 `select`처럼 `outline-none`을 쓰는 컨트롤은 `focus-visible:outline-2 outline-offset-2 outline-brand`를 직접 준다(전역 링은 a/button 등에만 적용).
 - 비활성 Button은 `disabled:cursor-not-allowed`가 보이도록 `pointer-events-none`을 쓰지 않는다. hover/active 색은 `not-disabled:`로 한정하고 클릭 차단은 네이티브 `disabled`가 맡는다.
 - 위 클래스 검사는 회귀 방지용이며 실제 높이·겹침·커서·초점 표시는 브라우저 측정으로 확인한다.
-- 메인색 `--color-brand`는 `#243a5e`(딥 네이비). 아이콘(`scripts/generate-pwa-icons.mjs`)은 이 값을 읽어 재생성하며 manifest의 배경 `#F1F0EB`는 그대로다.
+- 메인색 `--color-brand`는 `#2450d6`(블루), hover `--color-brand-hover` `#1c40b0`, 옅은 면 `--color-brand-soft` `#eaf0fd`. 아이콘(`scripts/generate-pwa-icons.mjs`)은 이 값과 canvas `#f4f6f9`를 읽어 재생성했고 manifest 배경도 `#F4F6F9`다.
+- 수치 `.tnum`은 Pretendard + `tabular-nums`다. 고정폭 글꼴에는 한글이 없어 한글 글꼴 없는 기기에서 원·시간이 □로 깨졌다.
+- 공통 머리 `PageHero`(흰 띠 + 제목/설명) · `PageBody`, 큰 판은 `rounded-panel` + `shadow-panel`(옅은 그림자) + 테두리.
 - `src/design-guard.test.ts`가 transition-all·backdrop-blur·ink-3 텍스트·기존 팔레트 hex 보존을 소스에서 확인한다.
 
 ## Do's and Don'ts

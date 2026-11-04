@@ -11,10 +11,10 @@ describe("Button 크기·모양", () => {
     expect(buttonClass("primary", "md")).toContain("h-11");
   });
 
-  test("주 버튼은 브랜드색에서 ink로 호버하고 알약이 아니다", () => {
+  test("주 버튼은 브랜드색에서 한 단계 어두운 브랜드색으로 호버하고 알약이 아니다", () => {
     const className = buttonClass("primary");
     expect(className).toContain("bg-brand");
-    expect(className).toContain("hover:bg-ink");
+    expect(className).toContain("hover:bg-brand-hover");
     expect(className).toContain("rounded-field");
     expect(className).not.toContain("rounded-pill");
   });

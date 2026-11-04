@@ -137,7 +137,7 @@ export function StationMap({ center, stations, className = "" }: Props) {
  */
 function brandColor(): string {
   const value = getComputedStyle(document.documentElement).getPropertyValue("--color-brand").trim();
-  return value || "#243a5e";
+  return value || "#2450d6";
 }
 
 /** 충전소 이름이 팝업 HTML에 그대로 들어간다. 외부 API가 준 문자열이다. */
