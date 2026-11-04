@@ -55,7 +55,8 @@ const TILES: Tile[] = [
 const FEATURES = [
   {
     icon: ClockIcon,
-    tag: "평일",
+    // 겨울철 시간대는 개편 전후가 같다 (backend/config/tariff.yaml). 바뀐 건 봄·여름·가을이다.
+    tag: "봄·여름·가을 평일",
     title: "바뀐 시간대",
     body: "평일 낮 11–15시는 중간요금으로 내려가고, 저녁 18–21시는 최고요금이 됐어요.",
     bar: "bg-band-peak",
