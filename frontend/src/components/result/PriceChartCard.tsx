@@ -41,7 +41,7 @@ export function PriceChartCard({
   );
 
   return (
-    <Card className="mt-3 p-4 lg:mt-5 lg:p-6">
+    <Card className="mt-4 p-4 lg:mt-6 lg:p-7">
       <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2 lg:col-start-1 lg:row-start-1">
           <h2 className="text-base font-bold lg:text-lg">

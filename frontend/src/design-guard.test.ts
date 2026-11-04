@@ -55,15 +55,27 @@ describe("디자인 계약", () => {
     expect(button?.text).toContain("rounded-field");
   });
 
-  test("기존 팔레트 hex가 그대로 남아 있다", () => {
+  test("팔레트 hex가 DESIGN.md 계약대로 있다 (네이비·라임·부하구간·상태색은 이전부터 그대로)", () => {
     const css = sources.find((source) => source.path === "app/globals.css")?.text ?? "";
     const palette = [
-      "#f1f0eb", "#fefefe", "#e6e3dc", "#faf9f5", "#d9d9d5",
-      "#16171b", "#4b4c50", "#7c7d80", "#243a5e", "#c4de3c",
+      // 2026-11 리디자인의 차가운 중립색과 네이비 단계
+      "#eef1f5", "#ffffff", "#e3e8ef", "#f6f8fb", "#d6dde7",
+      "#16171b", "#475063", "#7a8395", "#172840", "#2f4a73", "#e3e9f3", "#b4c3da",
+      // 바뀌지 않은 브랜드·의미색
+      "#243a5e", "#c4de3c",
       "#2f7c5a", "#c88918", "#b7422e", "#e2efe6", "#275742",
-      "#f6ead0", "#644303", "#55565b",
+      "#f6ead0", "#644303",
     ];
     for (const hex of palette) expect(css).toContain(hex);
+    // 크림 중립색은 네이비를 탁하게 만들어 걷어 냈다
+    expect(css).not.toContain("#f1f0eb");
+  });
+
+  test("수치용 .tnum은 한글이 없는 고정폭 글꼴로 바꾸지 않는다 (원·시간이 □로 깨진다)", () => {
+    const css = sources.find((source) => source.path === "app/globals.css")?.text ?? "";
+    const tnum = css.match(/\.tnum\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(tnum).toContain("tabular-nums");
+    expect(tnum).not.toContain("--font-mono");
   });
 
   test("브랜드 토큰은 사용자가 승인한 딥 네이비 #243a5e이고 DESIGN.md와 일치한다", () => {

@@ -30,7 +30,7 @@ export function SegmentedControl<T extends string>({
               key={option.value}
               className={`flex min-h-11 flex-1 cursor-pointer items-center justify-center rounded-[10px] px-2 text-center text-sm font-bold transition-colors duration-150
                 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-brand
-                ${selected ? "bg-surface text-ink shadow-raised" : "text-ink-2 hover:text-ink"}`}
+                ${selected ? "bg-brand text-white shadow-raised" : "text-ink-2 hover:bg-surface/60 hover:text-ink"}`}
             >
               <input
                 type="radio"

@@ -2,13 +2,15 @@ import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 
 /**
- * 디자인에 버튼이 네 종류 있다.
- *   primary  진한 네이비(브랜드) — 화면마다 하나뿐인 주 행동 ("최적 시간 찾기")
- *   dark     검정 — 인증 화면의 주 행동 ("로그인", "가입하기")
- *   outline  흰 배경 + 테두리 — 나란히 놓인 보조 행동 ("하루 단가 보기")
- *   ghost    배경 없음 — 링크에 가까운 것
+ * 버튼 종류.
+ *   primary   진한 네이비(브랜드) — 밝은 면 위에서 화면마다 하나뿐인 주 행동 ("최적 시간 찾기")
+ *   dark      검정 — 인증 화면의 주 행동 ("로그인", "가입하기")
+ *   outline   흰 배경 + 테두리 — 나란히 놓인 보조 행동 ("하루 단가 보기")
+ *   ghost     배경 없음 — 링크에 가까운 것
+ *   accent    라임 — 네이비 머리 띠 위의 주 행동. 네이비 위에 네이비 버튼은 안 보인다.
+ *   onBrand   투명 + 흰 테두리 — 네이비 면 위의 보조 행동
  */
-type Variant = "primary" | "dark" | "outline" | "ghost";
+type Variant = "primary" | "dark" | "outline" | "ghost" | "accent" | "onBrand";
 type Size = "md" | "lg";
 
 const VARIANT: Record<Variant, string> = {
@@ -18,6 +20,9 @@ const VARIANT: Record<Variant, string> = {
   outline:
     "bg-surface text-ink border border-line not-disabled:hover:border-ink-3 not-disabled:hover:bg-canvas not-disabled:active:bg-sunken",
   ghost: "text-ink not-disabled:hover:bg-sunken/60 not-disabled:active:bg-sunken",
+  accent: "bg-accent text-ink not-disabled:hover:bg-accent-hover not-disabled:active:bg-accent-hover/90",
+  onBrand:
+    "border border-white/35 text-white not-disabled:hover:border-white/70 not-disabled:hover:bg-white/10 not-disabled:active:bg-white/15",
 };
 
 const SIZE: Record<Size, string> = {
@@ -41,11 +46,21 @@ const SIZE: Record<Size, string> = {
  */
 const BASE =
   "inline-flex items-center justify-center gap-2 rounded-field font-bold transition-colors duration-150 " +
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand " +
+  "focus-visible:outline-2 focus-visible:outline-offset-2 " +
   "disabled:opacity-45 disabled:cursor-not-allowed";
 
+/** 초점 윤곽색. 네이비 면 위의 버튼에 네이비 윤곽을 그리면 보이지 않는다. */
+const RING: Record<Variant, string> = {
+  primary: "focus-visible:outline-brand",
+  dark: "focus-visible:outline-brand",
+  outline: "focus-visible:outline-brand",
+  ghost: "focus-visible:outline-brand",
+  accent: "focus-visible:outline-accent",
+  onBrand: "focus-visible:outline-accent",
+};
+
 export function buttonClass(variant: Variant = "primary", size: Size = "md") {
-  return `${BASE} ${VARIANT[variant]} ${SIZE[size]}`;
+  return `${BASE} ${VARIANT[variant]} ${RING[variant]} ${SIZE[size]}`;
 }
 
 type ButtonProps = ComponentProps<"button"> & {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ChartMarker } from "@/components/chart/PriceBarChart";
-import { PageContainer } from "@/components/shell/AppShell";
+import { PageBody, PageContainer } from "@/components/shell/AppShell";
 import { Notice } from "@/components/ui/Notice";
 import { ApiError } from "@/lib/api/client";
 import { fetchRecommendation, fetchTimeline } from "@/lib/api/endpoints";
@@ -148,9 +148,14 @@ export function ResultView({ query }: { query: string }) {
   ).filter((marker) => marker.hours.length > 0);
 
   return (
-    <PageContainer className="pb-10">
-      <ResultHeader form={form} query={query} unverified={unverifiedItems.length > 0} />
+    <>
+      <section className="bg-brand-deep text-white">
+        <div className="mx-auto w-full max-w-[1280px] px-5 pt-5 pb-16 sm:px-6 lg:px-8 lg:pt-10 lg:pb-24">
+          <ResultHeader form={form} query={query} unverified={unverifiedItems.length > 0} />
+        </div>
+      </section>
 
+      <PageBody className="pb-10">
       {plan.status === "loading" ? <ResultSkeleton /> : null}
 
       {plan.status === "error" ? (
@@ -210,7 +215,8 @@ export function ResultView({ query }: { query: string }) {
           <ResultActions />
         </>
       ) : null}
-    </PageContainer>
+      </PageBody>
+    </>
   );
 }
 

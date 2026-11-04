@@ -25,20 +25,20 @@ export function NoConditionState() {
   );
 }
 
-/** 추천을 기다리는 동안. 카드 자리를 미리 잡아 두면 값이 들어올 때 화면이 튀지 않는다. */
+/** 추천을 기다리는 동안. 판 자리를 미리 잡아 두면 값이 들어올 때 화면이 튀지 않는다. */
 export function ResultSkeleton() {
   return (
-    <div role="status" aria-live="polite" className="mt-5 lg:mt-6">
-      <p className="text-sm text-ink-2">추천을 계산하고 있어요…</p>
-
-      <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-5">
-        <div className="col-span-2 h-[168px] animate-pulse rounded-card bg-sunken lg:col-span-1" />
-        <div className="h-[116px] animate-pulse rounded-card bg-sunken lg:h-[168px]" />
-        <div className="h-[116px] animate-pulse rounded-card bg-sunken lg:h-[168px]" />
-        <div className="col-span-2 h-[72px] animate-pulse rounded-card bg-sunken lg:hidden" />
+    <div role="status" aria-live="polite">
+      <div className="overflow-hidden rounded-panel bg-surface shadow-panel lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <div className="p-5 sm:p-6 lg:p-9">
+          <p className="text-sm font-bold text-ink-2">추천을 계산하고 있어요…</p>
+          <div className="mt-4 h-11 w-64 animate-pulse rounded-lg bg-sunken lg:mt-6 lg:h-16 lg:w-96" />
+          <div className="mt-4 h-6 w-56 animate-pulse rounded-lg bg-sunken lg:mt-6" />
+        </div>
+        <div className="h-[196px] animate-pulse bg-sunken/70 lg:h-auto" />
       </div>
 
-      <div className="mt-3 h-[260px] animate-pulse rounded-card bg-sunken lg:mt-5 lg:h-[330px]" />
+      <div className="mt-4 h-[260px] animate-pulse rounded-card bg-sunken lg:mt-6 lg:h-[330px]" />
     </div>
   );
 }
@@ -58,7 +58,7 @@ export function ResultErrorState({
   onRetry: () => void;
 }) {
   return (
-    <Card className="mt-5 p-6 lg:mt-6 lg:p-8">
+    <Card className="p-6 shadow-panel lg:p-8">
       <h2 className="text-section">추천을 불러오지 못했어요</h2>
       {/* 검증 실패가 여러 건이면 줄바꿈으로 이어져 온다 (client.ts) — 줄을 살려 둔다. */}
       <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-ink-2">{message}</p>

@@ -4,10 +4,7 @@ import type { Mode } from "@/lib/api/types";
 import { fromSearchParams, type RecommendForm } from "@/lib/recommend-params";
 
 import { ChargeForm } from "@/components/recommend/ChargeForm";
-import { PageContainer } from "@/components/shell/AppShell";
-import { BoltIcon } from "@/components/shell/icons";
-import { SERVICE_NAME } from "@/components/shell/nav";
-import { Card } from "@/components/ui/Card";
+import { PageBody, PageHero } from "@/components/shell/AppShell";
 
 export const metadata: Metadata = {
   title: "충전 시간 추천",
@@ -15,7 +12,7 @@ export const metadata: Metadata = {
     "배터리 용량과 충전기 출력, 원하는 충전량과 시간대를 넣으면 가장 싼 충전 시각을 찾아드립니다.",
 };
 
-/** 데스크톱 시안(p-15)의 오른쪽 안내 카드. 모바일 시안에는 없어서 lg에서만 띄운다. */
+/** 폼 옆(데스크톱)·아래(모바일) 안내. 계산 가정은 결과를 읽는 데 필요해서 모바일에도 둔다. */
 const GUIDES = [
   {
     title: "이렇게 찾아요",
@@ -67,25 +64,13 @@ function renderPage(
   initialPrice?: number,
 ) {
   return (
-    <PageContainer className="pb-6">
-      {/* 모바일에는 상단 내비가 없다(탭바가 대신한다). 그래서 로고를 화면이 직접 단다. */}
-      <p className="flex items-center gap-2 text-sm font-bold text-ink lg:hidden">
-        <BoltIcon className="size-5 text-brand" />
-        {SERVICE_NAME}
-      </p>
-
-      {/*
-       * 데스크톱에서는 카드 제목 "충전 조건 입력"이 눈에 보이는 머리글이지만,
-       * 화면 전체의 이름은 여전히 이 문장이다. 지우지 않고 sr-only로 남겨
-       * 어느 폭에서든 h1이 하나씩 있게 한다.
-       */}
-      <h1 className="mt-4 text-title lg:sr-only lg:mt-0">
-        언제 충전하면
-        <br />
-        가장 쌀까요?
-      </h1>
-
-      <div className="mt-6 lg:mt-0 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-10">
+    <>
+      <PageHero
+        eyebrow="충전 시간 추천"
+        title="언제 충전하면 가장 쌀까요?"
+        description="조건을 넣으면 계절·요일·시간대 요금과 주말 할인을 따져 가장 싼 충전 구간을 골라드려요."
+      />
+      <PageBody className="lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start lg:gap-8">
         <ChargeForm
           initialDay={initialDay}
           initialMode={initialMode}
@@ -93,15 +78,14 @@ function renderPage(
           initialPrice={initialPrice}
         />
 
-        <aside className="hidden lg:flex lg:flex-col lg:gap-4">
+        <aside className="mt-6 flex flex-col gap-3 lg:sticky lg:top-24 lg:mt-0">
           {GUIDES.map((guide) => (
-            <Card key={guide.title} tone="sunken" className="p-6">
-              <h2 className="text-base font-bold text-ink">{guide.title}</h2>
+            <div key={guide.title} className="rounded-card border border-line bg-surface p-5">
+              <h2 className="text-base font-extrabold text-ink">{guide.title}</h2>
               <p className="mt-2 text-sm leading-relaxed text-ink-2">{guide.body}</p>
-            </Card>
+            </div>
           ))}
         </aside>
-      </div>
-    </PageContainer>
-  );
+      </PageBody>
+    </>  );
 }

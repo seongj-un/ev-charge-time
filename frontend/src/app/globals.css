@@ -13,21 +13,33 @@
  * "왜 이 초록은 다르지" 같은 질문이 코드리뷰마다 돌아온다.
  */
 @theme {
+  /*
+   * 2026-11 전면 리디자인 — "그리드 펄스". 딥 네이비(#243a5e)와 라임(#c4de3c)은
+   * 그대로 두고, 둘이 제대로 서 보이도록 중립색을 따뜻한 크림에서 차가운 회청색으로
+   * 옮겼다. 크림 위의 네이비는 탁해 보였고, 그게 "밋밋하다"의 큰 몫이었다.
+   */
+
   /* 면 */
-  --color-canvas: #f1f0eb; /* 페이지 배경 */
-  --color-surface: #fefefe; /* 카드 */
-  --color-sunken: #e6e3dc; /* 세그먼티드 트랙, 지도 자리 */
-  --color-field: #faf9f5; /* 입력 필드 */
-  --color-line: #d9d9d5; /* 테두리 */
+  --color-canvas: #eef1f5; /* 페이지 배경 */
+  --color-surface: #ffffff; /* 카드 */
+  --color-sunken: #e3e8ef; /* 세그먼티드 트랙, 지도 자리 */
+  --color-field: #f6f8fb; /* 입력 필드 */
+  --color-line: #d6dde7; /* 테두리 */
 
   /* 글자 */
   --color-ink: #16171b; /* 본문·제목 */
-  --color-ink-2: #4b4c50; /* 보조 설명 */
-  --color-ink-3: #7c7d80; /* 각주·캡션 */
+  --color-ink-2: #475063; /* 보조 설명 */
+  --color-ink-3: #7a8395; /* 각주·캡션 */
 
   /* 브랜드 */
   --color-brand: #243a5e; /* 주 버튼, 활성 탭 — 딥 네이비(사용자 승인) */
-  --color-accent: #c4de3c; /* 절감액 강조, 주말 할인 */
+  --color-brand-deep: #172840; /* 화면 머리 띠, 상단 내비 */
+  --color-brand-line: #2f4a73; /* 네이비 면 위의 구분선·테두리 */
+  --color-brand-soft: #e3e9f3; /* 네이비 기운의 옅은 면 (아이콘 칩, 선택된 행) */
+  --color-on-brand: #ffffff;
+  --color-on-brand-2: #b4c3da; /* 네이비 면 위의 보조 글자 (#172840 위 대비 8:1) */
+  --color-accent: #c4de3c; /* 절감액 강조, 주말 할인, 네이비 면 위의 주 행동 */
+  --color-accent-hover: #b3cc2c;
 
   /* 부하 구간 — 차트와 범례가 공유한다 */
   --color-band-light: #2f7c5a; /* 경부하 */
@@ -39,43 +51,57 @@
   --color-ok-fg: #275742;
   --color-warn-bg: #f6ead0;
   --color-warn-fg: #644303;
-  --color-off-bg: #e6e3dc;
-  --color-off-fg: #55565b;
+  --color-off-bg: #e3e8ef;
+  --color-off-fg: #4a5263;
   --color-danger: #b7422e;
 
   --font-sans: "Pretendard Variable", Pretendard, -apple-system, system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 
-  /* 모서리: 8(작은 면) / 12(입력·버튼) / 20(카드) — DESIGN.md Shapes */
+  /* 모서리: 8(작은 면) / 12(입력·버튼) / 20(카드) / 28(화면 머리 아래 큰 판) */
   --radius-card: 20px;
   --radius-field: 12px;
+  --radius-panel: 28px;
   --radius-pill: 999px;
 
-  /* 얕은 그림자는 떠 있는 면(차트 툴팁, 선택된 세그먼트)에만. 색은 ink의 알파뿐이다. */
+  /*
+   * 그림자 — 머리 띠 위로 올라앉는 판(panel)과 떠 있는 것(툴팁·선택된 세그먼트)만.
+   * 평범한 카드는 테두리로 충분하다. 색은 ink 알파뿐이다.
+   */
   --shadow-raised: 0 1px 2px rgb(22 23 27 / 0.12);
   --shadow-float: 0 1px 2px rgb(22 23 27 / 0.1), 0 6px 16px rgb(22 23 27 / 0.12);
+  --shadow-panel: 0 1px 2px rgb(22 23 27 / 0.06), 0 12px 32px -8px rgb(22 23 27 / 0.18);
 
-  /* 타이포 스케일 — 페이지 제목 28→32, 소제목 20, 홈 제목 36→56 */
-  --text-title: 1.75rem;
-  --text-title--line-height: 1.3;
-  --text-title--letter-spacing: -0.025em;
-  --text-title--font-weight: 700;
-  --text-title-lg: 2rem;
-  --text-title-lg--line-height: 1.3;
-  --text-title-lg--letter-spacing: -0.025em;
-  --text-title-lg--font-weight: 700;
+  /* 타이포 스케일 — 페이지 제목 30→40, 소제목 20, 홈 제목 40→68 */
+  --text-title: 1.875rem;
+  --text-title--line-height: 1.25;
+  --text-title--letter-spacing: -0.03em;
+  --text-title--font-weight: 800;
+  --text-title-lg: 2.5rem;
+  --text-title-lg--line-height: 1.2;
+  --text-title-lg--letter-spacing: -0.035em;
+  --text-title-lg--font-weight: 800;
   --text-section: 1.25rem;
   --text-section--line-height: 1.4;
   --text-section--letter-spacing: -0.02em;
   --text-section--font-weight: 700;
-  --text-display: 2.25rem;
-  --text-display--line-height: 1.2;
-  --text-display--letter-spacing: -0.03em;
-  --text-display--font-weight: 700;
-  --text-display-lg: 3.5rem;
-  --text-display-lg--line-height: 1.15;
-  --text-display-lg--letter-spacing: -0.035em;
-  --text-display-lg--font-weight: 700;
+  --text-display: 2.5rem;
+  --text-display--line-height: 1.15;
+  --text-display--letter-spacing: -0.04em;
+  --text-display--font-weight: 800;
+  --text-display-lg: 4.25rem;
+  --text-display-lg--line-height: 1.08;
+  --text-display-lg--letter-spacing: -0.045em;
+  --text-display-lg--font-weight: 800;
+  /* 큰 수치(추천 시각·금액). 숫자는 Pretendard 고정폭 숫자로 쓴다 */
+  --text-figure: 2.75rem;
+  --text-figure--line-height: 1;
+  --text-figure--letter-spacing: -0.04em;
+  --text-figure--font-weight: 800;
+  --text-figure-lg: 4rem;
+  --text-figure-lg--line-height: 1;
+  --text-figure-lg--letter-spacing: -0.045em;
+  --text-figure-lg--font-weight: 800;
 }
 
 /*
@@ -112,10 +138,17 @@ body {
 }
 
 
-/* 디자인에서 수치는 전부 고정폭이다 — 시각·금액·kWh가 자리를 안 흔든다. */
+/*
+ * 수치는 고정폭 숫자다 — 시각·금액·kWh가 자리를 안 흔든다.
+ *
+ * 예전엔 글꼴 자체를 고정폭(ui-monospace)으로 바꿨는데, 고정폭 글꼴에는 한글이 없어서
+ * 한글 글꼴이 없는 기기(리눅스·일부 안드로이드)에서 "399원"의 '원', "약 3시간"이
+ * 네모(□)로 나왔다. Pretendard의 tabular-nums는 숫자 폭만 맞추고 한글도 그대로 그린다.
+ */
 .tnum {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
 
 @media (prefers-reduced-motion: reduce) {
