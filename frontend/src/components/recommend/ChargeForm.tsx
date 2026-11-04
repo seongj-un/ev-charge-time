@@ -433,9 +433,13 @@ function BatteryGauge({ now, target }: { now: number | null; target: number | nu
     <div className="mt-5 flex items-center gap-1.5" aria-hidden>
       <div className="relative h-9 flex-1 overflow-hidden rounded-[10px] border-2 border-ink/70 bg-sunken p-[3px]">
         <div className="relative h-full w-full">
-          <div className="absolute inset-y-0 left-0 rounded-[5px] bg-brand" style={{ width: `${from}%` }} />
+          {/* 값을 바꾸면 게이지가 부드럽게 따라간다 */}
           <div
-            className="absolute inset-y-0 rounded-[5px] bg-accent"
+            className="absolute inset-y-0 left-0 rounded-[5px] bg-brand transition-[width] duration-300 ease-out"
+            style={{ width: `${from}%` }}
+          />
+          <div
+            className="absolute inset-y-0 rounded-[5px] bg-accent transition-[left,width] duration-300 ease-out"
             style={{ left: `${from}%`, width: `${to - from}%` }}
           />
         </div>

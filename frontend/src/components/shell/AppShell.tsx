@@ -28,7 +28,7 @@ export function PageContainer({
   className?: string;
 }) {
   return (
-    <div className={`mx-auto w-full max-w-[1280px] px-5 pt-6 sm:px-6 lg:px-8 lg:pt-10 ${className}`}>
+    <div className={`motion-rise mx-auto w-full max-w-[1280px] px-5 pt-6 sm:px-6 lg:px-8 lg:pt-10 ${className}`}>
       {children}
     </div>
   );
@@ -77,7 +77,7 @@ export function PageHero({
 /** PageHero 아래 본문. */
 export function PageBody({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`mx-auto mt-6 w-full max-w-[1280px] px-5 sm:px-6 lg:mt-8 lg:px-8 ${className}`}>
+    <div className={`motion-rise mx-auto mt-6 w-full max-w-[1280px] px-5 sm:px-6 lg:mt-8 lg:px-8 ${className}`}>
       {children}
     </div>
   );

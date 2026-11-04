@@ -144,11 +144,70 @@ body {
   font-feature-settings: "tnum";
 }
 
+/*
+ * 등장 애니메이션 — 화면이 처음 그려질 때 한 번만. transform·opacity만 움직여 레이아웃을
+ * 다시 계산하지 않는다(CLS 없음). 차례로 나타나게 하려면 lib/motion.ts의 motionDelay를 쓴다.
+ *   rise  아래에서 8px 떠오르며 나타남 — 판·카드·타일
+ *   grow  바닥에서 자라남 — 차트 막대, 오늘 요금 띠
+ *   pop   살짝 커지며 나타남 — 절감액
+ */
+@keyframes motion-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes motion-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes motion-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.motion-rise {
+  animation: motion-rise 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: var(--motion-delay, 0ms);
+}
+
+.motion-grow {
+  transform-origin: bottom;
+  animation: motion-grow 560ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: var(--motion-delay, 0ms);
+}
+
+.motion-pop {
+  animation: motion-pop 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: var(--motion-delay, 0ms);
+}
+
+/*
+ * 움직임 줄이기. 길이만 줄이면 지연(--motion-delay)은 그대로 남아, 그동안 요소가
+ * 안 보이는 채로 멈춰 있다. 지연도 함께 0으로 만든다.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
   }
 }

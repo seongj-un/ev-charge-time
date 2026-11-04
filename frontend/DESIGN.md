@@ -197,7 +197,13 @@ YAML은 현재 `src/app/globals.css` 및 기존 설계 문서의 색상을 보�
 
 ## Motion & Interaction
 
-낮은 모션 강도 2. hover/focus/active에 color, background-color, border-color, opacity만 120–160ms. `transition: all`, bounce, 스크롤 애니메이션, 새 애니메이션 라이브러리 없음. 기존 `prefers-reduced-motion: reduce`를 유지하며 전환을 사실상 즉시 처리한다. 숫자 입력·토글·차트 hover는 반응성 우선.
+낮은 모션 강도 3. 새 애니메이션 라이브러리 없이 CSS만 쓴다. `transition: all`, bounce, 스크롤 연동 애니메이션은 쓰지 않는다.
+
+- **상호작용:** hover/focus/active는 color, background-color, border-color, opacity 120–160ms. 홈 바로가기 타일만 hover 때 2px 떠오른다(transform·box-shadow 200ms).
+- **등장(화면이 처음 그려질 때 한 번):** `globals.css`의 `.motion-rise`(8px 떠오르며 나타남, 420ms) · `.motion-grow`(막대가 바닥에서 자람, 560ms) · `.motion-pop`(절감액이 살짝 커지며 나타남, 360ms). 모두 transform·opacity만 움직여 레이아웃이 밀리지 않는다. 차례 지연은 `lib/motion.ts`의 `motionDelay(ms)`.
+- **적용 위치:** 홈(제목 → 오늘 요금 판 → 24시간 띠 → 타일 → 요금 개편 카드 순), 화면 본문(`PageContainer`·`PageBody`), 추천 결과 판과 차트, 차트 막대(왼쪽부터 22ms 간격), 절감액, 배터리 게이지 폭 변화(300ms).
+- **움직임 줄이기:** `prefers-reduced-motion: reduce`에서 길이와 지연을 모두 0으로 만든다. 지연이 남으면 그동안 요소가 안 보인 채 멈춰 있어서다.
+- 숫자 입력·토글·차트 hover는 반응성 우선. 금액을 0부터 세는 카운트업은 하지 않는다 — 스크린리더와 캡처에 중간값이 찍힌다.
 
 ## Implementation Tokens
 

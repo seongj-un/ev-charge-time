@@ -4,6 +4,7 @@ import type { ComponentType } from "react";
 import { TodayPanel } from "@/components/home/TodayPanel";
 import { ArrowRightIcon, BoltIcon, ChartIcon, ChatIcon, ClockIcon, PinIcon, SunIcon } from "@/components/shell/icons";
 import { ButtonLink } from "@/components/ui/Button";
+import { motionDelay } from "@/lib/motion";
 
 /**
  * 홈.
@@ -82,7 +83,7 @@ export default function Home() {
     <>
       <section className="border-b border-line bg-surface">
         <div className="mx-auto grid w-full max-w-[1280px] gap-8 px-5 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,500px)] lg:items-center lg:gap-16 lg:px-8 lg:py-16">
-          <div>
+          <div className="motion-rise">
             <p className="inline-flex items-center gap-2 rounded-pill bg-brand-soft px-3 py-1.5 text-sm font-bold text-brand">
               <span className="size-2 rounded-full bg-brand" aria-hidden />
               <span className="lg:hidden">2026년 요금 개편 반영</span>
@@ -109,14 +110,16 @@ export default function Home() {
             </div>
           </div>
 
-          <TodayPanel />
+          <div className="motion-rise" style={motionDelay(100)}>
+            <TodayPanel />
+          </div>
         </div>
       </section>
 
       <div className="mx-auto mt-6 w-full max-w-[1280px] px-5 sm:px-6 lg:mt-10 lg:px-8">
         <nav aria-label="바로가기" className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-          {TILES.map((tile) => (
-            <HomeTile key={tile.href} tile={tile} />
+          {TILES.map((tile, index) => (
+            <HomeTile key={tile.href} tile={tile} delay={180 + index * 60} />
           ))}
         </nav>
 
@@ -125,8 +128,12 @@ export default function Home() {
             2026년 요금 개편, 이것만 알면 돼요
           </h2>
           <div className="mt-6 grid gap-3 lg:mt-8 lg:grid-cols-3 lg:gap-4">
-            {FEATURES.map(({ icon: Icon, tag, title, body, bar }) => (
-              <article key={title} className="overflow-hidden rounded-card border border-line bg-surface">
+            {FEATURES.map(({ icon: Icon, tag, title, body, bar }, index) => (
+              <article
+                key={title}
+                className="motion-rise overflow-hidden rounded-card border border-line bg-surface"
+                style={motionDelay(420 + index * 60)}
+              >
                 <div className={`h-1.5 ${bar}`} aria-hidden />
                 <div className="p-5 lg:p-6">
                   <div className="flex items-center gap-2 text-sm font-bold text-ink-2">
@@ -154,13 +161,16 @@ export default function Home() {
   );
 }
 
-function HomeTile({ tile }: { tile: Tile }) {
+function HomeTile({ tile, delay }: { tile: Tile; delay: number }) {
   const Icon = tile.icon;
   return (
     <Link
       href={tile.href}
-      className="group flex min-h-[156px] flex-col rounded-card border border-line bg-surface p-4 text-ink transition-colors duration-150
-        hover:border-brand/50 sm:p-5 lg:min-h-[180px] lg:p-6
+      style={motionDelay(delay)}
+      // 마우스를 올리면 2px 떠오른다. 키보드 초점은 윤곽선이 맡는다.
+      className="motion-rise group flex min-h-[156px] flex-col rounded-card border border-line bg-surface p-4 text-ink
+        transition-[transform,border-color,box-shadow] duration-200 ease-out
+        hover:-translate-y-0.5 hover:border-brand/50 hover:shadow-panel sm:p-5 lg:min-h-[180px] lg:p-6
         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
     >
       <span className="grid size-10 place-items-center rounded-field bg-brand-soft text-brand" aria-hidden>
