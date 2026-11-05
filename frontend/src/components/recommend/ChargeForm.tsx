@@ -6,6 +6,7 @@ import { useState, useSyncExternalStore, type FormEvent, type ReactNode } from "
 
 import { useSession, type SessionStatus } from "@/components/auth/SessionProvider";
 import { Button } from "@/components/ui/Button";
+import { DateTimeField } from "@/components/ui/DateTimeField";
 import { Field, SelectField } from "@/components/ui/Field";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { MODE_LABEL, type Mode, type Vehicle } from "@/lib/api/types";
@@ -16,6 +17,7 @@ import {
   timesForDay,
   toSearchParams,
   type RecommendForm,
+  toLocalInput,
 } from "@/lib/recommend-params";
 
 import { useMyVehicles } from "./useMyVehicles";
@@ -115,6 +117,11 @@ function useDefaultTimes(): RecommendForm | null {
   return useSyncExternalStore(NEVER_CHANGES, readNow, () => null);
 }
 
+/** 한국 날짜 "YYYY-MM-DD" */
+function todayFromNow(): string {
+  return toLocalInput(new Date()).slice(0, 10);
+}
+
 /** "출퇴근 차 · 77 kWh · 11 kW (기본)" */
 function vehicleOptionLabel(vehicle: Vehicle): string {
   const spec = `${vehicle.battery_kwh} kWh · ${vehicle.charger_kw} kW`;
@@ -174,6 +181,8 @@ export function ChargeForm({
   /** 제출을 한 번이라도 눌렀는지. 누르기 전에는 빨간 글씨를 띄우지 않는다. */
   const [submitted, setSubmitted] = useState(false);
   const defaults = useDefaultTimes();
+  // 달력의 '오늘' 표시. 지금 기준 기본값과 같은 이유로 마운트 뒤에만 정한다.
+  const today = defaults ? todayFromNow() : null;
 
   const { status } = useSession();
   const { vehicles, loaded: vehiclesLoaded } = useMyVehicles();
@@ -264,7 +273,8 @@ export function ChargeForm({
       noValidate
       onSubmit={handleSubmit}
       // 흰 판 하나. 맨 아래 줄이 요약과 제출을 든다.
-      className="overflow-hidden rounded-panel border border-line bg-surface shadow-panel"
+      // overflow-hidden을 쓰지 않는다 — 날짜 칸의 달력 팝오버가 판 밖으로 나와야 한다.
+      className="rounded-panel border border-line bg-surface shadow-panel"
     >
       <div className="divide-y divide-line px-5 sm:px-6 lg:px-8">
         <FormSection title="차량" description="저장한 차량을 고르거나 직접 넣어요.">
@@ -361,26 +371,27 @@ export function ChargeForm({
         </FormSection>
 
         <FormSection title="시간" description="이 사이에서 가장 싼 구간을 찾아요.">
-          <div className="grid gap-4 lg:grid-cols-2 lg:gap-5">
-            <Field
+          {/* 날짜·시각이 한 줄에 다 보이도록 두 칸을 위아래로 쌓는다. 옆으로 나란히 두면 날짜가 잘렸다. */}
+          <div className="grid gap-5">
+            <DateTimeField
               label="충전 시작 가능"
-              type="datetime-local"
               value={conditions.earliestStart}
-              onChange={(event) => set("earliestStart", event.target.value)}
+              onChange={(value) => set("earliestStart", value)}
               error={shown.earliestStart}
+              today={today ?? undefined}
             />
-            <Field
+            <DateTimeField
               label="이때까지 완료"
-              type="datetime-local"
               value={conditions.deadline}
-              onChange={(event) => set("deadline", event.target.value)}
+              onChange={(value) => set("deadline", value)}
               error={shown.deadline}
+              today={today ?? undefined}
             />
           </div>
         </FormSection>
       </div>
 
-      <div className="flex flex-col gap-4 border-t border-line bg-field px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 lg:py-6">
+      <div className="flex flex-col gap-4 rounded-b-panel border-t border-line bg-field px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 lg:py-6">
         <div className="flex items-baseline justify-between gap-3 lg:block">
           <p className="text-sm font-bold text-ink-2">필요 충전량</p>
           <p className="tnum text-lg font-bold lg:mt-1 lg:text-2xl" aria-live="polite">

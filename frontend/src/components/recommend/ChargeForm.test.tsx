@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { UserEvent } from "@testing-library/user-event";
 import { act } from "react";
@@ -35,9 +35,27 @@ async function retype(user: UserEvent, label: string, value: string) {
   await user.type(input, value);
 }
 
-/** datetime-local은 키 입력으로 채워지지 않는다(브라우저가 조각별로 받는다). 값을 직접 바꾼다. */
+/**
+ * 날짜·시각 칸을 사용자가 하듯 채운다: 날짜 버튼으로 달력을 열고, 달을 넘겨 그 날을
+ * 누르고, 시각 목록에서 고른다.
+ */
 function setTime(label: string, value: string) {
-  fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  const [day, time] = value.split("T");
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label} 날짜`) }));
+  const dialog = screen.getByRole("dialog", { name: `${label} 날짜 고르기` });
+  const target = day.slice(0, 7);
+  for (let guard = 0; guard < 36 && dialog.getAttribute("data-month") !== target; guard += 1) {
+    const forward = (dialog.getAttribute("data-month") ?? "") < target;
+    fireEvent.click(within(dialog).getByRole("button", { name: forward ? "다음 달" : "이전 달" }));
+  }
+  const [, month, date] = day.split("-").map(Number);
+  fireEvent.click(within(dialog).getByRole("button", { name: new RegExp(`${month}월 ${date}일 `) }));
+  fireEvent.change(screen.getByRole("combobox", { name: `${label} 시각` }), { target: { value: time } });
+}
+
+/** 날짜·시각 칸의 현재 값 ("YYYY-MM-DDTHH:mm") */
+function readTime(label: string): string {
+  return screen.getByRole("group", { name: label }).getAttribute("data-value") ?? "";
 }
 
 /*
@@ -262,8 +280,7 @@ describe("ChargeForm", () => {
     test("마운트 뒤에 시각 기본값이 채워진다", () => {
       // 서버와 클라이언트의 '지금'이 달라 hydration이 깨지므로 시각은 마운트 후에 넣는다.
       setup();
-      const start = screen.getByLabelText<HTMLInputElement>("충전 시작 가능");
-      expect(start.value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+      expect(readTime("충전 시작 가능")).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
     });
 
     test("손님에게는 차량 선택이 막혀 있고, 직접 입력해도 된다고 알려준다", () => {
@@ -363,8 +380,8 @@ describe("조건을 들고 돌아왔을 때", () => {
     expect(screen.getByLabelText("충전기 출력")).toHaveValue("11");
     expect(screen.getByLabelText("현재 충전량")).toHaveValue("25");
     expect(screen.getByLabelText("목표 충전량")).toHaveValue("90");
-    expect(screen.getByLabelText("충전 시작 가능")).toHaveValue("2026-11-02T21:30");
-    expect(screen.getByLabelText("이때까지 완료")).toHaveValue("2026-11-03T07:00");
+    expect(readTime("충전 시작 가능")).toBe("2026-11-02T21:30");
+    expect(readTime("이때까지 완료")).toBe("2026-11-03T07:00");
     expect(screen.getByRole("radio", { name: "공공 급속" })).toBeChecked();
     expect(screen.getByLabelText("공용 급속 단가")).toHaveValue("347");
   });
