@@ -128,6 +128,26 @@ describe("presentBandKeys", () => {
   });
 });
 
+describe("공공 급속은 부하구간 대신 기본 단가 하나로 칠한다", () => {
+  const flat = [
+    hour({ hour: 0, band: "light", price_per_kwh: 347.2 }),
+    hour({ hour: 9, band: "peak", price_per_kwh: 347.2 }),
+    hour({ hour: 12, band: "middle", discounted: true, price_per_kwh: 298.6 }),
+  ];
+
+  test("범례에는 기본 단가와 주말 할인만", () => {
+    expect(presentBandKeys(flat, "public_fast")).toEqual(["flat", "discounted"]);
+  });
+
+  test("단가 목록도 기본 단가 한 줄", () => {
+    expect(bandPriceRows(flat, "public_fast").map((row) => row.key)).toEqual(["flat", "discounted"]);
+  });
+
+  test("자가 충전은 그대로 부하구간이다", () => {
+    expect(presentBandKeys(flat, "self_low")).toEqual(["light", "peak", "discounted"]);
+  });
+});
+
 describe("bandPriceRows", () => {
   test("구간마다 한 줄씩, 값이 하나면 그 값", () => {
     expect(
@@ -239,7 +259,7 @@ describe("daySubtitle", () => {
 });
 
 /*
- * 공용 급속 단가는 사용자가 손으로 넣는 값이다. 빈 칸을 0으로 읽거나 "abc"를 보내면
+ * 공공 급속 단가는 사용자가 손으로 넣는 값이다. 빈 칸을 0으로 읽거나 "abc"를 보내면
  * 백엔드는 422만 돌려주고, 화면은 그걸 고칠 수 없는 오류처럼 보여준다.
  */
 describe("parsePublicBasePrice", () => {
@@ -267,13 +287,13 @@ describe("recommendHref", () => {
     );
   });
 
-  test("공용 급속이면 단가도 싣는다", () => {
+  test("공공 급속이면 단가도 싣는다", () => {
     expect(recommendHref("2026-10-10", "public_fast", 350)).toBe(
       "/recommend?day=2026-10-10&mode=public_fast&public_base_price=350",
     );
   });
 
-  test("공용 급속이 아니면 단가를 싣지 않는다", () => {
+  test("공공 급속이 아니면 단가를 싣지 않는다", () => {
     expect(recommendHref("2026-10-10", "self_low", 350)).toBe(
       "/recommend?day=2026-10-10&mode=self_low",
     );

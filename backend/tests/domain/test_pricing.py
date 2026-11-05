@@ -230,7 +230,7 @@ def test_self_price_matches_hand_calculation(round_number_tariff, holidays, mome
     assert breakdown.price_per_kwh == expected
 
 
-# ── 공용 급속: 할인액이 기준단가보다 크면 음수 단가가 된다 ────────────────────
+# ── 공공 급속: 할인액이 기준단가보다 크면 음수 단가가 된다 ────────────────────
 #
 # 할인은 정액(토 48.6원, 일·공휴일 42.7원)을 빼는 방식이다. 기준단가를 1원으로
 # 넣으면 일요일 할인 시간에 −41.7원/kWh가 나와 "충전하면 돈을 받는" 계획이

@@ -33,7 +33,7 @@ export function TimelinePage() {
       const next = new URLSearchParams();
       next.set("day", query.day);
       next.set("mode", query.mode);
-      // 공용 급속 단가도 남긴다. 새로고침할 때마다 충전기 요금을 다시 치게 하지 않는다.
+      // 공공 급속 단가도 남긴다. 새로고침할 때마다 충전기 요금을 다시 치게 하지 않는다.
       if (query.publicBasePrice !== undefined) {
         next.set("public_base_price", String(query.publicBasePrice));
       }

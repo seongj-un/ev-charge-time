@@ -227,7 +227,7 @@ export function ResultView({ query }: { query: string }) {
  * 둘째 날에 재활용하면 금요일 밤 요금으로 토요일 새벽을 그리게 된다.
  */
 async function loadChart(axis: Axis, form: RecommendForm): Promise<ChartState> {
-  // 공용 급속은 사업자마다 단가가 달라, 기본 설정의 백엔드는 단가 없이 timeline을
+  // 공공 급속은 사업자마다 단가가 달라, 기본 설정의 백엔드는 단가 없이 timeline을
   // 거절한다(422). 추천 요청에 실은 값을 단가 요청에도 똑같이 실어야 차트가 나온다.
   const publicBasePrice = form.mode === "public_fast" ? form.publicBasePrice : undefined;
   try {

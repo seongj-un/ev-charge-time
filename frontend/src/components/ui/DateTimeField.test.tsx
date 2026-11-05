@@ -5,9 +5,19 @@ import { describe, expect, test } from "vitest";
 
 import { DateTimeField } from "./DateTimeField";
 
-function Harness({ initial, today = "2026-11-05" }: { initial: string; today?: string }) {
+function Harness({
+  initial,
+  today = "2026-11-05",
+  minDay,
+}: {
+  initial: string;
+  today?: string;
+  minDay?: string;
+}) {
   const [value, setValue] = useState(initial);
-  return <DateTimeField label="충전 시작 가능" value={value} onChange={setValue} today={today} />;
+  return (
+    <DateTimeField label="충전 시작 가능" value={value} onChange={setValue} today={today} minDay={minDay} />
+  );
 }
 
 const group = () => screen.getByRole("group", { name: "충전 시작 가능" });
@@ -119,6 +129,45 @@ describe("DateTimeField", () => {
     await user.tab();
     await user.keyboard("{ArrowRight}");
     expect(screen.getByRole("dialog")).toHaveAttribute("data-month", "2026-12");
+  });
+
+  test("올해가 아니면 날짜에 연도를 붙인다", () => {
+    render(<Harness initial="2027-01-05T08:00" />);
+    expect(trigger()).toHaveTextContent("2027년 1월 5일 (화)");
+  });
+
+  test("올해면 연도를 빼서 짧게 둔다", () => {
+    render(<Harness initial="2026-12-24T08:00" />);
+    expect(trigger()).toHaveTextContent("12월 24일 (목)");
+    expect(trigger()).not.toHaveTextContent("2026년");
+  });
+
+  test("minDay 앞의 날은 눌러도 고를 수 없고, 그 달보다 앞으로는 넘기지 못한다", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="2026-11-05T20:30" minDay="2026-11-05" />);
+    await user.click(trigger());
+    const dialog = screen.getByRole("dialog");
+
+    const past = within(dialog).getByRole("button", { name: /11월 4일 .*지난 날짜/ });
+    expect(past).toHaveAttribute("aria-disabled", "true");
+    await user.click(past);
+    expect(group()).toHaveAttribute("data-value", "2026-11-05T20:30");
+    expect(screen.getByRole("button", { name: "이전 달" })).toBeDisabled();
+  });
+
+  test("지난 날에서도 화살표로 지나갈 수 있고, Enter는 먹지 않는다", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="2026-11-06T20:30" minDay="2026-11-06" />);
+    await user.click(trigger());
+    await user.keyboard("{ArrowLeft}");
+    expect(within(screen.getByRole("dialog")).getByRole("button", { name: /11월 5일 / })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(group()).toHaveAttribute("data-value", "2026-11-06T20:30");
+  });
+
+  test("오류가 있으면 날짜 버튼에 표시가 붙는다 (폼이 초점을 옮길 자리)", () => {
+    render(<DateTimeField label="충전 시작 가능" value="2026-11-05T20:30" onChange={() => {}} error="틀렸어요" />);
+    expect(trigger()).toHaveAttribute("data-invalid", "true");
   });
 
   test("열린 상태에서 날짜 버튼을 다시 누르면 닫힌다 (초점 이동에 닫혔다 다시 열리지 않는다)", async () => {

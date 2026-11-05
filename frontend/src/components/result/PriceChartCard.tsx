@@ -23,7 +23,7 @@ import { axisRangeLabel, type Axis } from "./chart-data";
  */
 
 /** 부하구간 범례 순서. 값이 도는 순서(경→중→최대)와 맞춰 둔다. */
-const BAND_ORDER: BandKey[] = ["light", "middle", "peak", "discounted"];
+const BAND_ORDER: BandKey[] = ["light", "middle", "peak", "flat", "discounted"];
 
 export function PriceChartCard({
   axis,

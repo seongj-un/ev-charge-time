@@ -140,21 +140,21 @@ describe("timesForDay", () => {
 });
 
 /*
- * 공용 급속은 충전사업자마다 단가가 달라 하나의 공식 값이 없다. 단가를 함께 보내지
+ * 공공 급속은 충전사업자마다 단가가 달라 하나의 공식 값이 없다. 단가를 함께 보내지
  * 않으면 기본 설정의 백엔드는 계산을 거절한다. 입력 화면 → URL → 결과 화면 → 요청까지
  * 단가가 끊기지 않고 실려 가야 한다.
  */
 describe("public_base_price", () => {
   const PUBLIC: RecommendForm = { ...FORM, mode: "public_fast", publicBasePrice: 350 };
 
-  test("공용 급속이면 URL에 실려 왕복한다", () => {
+  test("공공 급속이면 URL에 실려 왕복한다", () => {
     const params = toSearchParams(PUBLIC);
 
     expect(params.get("public_base_price")).toBe("350");
     expect(fromSearchParams(params)).toEqual(PUBLIC);
   });
 
-  test("공용 급속이면 추천 요청에 싣는다", () => {
+  test("공공 급속이면 추천 요청에 싣는다", () => {
     expect(toRecommendRequest(PUBLIC).public_base_price).toBe(350);
   });
 

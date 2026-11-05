@@ -34,6 +34,7 @@ export function DateTimeField({
   onChange,
   error,
   today,
+  minDay,
   className = "",
 }: {
   label: string;
@@ -43,6 +44,8 @@ export function DateTimeField({
   error?: string;
   /** "YYYY-MM-DD" (한국 날짜). '오늘' 표시와 바로가기에 쓴다. 모르면 생략 */
   today?: string;
+  /** "YYYY-MM-DD". 이보다 앞선 날은 달력에서 고를 수 없다(지난 날짜 막기). 생략하면 제한 없음 */
+  minDay?: string;
   className?: string;
 }) {
   const id = useId();
@@ -82,6 +85,9 @@ export function DateTimeField({
     timePart && !TIME_OPTIONS.includes(timePart) ? [...TIME_OPTIONS, timePart].sort() : TIME_OPTIONS;
 
   const relative = selected && today ? relativeLabel(datePart, today) : null;
+  // 올해가 아니면 연도를 붙인다. 12월에 1월을 고르면 "1월 5일"만으로는 몇 년인지 모른다.
+  const todayYmd = parseYmd(today ?? "");
+  const showYear = selected !== null && todayYmd !== null && selected.year !== todayYmd.year;
 
   return (
     <div ref={rootRef} className={`relative ${className}`}>
@@ -103,6 +109,8 @@ export function DateTimeField({
           aria-expanded={open}
           aria-controls={open ? dialogId : undefined}
           aria-describedby={error ? errorId : undefined}
+          // 폼이 제출을 막을 때 첫 번째 틀린 칸으로 초점을 옮기는 표시 (ChargeForm)
+          data-invalid={error ? true : undefined}
           onClick={() => setOpen((prev) => !prev)}
           onKeyDown={(event) => {
             if (event.key === "Escape" && open) {
@@ -117,7 +125,7 @@ export function DateTimeField({
           {/* 400px 아래에서는 아이콘을 빼 날짜·요일이 잘리지 않게 한다 (360px 폰에서 9px 모자랐다) */}
           <CalendarIcon className="size-[18px] shrink-0 text-brand max-[399px]:hidden sm:size-5" />
           {selected ? (
-            <span className="min-w-0 truncate font-bold">{formatShort(selected)}</span>
+            <span className="min-w-0 truncate font-bold">{formatShort(selected, showYear)}</span>
           ) : (
             <span className="h-4 w-24 animate-pulse rounded bg-sunken" aria-hidden />
           )}
@@ -162,7 +170,8 @@ export function DateTimeField({
           id={dialogId}
           label={label}
           selected={selected}
-          today={parseYmd(today ?? "")}
+          today={todayYmd}
+          minDay={parseYmd(minDay ?? "")}
           onPick={(day) => pickDay(formatYmd(day))}
           onClose={close}
           onFocusLeave={(next) => {
@@ -185,6 +194,7 @@ function CalendarPopover({
   label,
   selected,
   today,
+  minDay,
   onPick,
   onClose,
   onFocusLeave,
@@ -193,6 +203,7 @@ function CalendarPopover({
   label: string;
   selected: Ymd | null;
   today: Ymd | null;
+  minDay: Ymd | null;
   onPick: (day: Ymd) => void;
   onClose: () => void;
   /** 초점이 달력 밖 요소로 옮겨 갔다. 바깥 빈 곳 클릭(초점 대상 없음)은 pointerdown이 맡는다 */
@@ -215,7 +226,10 @@ function CalendarPopover({
     focusTarget.current = null;
   }, [focused, view]);
 
-  const canPrev = !(view.year === SUPPORTED_YEARS.first && view.month === 1);
+  const canPrev =
+    !(view.year === SUPPORTED_YEARS.first && view.month === 1) &&
+    !(minDay && view.year === minDay.year && view.month <= minDay.month) &&
+    !(minDay && view.year < minDay.year);
   const canNext = !(view.year === SUPPORTED_YEARS.last && view.month === 12);
 
   function shiftMonth(delta: number) {
@@ -298,22 +312,29 @@ function CalendarPopover({
           const isToday = today !== null && sameDay(cell, today);
           const isFocused = sameDay(cell, focused);
           const weekday = index % 7;
+          // disabled 대신 aria-disabled: 막힌 날에도 화살표 초점이 머물 수 있어야 roving tabindex가 안 끊긴다.
+          const isPast = minDay !== null && compareYmd(cell, minDay) < 0;
           return (
             <button
               key={cell.day}
               type="button"
               data-day={formatYmd(cell)}
               tabIndex={isFocused ? 0 : -1}
-              aria-label={`${formatLong(cell)}${isToday ? ", 오늘" : ""}`}
+              aria-label={`${formatLong(cell)}${isToday ? ", 오늘" : ""}${isPast ? ", 지난 날짜" : ""}`}
               aria-pressed={isSelected}
-              onClick={() => onPick(cell)}
+              aria-disabled={isPast || undefined}
+              onClick={() => {
+                if (!isPast) onPick(cell);
+              }}
               onFocus={() => setFocused(cell)}
               className={`tnum relative mx-auto flex size-10 items-center justify-center rounded-full text-[15px] font-bold transition-colors duration-150
                 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand
                 ${
                   isSelected
                     ? "bg-brand text-white"
-                    : `hover:bg-brand-soft ${isToday ? "text-brand" : weekday === 0 ? "text-band-peak" : "text-ink"}`
+                    : isPast
+                      ? "cursor-not-allowed text-ink-2 opacity-40"
+                      : `hover:bg-brand-soft ${isToday ? "text-brand" : weekday === 0 ? "text-band-peak" : "text-ink"}`
                 }`}
             >
               {cell.day}
@@ -420,14 +441,18 @@ function weekdayOf({ year, month, day }: Ymd): string {
   return WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
 }
 
-/** "11월 5일 (목)" */
-function formatShort(ymd: Ymd): string {
-  return `${ymd.month}월 ${ymd.day}일 (${weekdayOf(ymd)})`;
+/** "11월 5일 (목)", 올해가 아니면 "2027년 1월 5일 (화)" */
+function formatShort(ymd: Ymd, withYear = false): string {
+  return `${withYear ? `${ymd.year}년 ` : ""}${ymd.month}월 ${ymd.day}일 (${weekdayOf(ymd)})`;
 }
 
 /** "2026년 11월 5일 목요일" — 스크린리더용 */
 function formatLong(ymd: Ymd): string {
   return `${ymd.year}년 ${ymd.month}월 ${ymd.day}일 ${weekdayOf(ymd)}요일`;
+}
+
+function compareYmd(a: Ymd, b: Ymd): number {
+  return Date.UTC(a.year, a.month - 1, a.day) - Date.UTC(b.year, b.month - 1, b.day);
 }
 
 function sameDay(a: Ymd, b: Ymd): boolean {

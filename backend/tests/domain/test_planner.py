@@ -105,8 +105,27 @@ def test_not_enough_time_is_rejected():
         recommend(request, night_is_cheap)
 
     message = str(excinfo.value)
-    assert "3:00:00" in message
-    assert "2:00:00" in message
+    assert message.startswith("시간이 부족해요.")
+    assert "충전에 약 3시간이 걸리는데 가능한 시간은 2시간이에요" in message
+    assert ":00" not in message  # timedelta 표기가 새지 않는다
+
+
+@pytest.mark.parametrize(
+    ("hours", "expected"),
+    [
+        (8, "8시간"),
+        (4.5, "4시간 30분"),
+        (0.25, "15분"),
+        (0.001, "1분"),
+        (42.857142, "1일 18시간 51분"),
+        (48, "2일"),
+        (1e20, "100,000,000,000,000,000,000시간"),
+    ],
+)
+def test_span_is_written_for_people(hours, expected):
+    from evcharge.domain.planner import format_span_hours
+
+    assert format_span_hours(hours) == expected
 
 
 def test_exactly_enough_time_yields_a_single_candidate():

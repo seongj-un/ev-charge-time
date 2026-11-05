@@ -402,21 +402,21 @@ describe("태양광 겹쳐 보기", () => {
 });
 
 /*
- * 공용 급속에는 공식 단가가 없다. 백엔드는 단가 없이 오면 422로 "충전기에 적힌 요금을
+ * 공공 급속에는 공식 단가가 없다. 백엔드는 단가 없이 오면 422로 "충전기에 적힌 요금을
  * 넣어 달라"고 하는데, 화면에 넣을 칸이 없으면 사용자는 그 말을 들어도 할 수 있는 게 없다.
  */
-describe("공용 급속 단가", () => {
+describe("공공 급속 단가", () => {
   function priceInput() {
-    return screen.getByLabelText("공용 급속 단가");
+    return screen.getByLabelText("공공 급속 단가");
   }
 
-  test("공용 급속일 때만 단가 칸이 나온다", async () => {
+  test("공공 급속일 때만 단가 칸이 나온다", async () => {
     const user = userEvent.setup();
     stubFetch(() => ({ body: timeline() }));
 
     render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
     await waitFor(() => expect(bars()).toHaveLength(24));
-    expect(screen.queryByLabelText("공용 급속 단가")).toBeNull();
+    expect(screen.queryByLabelText("공공 급속 단가")).toBeNull();
 
     await user.click(screen.getByRole("radio", { name: "공공 급속" }));
 

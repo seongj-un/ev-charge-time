@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 
 import { useSession, type SessionStatus } from "@/components/auth/SessionProvider";
 import { Button } from "@/components/ui/Button";
@@ -39,7 +39,7 @@ type Draft = {
   earliestStart: string | null;
   deadline: string | null;
   mode: Mode;
-  /** 공용 급속 단가(원/kWh). 공용 급속일 때만 칸이 보이고 검사한다. */
+  /** 공공 급속 단가(원/kWh). 공공 급속일 때만 칸이 보이고 검사한다. */
   publicBasePrice: string;
 };
 
@@ -58,8 +58,15 @@ const MODE_OPTIONS: { value: Mode; label: string }[] = [
   { value: "public_fast", label: MODE_LABEL.public_fast },
 ];
 
-/** 공용 급속 단가의 상한. 백엔드 schemas.MAX_PRICE_PER_KWH와 같다. */
+/** 공공 급속 단가의 상한. 백엔드 schemas.MAX_PRICE_PER_KWH와 같다. */
 const MAX_PRICE_PER_KWH = 10_000;
+/** 백엔드 schemas.MAX_BATTERY_KWH / MAX_CHARGER_KW와 같다. 넘기면 결과 화면에서야 422가 난다. */
+const MAX_BATTERY_KWH = 1000;
+const MAX_CHARGER_KW = 1000;
+/** 백엔드 schemas.MAX_REQUEST_SPAN(14일)과 같다. */
+const MAX_SPAN_DAYS = 14;
+/** 시작을 완료보다 뒤로 옮겼는데 원래 간격을 알 수 없을 때 완료를 이만큼 뒤로 민다. */
+const FALLBACK_GAP_MINUTES = 10 * 60;
 
 /**
  * 숫자 기본값은 defaultForm이 정한 것을 그대로 쓴다 — 기본값이 두 군데 생기지 않게.
@@ -165,7 +172,7 @@ export function ChargeForm({
   initialMode?: Mode;
   /** 결과 화면의 "조건 고치기"가 달고 온 조건. 있으면 모든 칸을 이걸로 채운다. */
   initialForm?: RecommendForm | null;
-  /** 하루 단가 화면에서 공용 급속으로 넘어올 때 거기서 넣은 단가 */
+  /** 하루 단가 화면에서 공공 급속으로 넘어올 때 거기서 넣은 단가 */
   initialPrice?: number;
 } = {}) {
   const router = useRouter();
@@ -212,6 +219,22 @@ export function ChargeForm({
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
 
+  /**
+   * 시작을 완료와 같거나 뒤로 옮기면 완료도 같이 민다 — 원래 간격 그대로.
+   * 그대로 두면 제출할 때까지 틀린 조건이 눈에 안 띈다.
+   */
+  function setEarliestStart(next: string) {
+    const prevStart = conditions.earliestStart;
+    const prevDeadline = conditions.deadline;
+    if (!prevDeadline || next < prevDeadline) {
+      set("earliestStart", next);
+      return;
+    }
+    const gap = prevStart && prevDeadline > prevStart ? wallMinutes(prevDeadline) - wallMinutes(prevStart) : 0;
+    const deadline = fromWallMinutes(wallMinutes(next) + (gap > 0 ? gap : FALLBACK_GAP_MINUTES));
+    setDraft((prev) => ({ ...prev, earliestStart: next, deadline }));
+  }
+
   /** 차량이 정해 주는 칸을 직접 고치면, 그 뒤로는 기본 차량이 끼어들지 않는다. */
   const setSpec = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setSpecTouched(true);
@@ -251,7 +274,7 @@ export function ChargeForm({
   const vehicleLinkLabel = loggedIn ? (canPickVehicle ? "차량 관리" : "차량 추가") : "로그인";
 
   // 칸이 일곱 개뿐이라 렌더마다 다시 검사해도 된다. 대신 고치는 즉시 오류가 사라진다.
-  const { errors, form: validated } = validate(conditions);
+  const { errors, form: validated } = validate(conditions, today);
   /*
    * 고른 차량을 결과 화면까지 들고 간다. 저장할 때 vehicle_id를 보내야
    * SavedPlan.vehicle_name이 채워지고, 그래야 충전 기록이 "어느 차로 세운
@@ -260,16 +283,34 @@ export function ChargeForm({
   const form = validated && vehicleId ? { ...validated, vehicleId } : validated;
   const shown: Errors = submitted ? errors : {};
 
+  /*
+   * 제출이 막히면 첫 번째 틀린 칸으로 초점을 옮긴다. 오류 문구가 화면 아래에 떠 있으면
+   * 버튼을 눌렀는데 아무 일도 없는 것처럼 보인다. 빨간 칸이 그려진 뒤에 옮겨야 하므로
+   * 렌더 직후(useLayoutEffect)에 한다.
+   */
+  const formRef = useRef<HTMLFormElement>(null);
+  const [focusRequest, setFocusRequest] = useState(0);
+  useLayoutEffect(() => {
+    if (focusRequest === 0) return;
+    formRef.current
+      ?.querySelector<HTMLElement>('[aria-invalid="true"], [data-invalid="true"]')
+      ?.focus();
+  }, [focusRequest]);
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitted(true);
-    if (!form) return;
+    if (!form) {
+      setFocusRequest((count) => count + 1);
+      return;
+    }
     // 조건을 URL에 실어 넘긴다 — 결과 화면에서 새로고침해도, 링크를 공유해도 살아 있다.
     router.push(`/recommend/result?${toSearchParams(form)}`);
   }
 
   return (
     <form
+      ref={formRef}
       noValidate
       onSubmit={handleSubmit}
       // 흰 판 하나. 맨 아래 줄이 요약과 제출을 든다.
@@ -337,12 +378,12 @@ export function ChargeForm({
           {conditions.mode === "public_fast" ? (
             <Field
               className="mt-5"
-              label="공용 급속 단가"
+              label="공공 급속 단가"
               suffix="원/kWh"
               inputMode="decimal"
               value={conditions.publicBasePrice}
               onChange={(event) => set("publicBasePrice", event.target.value)}
-              hint="공용 급속은 충전사업자마다 요금이 달라요. 충전기에 적힌 kWh당 요금을 넣어 주세요."
+              hint="공공 급속은 충전사업자마다 요금이 달라요. 충전기에 적힌 kWh당 요금을 넣어 주세요."
               error={shown.publicBasePrice}
             />
           ) : null}
@@ -376,9 +417,10 @@ export function ChargeForm({
             <DateTimeField
               label="충전 시작 가능"
               value={conditions.earliestStart}
-              onChange={(value) => set("earliestStart", value)}
+              onChange={setEarliestStart}
               error={shown.earliestStart}
               today={today ?? undefined}
+              minDay={today ?? undefined}
             />
             <DateTimeField
               label="이때까지 완료"
@@ -386,6 +428,7 @@ export function ChargeForm({
               onChange={(value) => set("deadline", value)}
               error={shown.deadline}
               today={today ?? undefined}
+              minDay={today ?? undefined}
             />
           </div>
         </FormSection>
@@ -483,17 +526,25 @@ function summarize(conditions: Conditions): string {
  * 제출 전에 여기서 걸러낸다. 서버도 422로 막아주지만, 왕복을 기다렸다 알려주면
  * 사용자는 이미 결과 화면을 기대하고 있다. 틀린 칸 바로 밑에 붙여 주는 편이 빠르다.
  */
-function validate(conditions: Conditions): { errors: Errors; form: RecommendForm | null } {
+function validate(
+  conditions: Conditions,
+  /** "YYYY-MM-DD". 마운트 전에는 몰라서 null — 그동안은 지난 날짜 검사를 건너뛴다. */
+  today: string | null,
+): { errors: Errors; form: RecommendForm | null } {
   const errors: Errors = {};
 
   const batteryKwh = parseNumber(conditions.batteryKwh);
   if (batteryKwh === null || batteryKwh <= 0) {
     errors.batteryKwh = "배터리 용량을 0보다 크게 입력해 주세요";
+  } else if (batteryKwh > MAX_BATTERY_KWH) {
+    errors.batteryKwh = `배터리 용량은 ${MAX_BATTERY_KWH.toLocaleString("ko-KR")} kWh 이하여야 해요`;
   }
 
   const chargerKw = parseNumber(conditions.chargerKw);
   if (chargerKw === null || chargerKw <= 0) {
     errors.chargerKw = "충전기 출력을 0보다 크게 입력해 주세요";
+  } else if (chargerKw > MAX_CHARGER_KW) {
+    errors.chargerKw = `충전기 출력은 ${MAX_CHARGER_KW.toLocaleString("ko-KR")} kW 이하여야 해요`;
   }
 
   // 이미 100%인 차는 충전할 게 없고, 목표가 100%를 넘을 수는 없다 (API 명세서 2-2).
@@ -509,7 +560,7 @@ function validate(conditions: Conditions): { errors: Errors; form: RecommendForm
     errors.socTarget = "목표 충전량은 현재보다 커야 해요";
   }
 
-  // 공용 급속은 공식 단가가 없다. 단가 없이 넘기면 결과 화면에서 실패한다.
+  // 공공 급속은 공식 단가가 없다. 단가 없이 넘기면 결과 화면에서 실패한다.
   const isPublicFast = conditions.mode === "public_fast";
   const publicBasePrice = isPublicFast ? parseNumber(conditions.publicBasePrice) : null;
   if (isPublicFast) {
@@ -522,6 +573,8 @@ function validate(conditions: Conditions): { errors: Errors; form: RecommendForm
 
   if (!conditions.earliestStart) {
     errors.earliestStart = "충전 시작 가능 시각을 입력해 주세요";
+  } else if (today && conditions.earliestStart.slice(0, 10) < today) {
+    errors.earliestStart = "지난 날짜예요. 오늘이나 그 뒤로 골라 주세요";
   }
 
   if (!conditions.deadline) {
@@ -530,6 +583,24 @@ function validate(conditions: Conditions): { errors: Errors; form: RecommendForm
     // "YYYY-MM-DDTHH:mm"은 자리 수가 고정이라 문자열끼리 비교해도 시간순이 된다.
     // Date로 바꾸면 표준시 해석만 끼어들 뿐, 여기서 얻을 게 없다.
     errors.deadline = "완료 시각은 시작 시각보다 뒤여야 해요";
+  } else if (conditions.earliestStart) {
+    const windowMinutes = wallMinutes(conditions.deadline) - wallMinutes(conditions.earliestStart);
+    if (windowMinutes > MAX_SPAN_DAYS * 24 * 60) {
+      errors.deadline = `시작부터 완료까지 ${MAX_SPAN_DAYS}일 안으로 잡아 주세요`;
+    } else if (
+      batteryKwh !== null &&
+      chargerKw !== null &&
+      chargerKw > 0 &&
+      socNow !== null &&
+      socTarget !== null &&
+      socTarget > socNow
+    ) {
+      // 서버도 같은 판단으로 거절한다(planner.recommend). 결과 화면까지 가서 알게 하지 않는다.
+      const hours = requiredEnergyKwh({ batteryKwh, socNow, socTarget }) / chargerKw;
+      if (hours * 60 > windowMinutes) {
+        errors.deadline = `이 시간 안에 다 못 채워요. 충전에 ${formatDuration(hours)}이 걸리는데 가능한 시간은 ${formatSpan(windowMinutes)}이에요`;
+      }
+    }
   }
 
   const complete =
@@ -556,9 +627,40 @@ function validate(conditions: Conditions): { errors: Errors; form: RecommendForm
   };
 }
 
-/** 빈 칸을 0으로 읽지 않으려고 Number()를 그냥 쓰지 않는다. */
+/**
+ * 사람이 치는 숫자만 받는다: "70", "70.5", ".5". 빈 칸을 0으로 읽지 않으려고
+ * Number()를 그냥 쓰지 않고, "1e3"·"0x10"·"Infinity"처럼 Number()가 받아 주는
+ * 표기도 막는다 — "1e3"을 1000으로 읽으면 화면의 값과 계산한 값이 달라진다.
+ */
 function parseNumber(raw: string): number | null {
-  if (raw.trim() === "") return null;
-  const value = Number(raw);
+  const text = raw.trim();
+  if (!/^-?(\d+(\.\d*)?|\.\d+)$/.test(text)) return null;
+  const value = Number(text);
   return Number.isFinite(value) ? value : null;
+}
+
+/** "YYYY-MM-DDTHH:mm"(한국 벽시계) → 분. UTC 필드로만 계산해 표준시가 끼어들지 않는다. */
+function wallMinutes(value: string): number {
+  const [date, time] = value.split("T");
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  return Date.UTC(year, month - 1, day, hour, minute) / 60_000;
+}
+
+function fromWallMinutes(minutes: number): string {
+  const date = new Date(minutes * 60_000);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return (
+    `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}` +
+    `T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
+  );
+}
+
+/** 정확한 길이: "4시간", "4시간 30분", "1일 2시간". 추정치가 아니라 "약"을 붙이지 않는다. */
+function formatSpan(totalMinutes: number): string {
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [days ? `${days}일` : "", hours ? `${hours}시간` : "", minutes ? `${minutes}분` : ""];
+  return parts.filter(Boolean).join(" ") || "0분";
 }

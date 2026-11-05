@@ -19,6 +19,20 @@ ASSUMPTIONS: tuple[str, ...] = (
 PriceFn = Callable[[datetime], PriceBreakdown]
 
 
+def format_span_hours(hours: float) -> str:
+    """시간(float) → "8시간", "4시간 30분", "1일 18시간 52분". 분 단위로 반올림한다.
+
+    timedelta 범위를 넘는 값도 받는다 — 여기서 timedelta를 만들면 OverflowError(=500)다.
+    """
+    if not hours < _MAX_HOURS:
+        return f"{hours:,.0f}시간"
+    total_minutes = max(1, round(hours * 60)) if hours > 0 else 0
+    days, rest = divmod(total_minutes, 24 * 60)
+    hh, mm = divmod(rest, 60)
+    parts = [f"{days:,}일" if days else "", f"{hh}시간" if hh else "", f"{mm}분" if mm else ""]
+    return " ".join(part for part in parts if part) or "0분"
+
+
 @dataclass(frozen=True)
 class ChargeRequest:
     battery_kwh: float
@@ -72,9 +86,12 @@ def recommend(request: ChargeRequest, price_fn: PriceFn) -> Recommendation:
     # "시간이 부족하다"는 같은 답을 그 전에 내야 한다.
     hours = request.energy_kwh / request.charger_kw
     if not hours <= available.total_seconds() / 3600:
-        needed = str(timedelta(hours=hours)) if hours < _MAX_HOURS else f"{hours:,.0f}시간"
+        # 이 문장은 결과 화면에 그대로 뜬다. str(timedelta)는 "1 day, 18:51:25.714286"처럼
+        # 나와서 사람이 읽을 말이 아니다.
         raise InsufficientTimeError(
-            f"시간이 부족합니다: 충전에 {needed} 필요, 가능한 시간은 {available}."
+            f"시간이 부족해요. 충전에 약 {format_span_hours(hours)}이 걸리는데 "
+            f"가능한 시간은 {format_span_hours(available.total_seconds() / 3600)}이에요. "
+            "완료 시각을 늦추거나 목표 충전량을 낮춰 주세요."
         )
     duration = request.duration
 

@@ -15,6 +15,9 @@ const nextConfig: NextConfig = {
    */
   output: "standalone",
 
+  // 응답마다 "X-Powered-By: Next.js"를 달지 않는다. 쓰는 프레임워크를 굳이 알려 줄 이유가 없다.
+  poweredByHeader: false,
+
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${BACKEND_URL}/api/:path*` },

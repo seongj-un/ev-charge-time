@@ -171,6 +171,37 @@ describe("axisRangeLabel", () => {
   });
 });
 
+describe("공공 급속 결과", () => {
+  function publicFast(day: string, discountHours: number[] = []): TimelineResponse {
+    const base = timelineOf(day, 0);
+    return {
+      ...base,
+      mode: "public_fast",
+      hours: base.hours.map((slot) => ({
+        ...slot,
+        discounted: discountHours.includes(slot.hour),
+        price_per_kwh: discountHours.includes(slot.hour) ? 298.6 : 347.2,
+      })),
+    };
+  }
+
+  test("막대는 기본 단가 하나로 칠하고, 구간 배지는 달지 않는다", () => {
+    const axis = buildAxis({ earliestStart: "2026-10-07T16:00", deadline: "2026-10-08T08:00" })!;
+    const columns = buildColumns(axis, [publicFast("2026-10-07"), publicFast("2026-10-08")]);
+
+    expect(new Set(columns.map((column) => column.bandKey))).toEqual(new Set(["flat"]));
+    expect(bandSummary(columns, [16, 17, 18])).toBeNull();
+  });
+
+  test("주말 할인이 걸린 시각이 끼면 그것만 말한다", () => {
+    const axis = buildAxis({ earliestStart: "2026-10-10T10:00", deadline: "2026-10-10T16:00" })!;
+    const columns = buildColumns(axis, [publicFast("2026-10-10", [11, 12, 13])]);
+
+    expect(bandSummary(columns, [10, 11, 12])).toBe("주말 할인 포함");
+    expect(bandSummary(columns, [11, 12])).toBe("주말 할인");
+  });
+});
+
 describe("bandSummary", () => {
   const axis = buildAxis({
     earliestStart: "2026-10-07T18:00",
