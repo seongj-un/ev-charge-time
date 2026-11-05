@@ -166,7 +166,7 @@ def chat(
         try:
             return compute_recommendation(request), request
         except TariffNotConfiguredError:
-            # 공용 급속인데 단가가 없다(방식이 기본 차량에서 온 경우 등). 설정에
+            # 공공 급속인데 단가가 없다(방식이 기본 차량에서 온 경우 등). 설정에
             # 기준단가가 있으면 여기 오지 않는다. 같은 이유로 오류 대신 되묻는다.
             if request.mode == "public_fast" and request.public_base_price is None:
                 return None, request

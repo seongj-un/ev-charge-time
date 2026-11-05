@@ -106,7 +106,7 @@ def _public_fast_price(
         # "공짜 충전"이라는 거짓 답이 되므로 입력을 다시 확인하게 한다. 이 문장도
         # 화면에 그대로 뜬다 (위 TariffNotConfiguredError와 같은 규칙).
         raise InvalidPriceError(
-            f"입력한 공용 급속 단가({base:g}원/kWh)가 주말 할인액({cut:g}원/kWh)보다 "
+            f"입력한 공공 급속 단가({base:g}원/kWh)가 주말 할인액({cut:g}원/kWh)보다 "
             "작거나 같아서 계산할 수 없어요. 충전기에 적힌 단가를 다시 확인해 주세요."
         )
     return float(base) - cut

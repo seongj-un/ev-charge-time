@@ -70,9 +70,9 @@ describe("RecommendPage", () => {
     expect(screen.getByLabelText("배터리 용량")).toHaveValue("70");
   });
 
-  test("하루 단가에서 넘어온 공용 급속 단가도 채운다", async () => {
+  test("하루 단가에서 넘어온 공공 급속 단가도 채운다", async () => {
     await renderWith({ day: "2026-10-31", mode: "public_fast", public_base_price: "347" });
 
-    expect(screen.getByLabelText("공용 급속 단가")).toHaveValue("347");
+    expect(screen.getByLabelText("공공 급속 단가")).toHaveValue("347");
   });
 });

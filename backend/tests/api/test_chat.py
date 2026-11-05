@@ -618,10 +618,10 @@ def test_a_model_failure_log_does_not_carry_the_original_exception(
 
 
 # ---------------------------------------------------------------------------
-# 공용 급속 단가 — 추출·전달하고, 없으면 되묻는다
+# 공공 급속 단가 — 추출·전달하고, 없으면 되묻는다
 # ---------------------------------------------------------------------------
 #
-# 공용 급속은 충전사업자마다 단가가 달라 단가 없이는 계산할 수 없다. 예전에는
+# 공공 급속은 충전사업자마다 단가가 달라 단가 없이는 계산할 수 없다. 예전에는
 # 추출 스키마에 단가 자리가 없어서 사용자가 "350원"이라고 말해도 버려졌고,
 # 계산 단계에서 422(단가를 알려 달라는 문장)가 났다.
 
@@ -632,7 +632,7 @@ def test_a_public_fast_price_in_the_question_reaches_the_calculation(
     _login(client, db_session)
     fake_llm.payload = {**FULL_EXTRACTION, "mode": "public_fast", "public_base_price": 350}
 
-    response = _ask(client, "공용 급속(350원/kWh)으로 내일 출근 전까지 80% 채우려면?")
+    response = _ask(client, "공공 급속(350원/kWh)으로 내일 출근 전까지 80% 채우려면?")
 
     assert response.status_code == 200, response.text
     body = response.json()

@@ -57,7 +57,7 @@ def test_business_error_returns_a_detail_string(client):
 
     assert response.status_code == 422
     assert isinstance(response.json()["detail"], str)
-    assert "시간이 부족합니다" in response.json()["detail"]
+    assert response.json()["detail"].startswith("시간이 부족해요.")
 
 
 def test_validation_error_returns_a_detail_array(client):

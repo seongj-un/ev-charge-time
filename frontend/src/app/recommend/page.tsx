@@ -50,7 +50,7 @@ export default async function RecommendPage({
   const day = read("day") ?? undefined;
   const rawMode = read("mode");
   const mode = MODES.includes(rawMode as Mode) ? (rawMode as Mode) : undefined;
-  // 하루 단가에서 공용 급속으로 넘어오면 거기서 넣은 단가도 따라온다.
+  // 하루 단가에서 공공 급속으로 넘어오면 거기서 넣은 단가도 따라온다.
   const rawPrice = Number(read("public_base_price"));
   const price = mode === "public_fast" && rawPrice > 0 && Number.isFinite(rawPrice) ? rawPrice : undefined;
 

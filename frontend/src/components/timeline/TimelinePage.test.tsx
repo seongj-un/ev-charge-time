@@ -80,7 +80,7 @@ describe("TimelinePage", () => {
     );
   });
 
-  test("URL의 공용 급속 단가로 부르고, 바뀐 주소에도 남긴다", async () => {
+  test("URL의 공공 급속 단가로 부르고, 바뀐 주소에도 남긴다", async () => {
     search = new URLSearchParams("day=2026-01-14&mode=public_fast&public_base_price=350");
 
     render(<TimelinePage />);

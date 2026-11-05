@@ -67,17 +67,17 @@ FIELD_LABELS: dict[str, str] = {
     "charger_kw": "충전기 출력(kW)",
     "earliest_start": "충전을 시작할 수 있는 가장 이른 시각",
     "deadline": "충전을 마쳐야 하는 시각",
-    "public_base_price": "공용 급속 충전 단가(원/kWh)",
+    "public_base_price": "공공 급속 충전 단가(원/kWh)",
 }
 
-# 공용 급속은 충전사업자마다 단가가 달라 하나의 공식 값이 없다. 방식이
+# 공공 급속은 충전사업자마다 단가가 달라 하나의 공식 값이 없다. 방식이
 # public_fast면 이 항목도 있어야 계산할 수 있다.
 PUBLIC_FAST_PRICE = "public_base_price"
 
 MODE_LABELS: dict[str, str] = {
     "self_low": "자가 충전(저압)",
     "self_high": "자가 충전(고압)",
-    "public_fast": "공용 급속 충전",
+    "public_fast": "공공 급속 충전",
 }
 
 
@@ -125,7 +125,7 @@ class ExtractedConditions(BaseModel):
         default=None,
         description=(
             "충전 방식. self_low(자가 저압) / self_high(자가 고압) / "
-            "public_fast(공용 급속) 중 하나. 질문에서 알 수 없으면 null"
+            "public_fast(공공 급속) 중 하나. 질문에서 알 수 없으면 null"
         ),
     )
     efficiency: float | None = Field(
@@ -133,7 +133,7 @@ class ExtractedConditions(BaseModel):
     )
     public_base_price: float | None = Field(
         default=None,
-        description="공용 급속 충전 단가(원/kWh). 질문에 단가를 말하지 않았으면 null",
+        description="공공 급속 충전 단가(원/kWh). 질문에 단가를 말하지 않았으면 null",
     )
 
 
@@ -168,11 +168,11 @@ SYSTEM_INSTRUCTION = """\
    - 출근 시각을 따로 말하지 않았다면 다음 날 오전 8시로 본다.
 4. soc_now/soc_target은 퍼센트 숫자다("80%" → 80). "완충"은 100이다.
 5. mode는 self_low·self_high·public_fast 중 하나만 쓴다.
-   집(자택·아파트)에서 충전하면 self_low, 공용 급속·충전소면 public_fast다.
+   집(자택·아파트)에서 충전하면 self_low, 공공 급속·충전소면 public_fast다.
    확신이 없으면 null로 둔다.
 6. 차종·배터리 용량·충전기 출력을 질문에서 말하지 않았다면 null이다.
    차종 이름만으로 용량을 추측하지 마라.
-7. 공용 급속 충전 단가를 말했으면 public_base_price에 원/kWh 숫자로 쓴다
+7. 공공 급속 충전 단가를 말했으면 public_base_price에 원/kWh 숫자로 쓴다
    ("kWh당 350원" → 350). 말하지 않았으면 null이다. 단가를 추측하지 마라.\
 """
 
@@ -241,7 +241,7 @@ def answer(
     result, request = build_recommendation(request)
     if result is None:
         # 차량 기본값까지 병합했는데도 배터리 용량·충전기 출력이 비었거나,
-        # (기본 차량에서 온) 공용 급속 방식인데 단가가 없다.
+        # (기본 차량에서 온) 공공 급속 방식인데 단가가 없다.
         missing = [
             name
             for name in ("battery_kwh", "charger_kw")

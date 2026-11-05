@@ -4,7 +4,7 @@ import type { UserEvent } from "@testing-library/user-event";
 import { act } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { SessionProvider } from "@/components/auth/SessionProvider";
 
@@ -27,6 +27,18 @@ vi.mock("next/navigation", () => ({
 }));
 
 const SUBMIT = "최적 시간 찾기";
+
+/*
+ * 이 파일의 날짜(2026-10-07 등)가 '지난 날짜'로 막히지 않게 오늘을 고정한다.
+ * Date만 가짜로 둔다 — 타이머까지 멈추면 userEvent가 기다리다 끝나지 않는다.
+ */
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-06T09:00:00+09:00"));
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 
 async function retype(user: UserEvent, label: string, value: string) {
@@ -293,22 +305,22 @@ describe("ChargeForm", () => {
 });
 
 /*
- * 공용 급속은 충전사업자마다 단가가 달라 공식 값이 하나로 없다. 기본 설정의 백엔드는
- * 단가 없이 공용 급속을 계산하지 않는데, 예전 폼에는 단가 칸이 없어서 공용 급속을
+ * 공공 급속은 충전사업자마다 단가가 달라 공식 값이 하나로 없다. 기본 설정의 백엔드는
+ * 단가 없이 공공 급속을 계산하지 않는데, 예전 폼에는 단가 칸이 없어서 공공 급속을
  * 고르면 결과 화면에서 항상 실패했다.
  */
-describe("공용 급속 단가", () => {
+describe("공공 급속 단가", () => {
   beforeEach(() => {
     push.mockClear();
   });
 
-  test("공용 급속을 고르면 단가 칸이 생기고, 단가가 URL에 실린다", async () => {
+  test("공공 급속을 고르면 단가 칸이 생기고, 단가가 URL에 실린다", async () => {
     const user = setup();
     fillTimes();
-    expect(screen.queryByLabelText("공용 급속 단가")).toBeNull();
+    expect(screen.queryByLabelText("공공 급속 단가")).toBeNull();
 
     await user.click(screen.getByRole("radio", { name: "공공 급속" }));
-    await user.type(screen.getByLabelText("공용 급속 단가"), "350");
+    await user.type(screen.getByLabelText("공공 급속 단가"), "350");
     await submit(user);
 
     expect(push).toHaveBeenCalledTimes(1);
@@ -317,7 +329,7 @@ describe("공용 급속 단가", () => {
     expect(url.searchParams.get("public_base_price")).toBe("350");
   });
 
-  test("공용 급속인데 단가가 비었으면 넘어가지 않고 그 칸에 알린다", async () => {
+  test("공공 급속인데 단가가 비었으면 넘어가지 않고 그 칸에 알린다", async () => {
     const user = setup();
     fillTimes();
 
@@ -333,7 +345,7 @@ describe("공용 급속 단가", () => {
     fillTimes();
 
     await user.click(screen.getByRole("radio", { name: "공공 급속" }));
-    await user.type(screen.getByLabelText("공용 급속 단가"), "350");
+    await user.type(screen.getByLabelText("공공 급속 단가"), "350");
     await user.click(screen.getByRole("radio", { name: "자가 저압" }));
     await submit(user);
 
@@ -383,7 +395,7 @@ describe("조건을 들고 돌아왔을 때", () => {
     expect(readTime("충전 시작 가능")).toBe("2026-11-02T21:30");
     expect(readTime("이때까지 완료")).toBe("2026-11-03T07:00");
     expect(screen.getByRole("radio", { name: "공공 급속" })).toBeChecked();
-    expect(screen.getByLabelText("공용 급속 단가")).toHaveValue("347");
+    expect(screen.getByLabelText("공공 급속 단가")).toHaveValue("347");
   });
 
   test("그대로 다시 제출하면 같은 조건으로 넘어간다", async () => {
@@ -393,5 +405,116 @@ describe("조건을 들고 돌아왔을 때", () => {
 
     const url = new URL(push.mock.calls[0][0], "http://x");
     expect(fromSearchParams(url.searchParams)).toEqual(BACK);
+  });
+
+  test("지난 날짜로 돌아왔으면 시작 칸에 알리고 넘어가지 않는다", async () => {
+    vi.setSystemTime(new Date("2026-11-05T09:00:00+09:00"));
+    const user = setupWith(BACK);
+
+    await submit(user);
+
+    expect(screen.getByText("지난 날짜예요. 오늘이나 그 뒤로 골라 주세요")).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
+});
+
+describe("서버가 거절할 조건도 폼에서 먼저 막는다", () => {
+  beforeEach(() => {
+    push.mockClear();
+  });
+
+  test("배터리 용량이 1,000 kWh를 넘으면 그 칸에 알린다", async () => {
+    const user = setup();
+    fillTimes();
+    await retype(user, "배터리 용량", "1001");
+    await submit(user);
+
+    expect(screen.getByText("배터리 용량은 1,000 kWh 이하여야 해요")).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  test("충전기 출력이 1,000 kW를 넘으면 그 칸에 알린다", async () => {
+    const user = setup();
+    fillTimes();
+    await retype(user, "충전기 출력", "1500");
+    await submit(user);
+
+    expect(screen.getByText("충전기 출력은 1,000 kW 이하여야 해요")).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  test.each(["1e3", "0x10", "Infinity", "7,5"])("'%s'는 숫자로 읽지 않는다", async (raw) => {
+    const user = setup();
+    fillTimes();
+    await retype(user, "배터리 용량", raw);
+    await submit(user);
+
+    expect(screen.getByText("배터리 용량을 0보다 크게 입력해 주세요")).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  test("충전 시간이 모자라면 제출 전에 완료 칸에 사람 말로 알린다", async () => {
+    const user = setup();
+    // 70 kWh · 10% → 90% = 56 kWh, 7 kW로 8시간. 가능한 시간은 4시간.
+    await retype(user, "현재 충전량", "10");
+    await retype(user, "목표 충전량", "90");
+    setTime("충전 시작 가능", "2026-10-07T22:00");
+    setTime("이때까지 완료", "2026-10-08T02:00");
+    await submit(user);
+
+    expect(
+      screen.getByText("이 시간 안에 다 못 채워요. 충전에 약 8시간이 걸리는데 가능한 시간은 4시간이에요"),
+    ).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  test("시작부터 완료까지 14일을 넘기면 알린다", async () => {
+    const user = setup();
+    setTime("충전 시작 가능", "2026-10-07T18:00");
+    setTime("이때까지 완료", "2026-10-22T18:00");
+    await submit(user);
+
+    expect(screen.getByText("시작부터 완료까지 14일 안으로 잡아 주세요")).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  test("제출이 막히면 첫 번째 틀린 칸으로 초점이 간다", async () => {
+    const user = setup();
+    fillTimes();
+    await retype(user, "목표 충전량", "20");
+    await submit(user);
+
+    expect(screen.getByLabelText("목표 충전량")).toHaveFocus();
+  });
+
+  test("날짜 칸이 틀렸으면 그 날짜 버튼으로 초점이 간다", async () => {
+    const user = setup();
+    setTime("충전 시작 가능", "2026-10-07T18:00");
+    setTime("이때까지 완료", "2026-10-07T17:00");
+    await submit(user);
+
+    expect(screen.getByRole("button", { name: /^이때까지 완료 날짜/ })).toHaveFocus();
+  });
+});
+
+describe("시작을 완료 뒤로 옮기면 완료가 따라온다", () => {
+  test("원래 간격(14시간)을 그대로 두고 민다", () => {
+    stubAnonymous();
+    render(<Form />);
+    fillTimes(); // 10-07 18:00 → 10-08 08:00 (14시간)
+    // 날을 10-09로 고르는 순간(18:00) 완료가 14시간 뒤 10-10 08:00으로 밀리고,
+    // 이어서 시각을 20:00으로 바꿔도 완료보다 앞이라 더 움직이지 않는다.
+    setTime("충전 시작 가능", "2026-10-09T20:00");
+
+    expect(readTime("이때까지 완료")).toBe("2026-10-10T08:00");
+  });
+
+  test("완료보다 앞이면 완료는 그대로다", () => {
+    stubAnonymous();
+    render(<Form />);
+    fillTimes();
+    setTime("충전 시작 가능", "2026-10-07T20:00");
+
+    expect(readTime("이때까지 완료")).toBe("2026-10-08T08:00");
   });
 });

@@ -108,7 +108,7 @@ MAX_REQUEST_SPAN = timedelta(days=14)
 # 문자열 모두 pydantic이 float로 받아 준다)과 1e300 같은 값이 통과해서, 충전 시간
 # 0초·비용 0원짜리 200이나 timedelta 오버플로 500이 났다. 상한은 "실제로 있는
 # 값 + 넉넉한 여유"다: 승용 전기차 배터리는 100kWh대, 대형 버스도 수백 kWh이고,
-# 가장 빠른 충전기가 1MW급이다. 공용 급속 단가는 kWh당 수백 원대다.
+# 가장 빠른 충전기가 1MW급이다. 공공 급속 단가는 kWh당 수백 원대다.
 MAX_BATTERY_KWH = 1000
 MAX_CHARGER_KW = 1000
 MAX_PRICE_PER_KWH = 10_000

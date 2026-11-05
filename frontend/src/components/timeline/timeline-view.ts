@@ -12,7 +12,7 @@ import { formatPricePerKwh, parseKstWallClock } from "@/lib/format";
  */
 
 /** 범례와 단가 목록에서 언제나 같은 순서로 읽히게 한다. 디자인의 순서다. */
-const BAND_ORDER: BandKey[] = ["light", "middle", "peak", "discounted"];
+const BAND_ORDER: BandKey[] = ["light", "middle", "peak", "flat", "discounted"];
 
 /**
  * 단가는 백엔드에서 곱셈으로 나온다 — 71.2와 71.20000000000001이 같은 응답에 섞인다.
@@ -72,10 +72,10 @@ export function shiftDay(day: string, delta: number): string {
 }
 
 /** 응답의 시간 목록 → 차트 컬럼. 할인이 걸린 시각은 부하구간과 무관하게 할인 색이다. */
-export function toColumns(hours: HourPrice[]): PriceColumn[] {
+export function toColumns(hours: HourPrice[], mode?: Mode): PriceColumn[] {
   return hours.map((entry) => ({
     hour: entry.hour,
-    bandKey: bandKeyOf(entry.band, entry.discounted),
+    bandKey: bandKeyOf(entry.band, entry.discounted, mode),
     pricePerKwh: entry.price_per_kwh,
   }));
 }
@@ -93,8 +93,8 @@ export function cheapestHours(hours: HourPrice[]): number[] {
  * 오늘 실제로 나타난 부하구간만. 최대부하가 없는 날에 범례가 "최대"를 띄우면
  * 범례와 막대가 맞지 않아 범례를 아무도 믿지 않게 된다.
  */
-export function presentBandKeys(hours: HourPrice[]): BandKey[] {
-  const seen = new Set(hours.map((entry) => bandKeyOf(entry.band, entry.discounted)));
+export function presentBandKeys(hours: HourPrice[], mode?: Mode): BandKey[] {
+  const seen = new Set(hours.map((entry) => bandKeyOf(entry.band, entry.discounted, mode)));
   return BAND_ORDER.filter((key) => seen.has(key));
 }
 
@@ -108,10 +108,10 @@ export type BandPriceRow = {
  * 부하구간마다 한 줄. 같은 구간 안에서도 단가가 다를 수 있어서(공공 급속의 기본단가
  * 가산, 계절 경계 등) 대표값 하나로 뭉개지 않고 최소·최대를 같이 들고 나간다.
  */
-export function bandPriceRows(hours: HourPrice[]): BandPriceRow[] {
+export function bandPriceRows(hours: HourPrice[], mode?: Mode): BandPriceRow[] {
   const byKey = new Map<BandKey, number[]>();
   for (const entry of hours) {
-    const key = bandKeyOf(entry.band, entry.discounted);
+    const key = bandKeyOf(entry.band, entry.discounted, mode);
     const prices = byKey.get(key) ?? [];
     prices.push(entry.price_per_kwh);
     byKey.set(key, prices);
@@ -195,11 +195,11 @@ export function discountScopeLabel(response: TimelineResponse): string {
   return `${SEASON_LABEL[response.season]} 토·일·공휴일`;
 }
 
-/** 공용 급속 단가의 상한. 백엔드 schemas.MAX_PRICE_PER_KWH와 같다. */
+/** 공공 급속 단가의 상한. 백엔드 schemas.MAX_PRICE_PER_KWH와 같다. */
 const MAX_PUBLIC_BASE_PRICE = 10_000;
 
 /**
- * 공용 급속 단가 칸의 글자 → 보낼 수 있는 단가, 못 보내면 null.
+ * 공공 급속 단가 칸의 글자 → 보낼 수 있는 단가, 못 보내면 null.
  *
  * Number("")는 0이라 그냥 쓰면 빈 칸이 "0원"으로 나간다. 백엔드가 받지 않을 값(0 이하,
  * 상한 초과)도 여기서 걸러 null로 둔다 — 그러면 화면은 단가 없이 부르고, 백엔드가
@@ -215,7 +215,7 @@ export function parsePublicBasePrice(raw: string): number | null {
 /**
  * "이 날짜로 충전 시간 추천받기"의 주소.
  *
- * 공용 급속은 단가가 없으면 추천도 못 하니, 여기서 넣은 단가를 같이 넘긴다 —
+ * 공공 급속은 단가가 없으면 추천도 못 하니, 여기서 넣은 단가를 같이 넘긴다 —
  * 추천 화면에서 같은 숫자를 또 치게 하지 않는다. 다른 방식에는 쓸모없는 값이라 싣지 않는다.
  */
 export function recommendHref(day: string, mode: Mode, publicBasePrice: number | null): string {

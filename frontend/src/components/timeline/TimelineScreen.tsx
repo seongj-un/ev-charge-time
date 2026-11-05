@@ -69,9 +69,9 @@ export function TimelineScreen({
   /** URL의 ?day=. 없으면 마운트 뒤에 오늘로 채운다. */
   initialDay?: string | null;
   initialMode?: Mode;
-  /** URL의 ?public_base_price=. 공용 급속 단가 칸에 그대로 채운다. */
+  /** URL의 ?public_base_price=. 공공 급속 단가 칸에 그대로 채운다. */
   initialPublicBasePrice?: string | null;
-  /** 바뀐 날짜·방식(·공용 급속 단가)을 URL에 남기고 싶을 때 */
+  /** 바뀐 날짜·방식(·공공 급속 단가)을 URL에 남기고 싶을 때 */
   onQueryChange?: (query: { day: string; mode: Mode; publicBasePrice?: number }) => void;
 }) {
   /*
@@ -94,7 +94,7 @@ export function TimelineScreen({
     dayOverride ?? (isDay(initialDay) ? initialDay : hydrated ? todayInSeoul() : null);
 
   /*
-   * 공용 급속 단가. 공용 급속은 충전사업자마다 요금이 달라 공식 단가가 없고, 백엔드는
+   * 공공 급속 단가. 공공 급속은 충전사업자마다 요금이 달라 공식 단가가 없고, 백엔드는
    * 단가 없이 오면 422로 "충전기에 적힌 요금을 넣어 달라"고 한다. 넣을 칸이 없으면
    * 사용자는 그 말을 들어도 할 수 있는 게 없다.
    *
@@ -239,6 +239,8 @@ export function TimelineScreen({
 
   const data = load.status === "ready" ? load.data : null;
   const hours = data?.hours ?? [];
+  // 공공 급속은 부하구간 대신 "기본 단가" 하나로 칠한다 (chart/bands.ts bandKeyOf). 응답의 방식을 따른다.
+  const hoursMode = data?.mode;
   const subtitle = data ? daySubtitle(data) : null;
   const discountRange = data ? discountRangeLabel(hours) : null;
 
@@ -287,18 +289,18 @@ export function TimelineScreen({
       </header>
 
       {/*
-       * 모든 너비에서 보인다. 모바일에는 방식 선택이 없지만 URL로 공용 급속이 올 수 있고,
+       * 모든 너비에서 보인다. 모바일에는 방식 선택이 없지만 URL로 공공 급속이 올 수 있고,
        * 그때 이 칸이 없으면 단가표를 볼 길이 없다.
        */}
       {mode === "public_fast" ? (
         <Field
           className="mt-4 lg:mt-6 lg:max-w-sm"
-          label="공용 급속 단가"
+          label="공공 급속 단가"
           suffix="원/kWh"
           inputMode="decimal"
           value={priceInput}
           onChange={(event) => setPriceInput(event.target.value)}
-          hint="공용 급속은 충전사업자마다 요금이 달라요. 충전기에 적힌 kWh당 요금을 넣어 주세요."
+          hint="공공 급속은 충전사업자마다 요금이 달라요. 충전기에 적힌 kWh당 요금을 넣어 주세요."
         />
       ) : null}
 
@@ -316,7 +318,7 @@ export function TimelineScreen({
             {data ? (
               <div className="hidden lg:block">
                 <BandLegend
-                  keys={presentBandKeys(hours)}
+                  keys={presentBandKeys(hours, hoursMode)}
                   markers={[{ label: MARKER_LABEL, tone: "ink" }]}
                 />
               </div>
@@ -342,7 +344,7 @@ export function TimelineScreen({
             <>
               <PriceBarChart
                 className="mt-4 lg:mt-8"
-                columns={toColumns(hours)}
+                columns={toColumns(hours, hoursMode)}
                 markers={[{ hours: cheapestHours(hours), tone: "ink", label: MARKER_LABEL }]}
                 /* 모바일에서 24개를 다 찍으면 시각 라벨이 서로 겹친다 */
                 labelEvery={isDesktop ? 1 : 6}
@@ -357,7 +359,7 @@ export function TimelineScreen({
                 />
               ) : null}
               <BandLegend
-                keys={presentBandKeys(hours)}
+                keys={presentBandKeys(hours, hoursMode)}
                 markers={[{ label: MARKER_LABEL, tone: "ink" }]}
                 className="mt-3 lg:hidden"
               />
@@ -382,7 +384,7 @@ export function TimelineScreen({
           ) : null}
 
           {data ? (
-            <PriceListCard rows={bandPriceRows(hours)} note={tariffNote} />
+            <PriceListCard rows={bandPriceRows(hours, hoursMode)} note={tariffNote} />
           ) : null}
 
           {/* 모바일에는 이 버튼이 없다 (디자인 p-04) — 하단 탭바의 "충전 추천"이 같은 곳으로 간다. */}

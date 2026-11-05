@@ -32,6 +32,22 @@
 {$SITE_ADDRESS} {
 	encode zstd gzip
 
+	# 보안 헤더. 프론트·API 응답 모두에 붙는다.
+	# - HSTS: HTTPS로 한 번 온 브라우저는 다음부터 http로 시도하지 않는다(HTTP로 뜰 때는
+	#   브라우저가 무시하므로 SITE_ADDRESS를 비운 배포에도 해가 없다). preload는 걸지 않는다.
+	# - 다른 사이트가 이 앱을 iframe에 넣지 못하게 한다(클릭재킹).
+	# - geolocation은 '내 위치로 찾기'가 쓰므로 자기 출처에만 연다.
+	# - Server·X-Powered-By: 쓰는 소프트웨어를 알려 주지 않는다.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(self), camera=(), microphone=()"
+		-Server
+		-X-Powered-By
+	}
+
 	handle /api/* {
 		reverse_proxy backend:8000
 	}

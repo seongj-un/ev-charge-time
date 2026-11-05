@@ -105,7 +105,7 @@ export function buildColumns(axis: Axis, timelines: TimelineResponse[]): PriceCo
 
     columns.push({
       hour,
-      bandKey: bandKeyOf(slot.band, slot.discounted),
+      bandKey: bandKeyOf(slot.band, slot.discounted, timeline.mode),
       pricePerKwh: slot.price_per_kwh,
     });
   }
@@ -158,6 +158,11 @@ export function bandSummary(columns: PriceColumn[], hours: number[]): string | n
     counts.set(column.bandKey, (counts.get(column.bandKey) ?? 0) + 1);
   }
   if (counts.size === 0) return null;
+
+  // 공공 급속: 단가가 하나라 "기본 단가 시간대"는 아무 말도 하지 않는다. 할인이 걸렸는지만 말한다.
+  if (counts.has("flat")) {
+    return counts.has("discounted") ? `${BAND_KEY_LONG_LABEL.discounted} 포함` : null;
+  }
 
   const [topKey] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
   const label = BAND_KEY_LONG_LABEL[topKey];

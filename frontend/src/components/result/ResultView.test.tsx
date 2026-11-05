@@ -307,8 +307,8 @@ describe("차트", () => {
     expect(screen.queryByText(/시간대$/)).not.toBeInTheDocument();
   });
 
-  test("공용 급속이면 단가 요청에도 공용 급속 단가를 싣는다", async () => {
-    // 기본 설정의 백엔드는 공용 급속 단가 없이 timeline을 422로 거절한다 — 차트가 통째로 빠진다.
+  test("공공 급속이면 단가 요청에도 공공 급속 단가를 싣는다", async () => {
+    // 기본 설정의 백엔드는 공공 급속 단가 없이 timeline을 422로 거절한다 — 차트가 통째로 빠진다.
     const query = toSearchParams({
       batteryKwh: 70,
       chargerKw: 50,
