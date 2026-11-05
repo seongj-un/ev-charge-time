@@ -430,7 +430,23 @@ describe("서버가 거절할 조건도 폼에서 먼저 막는다", () => {
     await submit(user);
 
     expect(screen.getByText("배터리 용량은 1,000 kWh 이하여야 해요")).toBeInTheDocument();
+    // 범위 밖 값으로 시간까지 셈해 오류를 하나 더 띄우지 않는다
+    expect(screen.queryByText(/이 시간 안에 다 못 채워요/)).not.toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
+  });
+
+  test("하루를 넘는 시간은 일·시간·분으로 쓴다 (서버 문구와 같은 꼴)", async () => {
+    const user = setup();
+    // 1000 kWh · 0% → 100%, 7 kW → 142시간 51분 = 5일 22시간 51분. 가능한 시간은 14시간.
+    await retype(user, "배터리 용량", "1000");
+    await retype(user, "현재 충전량", "0");
+    await retype(user, "목표 충전량", "100");
+    fillTimes();
+    await submit(user);
+
+    expect(
+      screen.getByText("이 시간 안에 다 못 채워요. 충전에 약 5일 22시간 51분이 걸리는데 가능한 시간은 14시간이에요"),
+    ).toBeInTheDocument();
   });
 
   test("충전기 출력이 1,000 kW를 넘으면 그 칸에 알린다", async () => {

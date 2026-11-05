@@ -588,17 +588,23 @@ function validate(
     if (windowMinutes > MAX_SPAN_DAYS * 24 * 60) {
       errors.deadline = `시작부터 완료까지 ${MAX_SPAN_DAYS}일 안으로 잡아 주세요`;
     } else if (
+      // 위 칸들이 이미 틀렸으면 그 칸만 알린다. 1,001 kWh처럼 범위를 벗어난 값으로
+      // 시간을 셈하면 오류가 두 개 뜨고, 고칠 곳은 하나인데 둘처럼 보인다.
+      !errors.batteryKwh &&
+      !errors.chargerKw &&
+      !errors.socNow &&
+      !errors.socTarget &&
       batteryKwh !== null &&
       chargerKw !== null &&
-      chargerKw > 0 &&
       socNow !== null &&
-      socTarget !== null &&
-      socTarget > socNow
+      socTarget !== null
     ) {
       // 서버도 같은 판단으로 거절한다(planner.recommend). 결과 화면까지 가서 알게 하지 않는다.
       const hours = requiredEnergyKwh({ batteryKwh, socNow, socTarget }) / chargerKw;
       if (hours * 60 > windowMinutes) {
-        errors.deadline = `이 시간 안에 다 못 채워요. 충전에 ${formatDuration(hours)}이 걸리는데 가능한 시간은 ${formatSpan(windowMinutes)}이에요`;
+        // 서버 문구(planner.format_span_hours)와 같은 꼴: "약 1일 18시간 51분"
+        const needed = formatSpan(Math.max(1, Math.round(hours * 60)));
+        errors.deadline = `이 시간 안에 다 못 채워요. 충전에 약 ${needed}이 걸리는데 가능한 시간은 ${formatSpan(windowMinutes)}이에요`;
       }
     }
   }
