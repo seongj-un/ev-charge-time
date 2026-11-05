@@ -242,8 +242,14 @@ describe("하루 단가에서 넘어온 날짜", () => {
     );
   }
 
-  const start = () => screen.getByLabelText("충전 시작 가능") as HTMLInputElement;
-  const end = () => screen.getByLabelText("이때까지 완료") as HTMLInputElement;
+  // 날짜·시각 칸은 묶음(group)이 현재 값을 data-value로 들고 있다.
+  const field = (name: string) => ({
+    get value() {
+      return screen.getByRole("group", { name }).getAttribute("data-value") ?? "";
+    },
+  });
+  const start = () => field("충전 시작 가능");
+  const end = () => field("이때까지 완료");
 
   test("넘어온 날짜를 시작 시각에 쓴다", async () => {
     renderWithDay({ initialDay: "2026-11-11" });
