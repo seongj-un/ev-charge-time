@@ -7,6 +7,10 @@ import { Button } from "@/components/ui/Button";
 import { Field, SelectField } from "@/components/ui/Field";
 import { ApiError } from "@/lib/api/client";
 import { MODE_LABEL, type Mode, type Vehicle, type VehicleInput } from "@/lib/api/types";
+import { MAX_BATTERY_KWH, MAX_CHARGER_KW, parseDecimal } from "@/lib/number";
+
+/** 백엔드 schemas.VehicleCreate.name max_length와 같다. */
+const MAX_NAME_LENGTH = 100;
 
 /**
  * 차량 추가·수정 폼 (디자인 p-10 모바일 · p-22 데스크톱 우측 카드).
@@ -53,19 +57,26 @@ export function VehicleForm({
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
 
-    const batteryKwh = Number(battery);
-    const chargerKw = Number(charger);
+    // 충전 추천 폼(ChargeForm)과 같은 규칙·같은 문구. 서버 문구("배터리 용량: 1000 이하여야
+    // 해요.")가 그대로 뜨면 같은 앱에서 말투가 둘이 된다.
+    const batteryKwh = parseDecimal(battery);
+    const chargerKw = parseDecimal(charger);
     const next: Errors = {};
     if (name.trim() === "") next.name = "별칭을 입력해 주세요.";
-    if (!Number.isFinite(batteryKwh) || batteryKwh <= 0) {
+    else if (name.trim().length > MAX_NAME_LENGTH) next.name = `별칭은 ${MAX_NAME_LENGTH}자까지 쓸 수 있어요.`;
+    if (batteryKwh === null || batteryKwh <= 0) {
       next.battery = "배터리 용량을 0보다 큰 숫자로 입력해 주세요.";
+    } else if (batteryKwh > MAX_BATTERY_KWH) {
+      next.battery = `배터리 용량은 ${MAX_BATTERY_KWH.toLocaleString("ko-KR")} kWh 이하여야 해요.`;
     }
-    if (!Number.isFinite(chargerKw) || chargerKw <= 0) {
+    if (chargerKw === null || chargerKw <= 0) {
       next.charger = "충전기 출력을 0보다 큰 숫자로 입력해 주세요.";
+    } else if (chargerKw > MAX_CHARGER_KW) {
+      next.charger = `충전기 출력은 ${MAX_CHARGER_KW.toLocaleString("ko-KR")} kW 이하여야 해요.`;
     }
     setErrors(next);
     // 서버가 422로 되돌려줄 것을 미리 잡는다. 왕복 한 번을 사용자에게 시키지 않는다.
-    if (Object.keys(next).length > 0) return;
+    if (Object.keys(next).length > 0 || batteryKwh === null || chargerKw === null) return;
 
     setPending(true);
     setFailure(null);

@@ -112,6 +112,7 @@ describe("즐겨찾는 충전소 — 이름이 없는 오늘", () => {
 
     await screen.findByText("이름을 아직 불러오지 못했어요");
     expect(screen.getByText(/한국환경공단/)).toBeInTheDocument();
+    expect(screen.getByText(/이름·주소가 비어 있는 곳은/)).toBeInTheDocument();
   });
 
   /**
@@ -207,7 +208,10 @@ describe("즐겨찾는 충전소 — 목록 다루기", () => {
 
     expect(await screen.findByRole("heading", { name: "서울역 공영주차장" })).toBeInTheDocument();
     expect(screen.getByText("사용 가능")).toBeInTheDocument();
-    expect(screen.getByText(/상태 갱신 22:10/)).toBeInTheDocument();
+    // 오늘이 아닌 시각이라 날짜가 붙는다 (station-view statusUpdatedLabel)
+    expect(screen.getByText(/상태 갱신 (\d+월 \d+일 )?22:10/)).toBeInTheDocument();
     expect(screen.queryByText("이름을 아직 불러오지 못했어요")).not.toBeInTheDocument();
+    // 이름·주소가 다 있으면 "비어 있는 곳은…" 안내를 붙이지 않는다
+    expect(screen.queryByText(/이름·주소가 비어 있는 곳은/)).not.toBeInTheDocument();
   });
 });

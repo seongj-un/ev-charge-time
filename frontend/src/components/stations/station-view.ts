@@ -232,13 +232,23 @@ export function latestStatusUpdate(
   return latest;
 }
 
-/** "상태 갱신 22:10". 시각이 없거나 못 읽으면 지금 시각을 적지 않고 없다고 말한다. */
-export function statusUpdatedLabel(iso: string | null): string {
+/**
+ * "상태 갱신 22:10", 오늘이 아니면 "상태 갱신 10월 10일 08:15".
+ *
+ * 이 시각은 충전기 상태가 **마지막으로 바뀐** 때라(공공 API의 statUpdDt) 며칠 전일 수
+ * 있다. 시각만 쓰면 한 달 전 값도 오늘처럼 읽힌다. 시각이 없거나 못 읽으면 지금 시각을
+ * 적지 않고 없다고 말한다.
+ *
+ * @param today "YYYY-MM-DD"(한국 날짜). 생략하면 날짜를 붙이지 않는다(예전 동작).
+ */
+export function statusUpdatedLabel(iso: string | null, today?: string): string {
   if (iso === null) return "상태 갱신 시각 없음";
   try {
-    const { hour, minute } = parseKstWallClock(iso);
+    const { year, month, day, hour, minute } = parseKstWallClock(iso);
     const pad = (value: number) => String(value).padStart(2, "0");
-    return `상태 갱신 ${pad(hour)}:${pad(minute)}`;
+    const sameDay = !today || today === `${year}-${pad(month)}-${pad(day)}`;
+    const datePart = sameDay ? "" : `${month}월 ${day}일 `;
+    return `상태 갱신 ${datePart}${pad(hour)}:${pad(minute)}`;
   } catch {
     return "상태 갱신 시각 없음";
   }

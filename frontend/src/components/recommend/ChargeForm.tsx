@@ -12,6 +12,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { MODE_LABEL, type Mode, type Vehicle } from "@/lib/api/types";
 import { estimateHours, requiredEnergyKwh } from "@/lib/charging";
 import { formatDuration, formatKwh } from "@/lib/format";
+import { MAX_BATTERY_KWH, MAX_CHARGER_KW, parseDecimal } from "@/lib/number";
 import {
   defaultForm,
   timesForDay,
@@ -60,9 +61,6 @@ const MODE_OPTIONS: { value: Mode; label: string }[] = [
 
 /** 공공 급속 단가의 상한. 백엔드 schemas.MAX_PRICE_PER_KWH와 같다. */
 const MAX_PRICE_PER_KWH = 10_000;
-/** 백엔드 schemas.MAX_BATTERY_KWH / MAX_CHARGER_KW와 같다. 넘기면 결과 화면에서야 422가 난다. */
-const MAX_BATTERY_KWH = 1000;
-const MAX_CHARGER_KW = 1000;
 /** 백엔드 schemas.MAX_REQUEST_SPAN(14일)과 같다. */
 const MAX_SPAN_DAYS = 14;
 /** 시작을 완료보다 뒤로 옮겼는데 원래 간격을 알 수 없을 때 완료를 이만큼 뒤로 민다. */
@@ -633,17 +631,8 @@ function validate(
   };
 }
 
-/**
- * 사람이 치는 숫자만 받는다: "70", "70.5", ".5". 빈 칸을 0으로 읽지 않으려고
- * Number()를 그냥 쓰지 않고, "1e3"·"0x10"·"Infinity"처럼 Number()가 받아 주는
- * 표기도 막는다 — "1e3"을 1000으로 읽으면 화면의 값과 계산한 값이 달라진다.
- */
-function parseNumber(raw: string): number | null {
-  const text = raw.trim();
-  if (!/^-?(\d+(\.\d*)?|\.\d+)$/.test(text)) return null;
-  const value = Number(text);
-  return Number.isFinite(value) ? value : null;
-}
+/** lib/number.ts — 차량 폼과 같은 규칙으로 읽는다. */
+const parseNumber = parseDecimal;
 
 /** "YYYY-MM-DDTHH:mm"(한국 벽시계) → 분. UTC 필드로만 계산해 표준시가 끼어들지 않는다. */
 function wallMinutes(value: string): number {

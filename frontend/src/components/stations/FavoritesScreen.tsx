@@ -15,6 +15,8 @@ import { ApiError } from "@/lib/api/client";
 import { fetchFavorites, removeFavorite } from "@/lib/api/endpoints";
 import type { FavoriteStation } from "@/lib/api/types";
 
+import { todayInSeoul } from "@/components/timeline/timeline-view";
+
 import { StationCard } from "./StationCard";
 import { latestStatusUpdate, statusUpdatedLabel } from "./station-view";
 
@@ -65,7 +67,9 @@ export function FavoritesScreen() {
     );
   }
 
-  const updatedAt = statusUpdatedLabel(latestStatusUpdate(stations ?? []));
+  const updatedAt = statusUpdatedLabel(latestStatusUpdate(stations ?? []), todayInSeoul());
+  // 충전소 정보(이름·주소)를 아직 못 받은 즐겨찾기가 있을 때만 그 사정을 말한다.
+  const someUnnamed = (stations ?? []).some((item) => item.name === null || item.address === null);
 
   return (
     <MeLayout>
@@ -124,8 +128,8 @@ export function FavoritesScreen() {
           </ul>
 
           <p className="mt-4 text-sm leading-relaxed text-ink-2">
-            {updatedAt} · 출처: 한국환경공단 전기자동차 충전소 정보. 이름·주소는 주변
-            충전소 조회가 열리면 채워져요.
+            {updatedAt} · 출처: 한국환경공단 전기자동차 충전소 정보.
+            {someUnnamed ? " 이름·주소가 비어 있는 곳은 충전소 정보가 다시 들어오면 채워져요." : null}
           </p>
         </>
       )}

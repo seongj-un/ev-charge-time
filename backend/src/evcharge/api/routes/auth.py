@@ -2,8 +2,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlalchemy import delete, select, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
@@ -14,6 +13,7 @@ from ...infra.models import Session as SessionModel
 from ...infra.security import hash_password, hash_token, new_session_token, verify_password
 from ...settings import get_settings
 from ..auth_deps import SESSION_COOKIE, clear_session_cookie, current_user, set_session_cookie
+from ..login_lockout import raise_if_locked, record_failure
 from ..schemas import LoginRequest, SignupRequest, UserOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -76,15 +76,10 @@ def signup(payload: SignupRequest, response: Response, db: DbSession = Depends(g
 @router.post("/login", response_model=UserOut)
 def login(payload: LoginRequest, response: Response, db: DbSession = Depends(get_session)):
     """F-11 로그인. 실패 메시지는 가입 여부를 노출하지 않도록 통일한다."""
-    settings = get_settings()
     now = datetime.now(KST)
 
+    raise_if_locked(db, payload.email, now)
     attempt = db.get(LoginAttempt, payload.email)
-    if attempt is not None and attempt.locked_until is not None and attempt.locked_until > now:
-        raise HTTPException(
-            status_code=429,
-            detail="로그인 실패 횟수가 초과되어 잠겼습니다. 잠시 후 다시 시도하세요.",
-        )
 
     user = db.scalar(select(User).where(User.email == payload.email))
     # 가입 여부와 무관하게 항상 verify_password를 호출한다(타이밍 사이드채널 방지,
@@ -93,29 +88,8 @@ def login(payload: LoginRequest, response: Response, db: DbSession = Depends(get
     password_ok = verify_password(payload.password, password_hash)
 
     if user is None or not password_ok:
-        # failed_count += 1을 애플리케이션에서 읽고-쓰면(READ COMMITTED, 요청마다
-        # 새 커넥션) 병렬 요청들이 같은 값을 읽어 같은 값을 덮어써 증가분을 잃어버린다
-        # (lost update) — 순차 5회는 잠기는데 병렬 5회는 안 잠기는 원인이었다.
-        # INSERT ... ON CONFLICT DO UPDATE SET failed_count = failed_count + 1은
-        # Postgres가 대상 행에 잠금을 걸고 동시 요청을 직렬화해 처리하므로,
-        # 애플리케이션 코드가 값을 보지 않고도 원자적으로 +1이 반영된다.
-        increment_stmt = (
-            pg_insert(LoginAttempt)
-            .values(email=payload.email, failed_count=1)
-            .on_conflict_do_update(
-                index_elements=[LoginAttempt.email],
-                set_={"failed_count": LoginAttempt.failed_count + 1},
-            )
-            .returning(LoginAttempt.failed_count)
-        )
-        failed_count = db.execute(increment_stmt).scalar_one()
-        if failed_count >= settings.login_max_attempts:
-            db.execute(
-                update(LoginAttempt)
-                .where(LoginAttempt.email == payload.email)
-                .values(locked_until=now + timedelta(minutes=settings.login_lockout_minutes))
-            )
-        db.commit()
+        # 원자적 +1과 잠금은 login_lockout.record_failure (탈퇴 재확인과 같은 카운터)
+        record_failure(db, payload.email, now)
         raise HTTPException(status_code=401, detail=LOGIN_FAILURE_MESSAGE)
 
     if attempt is not None:

@@ -101,7 +101,8 @@ describe("마이페이지 요약", () => {
     );
 
     expect(await screen.findByText("3건")).toBeInTheDocument();
-    expect(screen.getByText("12,400원")).toBeInTheDocument();
+    // 결과·기록 목록과 같은 표기: 절감액은 빼기 기호(−)를 단다
+    expect(screen.getByText("−12,400원")).toBeInTheDocument();
 
     // 달은 클라이언트에서 계산한다. 어떤 달이든 month 파라미터가 반드시 붙어야 한다.
     const summaryCall = calls.find((call) => call.url.startsWith("/api/me/plans/summary"));
