@@ -10,6 +10,8 @@ import { ApiError } from "@/lib/api/client";
 import { addFavorite, fetchStations, removeFavorite } from "@/lib/api/endpoints";
 import type { Station } from "@/lib/api/types";
 
+import { todayInSeoul } from "@/components/timeline/timeline-view";
+
 import { StationCard } from "./StationCard";
 import { StationMap } from "./StationMap";
 import {
@@ -454,7 +456,7 @@ export function StationsScreen() {
           ) : null}
 
           <p className="mt-4 text-sm leading-relaxed text-ink-2">
-            {statusUpdatedLabel(latestStatusUpdate(stations ?? []))} · 출처: 한국환경공단
+            {statusUpdatedLabel(latestStatusUpdate(stations ?? []), todayInSeoul())} · 출처: 한국환경공단
             전기자동차 충전소 정보 · 위치는 조회에만 쓰고 저장하지 않아요
           </p>
         </div>

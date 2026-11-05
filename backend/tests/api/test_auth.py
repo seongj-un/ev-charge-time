@@ -151,6 +151,26 @@ def test_delete_account_wrong_password_is_401(client):
     assert response.status_code == 401
 
 
+def test_delete_account_password_guesses_share_the_login_lockout(client):
+    """세션을 쥔 사람이 탈퇴 재확인에서 비밀번호를 무제한으로 맞혀 보지 못한다.
+    로그인과 같은 이메일 카운터라, 한도를 넘기면 탈퇴도 로그인도 잠긴다."""
+    email = "delete-guess@example.com"
+    signup(client, email=email)
+    settings = get_settings()
+
+    for _ in range(settings.login_max_attempts):
+        response = client.request("DELETE", "/api/me", json={"password": "guess-password"})
+        assert response.status_code == 401
+
+    # 맞는 비밀번호여도 잠긴 동안은 지우지 않는다
+    locked = client.request("DELETE", "/api/me", json={"password": PASSWORD})
+    assert locked.status_code == 429
+    assert client.get("/api/me").status_code == 200
+
+    client.cookies.clear()
+    assert login(client, email=email, password=PASSWORD).status_code == 429
+
+
 def test_delete_account_success_frees_the_email_for_reuse(client):
     email = "delete-ok@example.com"
     signup(client, email=email)

@@ -12,7 +12,7 @@ import { Field } from "@/components/ui/Field";
 import { ApiError } from "@/lib/api/client";
 import { deleteAccount, fetchFavorites, fetchPlanSummary, fetchVehicles } from "@/lib/api/endpoints";
 import type { PlanSummary, Vehicle } from "@/lib/api/types";
-import { formatWon } from "@/lib/format";
+import { formatSignedWon } from "@/lib/format";
 
 import { useIsHydrated } from "./hooks";
 import { currentMonthInSeoul, vehicleSpecLine } from "./me-format";
@@ -112,7 +112,8 @@ export function MeSummary() {
 
   const defaultVehicle = vehicles?.find((vehicle) => vehicle.is_default) ?? null;
   const countText = summary ? `${summary.count}건` : "—";
-  const savingsText = summary ? formatWon(summary.total_savings_won) : "—";
+  // 결과·기록 목록과 같은 표기(−1,058원). 여기만 부호가 없으면 같은 돈이 다른 값처럼 읽힌다.
+  const savingsText = summary ? formatSignedWon(summary.total_savings_won) : "—";
 
   async function handleLogout() {
     setPending(true);

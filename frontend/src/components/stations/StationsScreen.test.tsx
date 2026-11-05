@@ -581,6 +581,6 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
     renderScreen(routes({ body: [서울역] }));
 
     await screen.findByRole("heading", { name: "서울역 공영주차장" });
-    expect(screen.getByText(/상태 갱신 22:10/)).toBeInTheDocument();
+    expect(screen.getByText(/상태 갱신 (\d+월 \d+일 )?22:10/)).toBeInTheDocument();
   });
 });

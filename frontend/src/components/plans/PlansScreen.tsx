@@ -13,7 +13,7 @@ import { Notice } from "@/components/ui/Notice";
 import { ApiError } from "@/lib/api/client";
 import { deletePlan, fetchPlanSummary } from "@/lib/api/endpoints";
 import type { PlanSummary, SavedPlan } from "@/lib/api/types";
-import { formatWon } from "@/lib/format";
+import { formatSignedWon } from "@/lib/format";
 
 import { useIsHydrated } from "./hooks";
 import { loadPlanPage } from "./load-plans";
@@ -270,7 +270,8 @@ export function PlansScreen() {
         </>
       ) : null}
 
-      <Footnote items={list.items} />
+      {/* 로그인 전에는 보여 줄 계획이 없으니 "저장한 계획이며…" 각주도 뜻이 없다. */}
+      {status === "authenticated" ? <Footnote items={list.items} /> : null}
     </MeLayout>
   );
 }
@@ -383,7 +384,7 @@ function SummaryCards({ summary }: { summary: PlanSummary | null }) {
         <p className="text-sm font-bold">예상 절감 합계</p>
         <p className="mt-1 text-2xl font-bold lg:mt-2 lg:text-[32px]">
           {summary ? (
-            <span className="tnum">{formatWon(summary.total_savings_won)}</span>
+            <span className="tnum">{formatSignedWon(summary.total_savings_won)}</span>
           ) : (
             <span className="opacity-50">—</span>
           )}

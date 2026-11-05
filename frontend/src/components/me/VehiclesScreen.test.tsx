@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { UserEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -175,6 +175,32 @@ describe("내 차량", () => {
 
     expect(callsTo(calls, "POST", "/api/me/vehicles")).toHaveLength(0);
     expect(screen.getByText("별칭을 입력해 주세요.")).toBeInTheDocument();
+  });
+
+  test("배터리가 1,000 kWh를 넘으면 서버로 보내지 않고 추천 폼과 같은 문구로 알린다", async () => {
+    const user = userEvent.setup();
+    const calls = renderVehicles(okRoutes());
+    await screen.findByRole("heading", { name: "출퇴근 차" });
+
+    await fillForm(user, { name: "큰 차", battery: "1200", charger: "11" });
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(callsTo(calls, "POST", "/api/me/vehicles")).toHaveLength(0);
+    expect(screen.getByText("배터리 용량은 1,000 kWh 이하여야 해요.")).toBeInTheDocument();
+  });
+
+  test("'1e3' 같은 표기는 숫자로 읽지 않는다", async () => {
+    const user = userEvent.setup();
+    const calls = renderVehicles(okRoutes());
+    await screen.findByRole("heading", { name: "출퇴근 차" });
+
+    await fillForm(user, { name: "큰 차", battery: "1", charger: "11" });
+    // type="number"라 브라우저는 "1e3"을 받아 준다. jsdom의 user.type은 'e'를 흘리므로 값을 직접 넣는다.
+    fireEvent.change(screen.getByLabelText("배터리 (kWh)"), { target: { value: "1e3" } });
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(callsTo(calls, "POST", "/api/me/vehicles")).toHaveLength(0);
+    expect(screen.getByText("배터리 용량을 0보다 큰 숫자로 입력해 주세요.")).toBeInTheDocument();
   });
 
   test("수정은 값이 채워진 폼을 열고, 전 필드를 함께 보낸다", async () => {

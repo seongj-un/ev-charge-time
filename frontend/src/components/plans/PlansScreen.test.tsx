@@ -165,6 +165,8 @@ describe("로그인하지 않았을 때", () => {
       "href",
       "/login?next=%2Fme%2Fplans%3Fmonth%3D2026-10",
     );
+    // 보여 줄 계획이 없으니 "저장한 계획이며…" 각주도 띄우지 않는다
+    expect(screen.queryByText(/저장한 계획이며 실제 충전 기록이 아니에요/)).not.toBeInTheDocument();
   });
 
   test("로그인 여부를 모르는 동안 기록을 요청하지 않는다", async () => {
@@ -195,7 +197,7 @@ describe("기록 목록", () => {
 
     // 요약 두 칸
     expect(await screen.findByText("2")).toBeInTheDocument();
-    expect(screen.getByText("1,559원")).toBeInTheDocument();
+    expect(screen.getByText("−1,559원")).toBeInTheDocument();
 
     // 기록 카드 — 시각은 저장된 벽시계 값 그대로다 (표준시로 밀리면 안 된다).
     expect(screen.getByText("10월 10일 (토)")).toBeInTheDocument();
