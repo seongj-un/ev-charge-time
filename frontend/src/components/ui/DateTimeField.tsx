@@ -104,6 +104,12 @@ export function DateTimeField({
           aria-controls={open ? dialogId : undefined}
           aria-describedby={error ? errorId : undefined}
           onClick={() => setOpen((prev) => !prev)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && open) {
+              event.preventDefault();
+              setOpen(false);
+            }
+          }}
           className={`flex h-12 min-w-0 items-center gap-2 rounded-field border bg-field px-3.5 text-left sm:gap-2.5 sm:px-4 text-ink transition-colors duration-150
             hover:border-ink-3 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-brand
             ${open ? "border-brand" : error ? "border-danger" : "border-line"}`}
@@ -159,6 +165,11 @@ export function DateTimeField({
           today={parseYmd(today ?? "")}
           onPick={(day) => pickDay(formatYmd(day))}
           onClose={close}
+          onFocusLeave={(next) => {
+            // Tab·Shift+Tab으로 달력 밖으로 나가면 닫는다. 그대로 두면 아래 칸과 제출 버튼을 가린다.
+            // 날짜 버튼으로 가는 경우는 남긴다 — 버튼을 누르는 동작이 다시 여닫기를 맡는다.
+            if (next !== triggerRef.current) setOpen(false);
+          }}
         />
       ) : null}
     </div>
@@ -176,6 +187,7 @@ function CalendarPopover({
   today,
   onPick,
   onClose,
+  onFocusLeave,
 }: {
   id: string;
   label: string;
@@ -183,6 +195,8 @@ function CalendarPopover({
   today: Ymd | null;
   onPick: (day: Ymd) => void;
   onClose: () => void;
+  /** 초점이 달력 밖 요소로 옮겨 갔다. 바깥 빈 곳 클릭(초점 대상 없음)은 pointerdown이 맡는다 */
+  onFocusLeave: (next: Element) => void;
 }) {
   const start = clampToSupported(selected ?? today ?? { year: SUPPORTED_YEARS.first, month: 1, day: 1 });
   const [focused, setFocused] = useState<Ymd>(start);
@@ -245,6 +259,10 @@ function CalendarPopover({
           event.preventDefault();
           onClose();
         }
+      }}
+      onBlur={(event) => {
+        const next = event.relatedTarget;
+        if (next instanceof Element && !event.currentTarget.contains(next)) onFocusLeave(next);
       }}
       className="motion-pop absolute top-full left-0 z-30 mt-2 w-full min-w-[300px] rounded-card border border-line bg-surface p-4 shadow-float sm:w-[340px]"
     >

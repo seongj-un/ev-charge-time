@@ -85,4 +85,48 @@ describe("DateTimeField", () => {
     render(<Harness initial="" />);
     expect(screen.getByRole("combobox", { name: "충전 시작 가능 시각" })).toBeDisabled();
   });
+
+  test("달력이 열린 채 Tab으로 밖에 나가면 닫힌다 — 아래 칸과 제출 버튼을 가리지 않게", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <Harness initial="2026-11-05T20:30" />
+        <button type="button">다음 칸</button>
+      </>,
+    );
+    await user.click(trigger());
+    // 날짜 → 오늘 → 내일 → 닫기 → 바깥
+    for (let i = 0; i < 4; i += 1) await user.tab();
+    expect(screen.getByRole("button", { name: "다음 칸" })).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  test("Shift+Tab으로 달력 앞(시각 칸)으로 나가도 닫힌다", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="2026-11-05T20:30" />);
+    await user.click(trigger());
+    // 날짜 → 다음 달 → 이전 달 → 시각 칸
+    for (let i = 0; i < 3; i += 1) await user.tab({ shift: true });
+    expect(screen.getByRole("combobox", { name: "충전 시작 가능 시각" })).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  test("달력 안에서 초점이 움직이거나 달을 넘겨도 열려 있다", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="2026-11-05T20:30" />);
+    await user.click(trigger());
+    await user.click(screen.getByRole("button", { name: "다음 달" }));
+    await user.tab();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("dialog")).toHaveAttribute("data-month", "2026-12");
+  });
+
+  test("열린 상태에서 날짜 버튼을 다시 누르면 닫힌다 (초점 이동에 닫혔다 다시 열리지 않는다)", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="2026-11-05T20:30" />);
+    await user.click(trigger());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.click(trigger());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });
