@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { SessionProvider } from "@/components/auth/SessionProvider";
-import type { RecommendResponse, TimelineResponse } from "@/lib/api/types";
+import type { RecommendResponse, SolarForecast, TimelineResponse } from "@/lib/api/types";
 import { toSearchParams } from "@/lib/recommend-params";
 
 import { ResultView } from "./ResultView";
@@ -118,6 +118,8 @@ function markedCells(tone: "ink" | "muted"): number {
 type Routes = {
   recommend?: () => Response | Promise<Response>;
   timeline?: (day: string) => Response | Promise<Response>;
+  /** 기본은 501(기상청 키 없음) — 태양광과 무관한 테스트가 막대를 신경 쓰지 않게 한다. */
+  solar?: (day: string) => Response | Promise<Response>;
 };
 
 /** 화면이 두 엔드포인트를 부르므로 URL로 갈라 준다. */
@@ -137,6 +139,10 @@ function stubFetch(routes: Routes) {
       if (url.startsWith("/api/timeline")) {
         const day = new URL(url, "http://test").searchParams.get("day") ?? "";
         return routes.timeline?.(day) ?? jsonResponse(timelineOf(day));
+      }
+      if (url.startsWith("/api/solar-forecast")) {
+        const day = new URL(url, "http://test").searchParams.get("day") ?? "";
+        return routes.solar?.(day) ?? jsonResponse({ detail: "기상청 키 없음" }, 501);
       }
       throw new Error(`테스트가 모르는 요청: ${url}`);
     }),
@@ -451,5 +457,70 @@ describe("조건이 바뀌었을 때", () => {
 
     await waitFor(() => expect(screen.queryByText("2,373원")).not.toBeInTheDocument());
     expect(screen.getByRole("status")).toHaveTextContent("추천을 계산하고 있어요");
+  });
+});
+
+/** 낮 시각만 해가 있는 예보. 날짜마다 값을 달리 줘서 날짜를 섞으면 드러나게 한다. */
+function solarOf(day: string): SolarForecast {
+  const peak = day === "2026-10-08" ? 0.8 : 0.4;
+  return {
+    region: "전남",
+    day,
+    model_version: "test",
+    hours: Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      ghi_wm2: 0,
+      clear_sky_ghi_wm2: 0,
+      output_index: hour >= 7 && hour <= 17 ? peak : 0,
+      predicted_mwh: null,
+      sky: "1",
+      pty: "0",
+    })),
+    grid_nx: 58,
+    grid_ny: 74,
+    base_date: "20261007",
+    base_time: "0500",
+    installed_capacity_mw: null,
+    capacity_source: null,
+    assumptions: ["전남 전체를 격자 한 칸으로 대신함"],
+  };
+}
+
+describe("태양광 막대", () => {
+  test("단가 차트 아래에 축 날짜마다 받은 예보를 그린다", async () => {
+    const calls = stubFetch({ solar: (day) => jsonResponse(solarOf(day)) });
+
+    render(withSession(QUERY));
+    expect(await screen.findByText(/태양광 발전 예측/)).toBeInTheDocument();
+
+    expect(calls).toContain("/api/solar-forecast?region=%EC%A0%84%EB%82%A8&day=2026-10-07");
+    expect(calls).toContain("/api/solar-forecast?region=%EC%A0%84%EB%82%A8&day=2026-10-08");
+    // 축 18시→다음날 7시: 7일 저녁은 0, 8일 7시는 80% — 둘째 날 예보를 썼다.
+    expect(screen.getByRole("img", { name: /^7시.*80%/ })).toBeInTheDocument();
+    expect(screen.getByText("전남 전체를 격자 한 칸으로 대신함", { exact: false })).toBeInTheDocument();
+  });
+
+  test("하루치만 예보가 있으면 그날만 그리고 비운 이유를 밝힌다", async () => {
+    stubFetch({
+      solar: (day) =>
+        day === "2026-10-07"
+          ? jsonResponse(solarOf(day))
+          : jsonResponse({ detail: "예보 범위 밖" }, 422),
+    });
+
+    render(withSession(QUERY));
+    expect(await screen.findByText(/예보가 아직 없는 날짜/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /^18시/ })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /^7시.*%/ })).not.toBeInTheDocument();
+  });
+
+  test("예보를 못 받아도 단가 차트와 추천은 그대로다", async () => {
+    stubFetch({});
+
+    render(withSession(QUERY));
+    await screen.findByText("18시 → 다음날 08시");
+
+    expect(screen.queryByText(/태양광 발전 예측/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/시간대별 단가를 불러오지 못했습니다/)).not.toBeInTheDocument();
   });
 });
