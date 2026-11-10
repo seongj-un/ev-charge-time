@@ -90,7 +90,7 @@ export function PriceChartCard({
                 columns={columns.map((column) => column.hour)}
                 assumptions={
                   solar.partial
-                    ? [...solar.assumptions, "기상청 예보가 아직 없는 날짜의 시각은 비워 두었습니다"]
+                    ? [...solar.assumptions, "예보가 아직 없는 날짜가 있음"]
                     : solar.assumptions
                 }
               />

@@ -311,30 +311,24 @@ describe("위치 차단 안내", () => {
    *
    * 화면이 볼 수 있는 건 "허용돼 있는데 좌표가 안 왔다"까지다. 거기서 멈춘다.
    */
-  test("사이트 권한이 허용인데 실패하면 원인을 단정하지 않는다", () => {
+  /*
+   * 예전엔 여기서 "원인은 화면에서 확인할 수 없어요"로 멈췄다. 그 무렵 실패의 진짜
+   * 원인은 8초 시간 초과였고(지금은 geoFailureMessage가 따로 말한다), 이 문구까지
+   * 오는 건 사이트 권한 허용 + 거부(code 1) — 기기(OS)가 브라우저를 막은 경우다.
+   * 그러니 어디서 확인하는지는 알려 준다. 다만 지시하지는 않는다.
+   */
+  test("사이트 권한이 허용인데 거부되면 기기 설정 위치를 알려 준다", () => {
     const message = geoBlockMessage("granted");
     expect(message).toMatch(/허용/);
-    expect(message).not.toMatch(/기기가 막고|기기에서 위치를 받지/);
+    expect(message).toMatch(/위치 서비스/);
     // 이미 해 둔 일을 또 시키지 않는다.
     expect(message).not.toMatch(/사이트의 위치 접근을 허용/);
   });
 
-  /*
-   * 단정하지 않는다.
-   *
-   * 사용자가 macOS 위치 서비스에서 Chrome을 켠 스크린샷을 보내고도 여전히
-   * 실패했다. 그 상태에서 "시스템 설정에서 켜야 해요"라고 지시하면, 앱이
-   * 이미 해 둔 일을 계속 시키는 꼴이 된다. 우리는 기기 안에서 무슨 일이
-   * 벌어지는지 볼 수 없다 — 못 받았다는 사실만 말하고 길을 준다.
-   */
   test("기기 설정을 이래라저래라 지시하지 않는다", () => {
     const message = geoBlockMessage("granted");
-    expect(message).not.toMatch(/켜야 해요|허용해 주세요|설정하세요/);
-  });
-
-  /* 모른다는 걸 숨기지 않는다. 숨기면 사용자가 엉뚱한 곳을 계속 고친다. */
-  test("원인을 모를 때는 모른다고 말한다", () => {
-    expect(geoBlockMessage("granted")).toMatch(/알 수 없|확인할 수 없/);
+    expect(message).not.toMatch(/켜야 해요|허용해 주세요|설정하세요|켜 주세요/);
+    expect(message).toMatch(/확인해 보세요/);
   });
 
   test("사이트 권한이 거부면 주소창을 가리킨다", () => {

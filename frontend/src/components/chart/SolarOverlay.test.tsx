@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 
 import type { SolarHour } from "@/lib/api/types";
 
-import { SolarOverlay } from "./SolarOverlay";
+import { plainSolarNotes, SolarOverlay } from "./SolarOverlay";
 
 /*
  * 태양광 예측을 단가 차트에 겹친다.
@@ -86,10 +86,10 @@ describe("SolarOverlay", () => {
    * 없다. 안 보여주면 정밀한 지역 예측이라고 읽는다 — unverified_tariff_items와
    * 같은 성격이라 같은 방식으로 다룬다.
    */
-  test("전제를 한 줄도 빠뜨리지 않고 보여준다", () => {
+  test("전제를 사람 말로 옮겨 보이고, 원문도 빠뜨리지 않고 접어 둔다", () => {
     render(<SolarOverlay hours={CLEAR_DAY} columns={[12]} assumptions={ASSUMPTIONS} />);
     const note = screen.getByRole("note");
-    expect(within(note).getAllByRole("listitem")).toHaveLength(ASSUMPTIONS.length);
+    expect(within(note).getByText(/한 지점의 기상청 예보로 대신한 참고값/)).toBeInTheDocument();
     for (const line of ASSUMPTIONS) {
       expect(within(note).getByText(new RegExp(escapeRegExp(line)))).toBeInTheDocument();
     }
@@ -99,9 +99,23 @@ describe("SolarOverlay", () => {
    * 발표 회차 줄이 빠지면 안 된다. 예보는 하루 8번만 갱신돼서 화면의 값이 몇
    * 시간 전 발표일 수 있고, 사용자는 그걸 알아야 "왜 창밖과 다르지"를 납득한다.
    */
-  test("어느 발표를 썼는지 보여준다", () => {
+  test("어느 발표를 썼는지 사람 말로 보여준다", () => {
     render(<SolarOverlay hours={CLEAR_DAY} columns={[12]} assumptions={ASSUMPTIONS} />);
-    expect(within(screen.getByRole("note")).getByText(/20260921 2000 발표/)).toBeInTheDocument();
+    expect(within(screen.getByRole("note")).getByText(/9월 21일 20시 발표/)).toBeInTheDocument();
+  });
+
+  test("개발용 낱말은 사람 말 줄에 나오지 않는다", () => {
+    for (const line of plainSolarNotes(ASSUMPTIONS)) {
+      expect(line).not.toMatch(/predicted_mwh|ghi_wm2|output_index|nx=|\d{8}/);
+    }
+  });
+
+  test("해가 없는 시간대뿐이면 빈 막대 대신 말로 적는다", () => {
+    render(
+      <SolarOverlay hours={[hour(20, 0), hour(23, 0), hour(7, 0.017)]} columns={[20, 23, 7]} assumptions={[]} />,
+    );
+    expect(screen.getByText(/태양광 발전이 거의 없어요/)).toBeInTheDocument();
+    expect(document.querySelectorAll("[data-solar-point]")).toHaveLength(0);
   });
 
   test("전제가 없으면 빈 상자를 만들지 않는다", () => {

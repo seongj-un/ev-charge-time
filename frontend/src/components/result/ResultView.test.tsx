@@ -38,6 +38,7 @@ function withSession(query: string) {
  */
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -189,6 +190,9 @@ describe("불러오는 중", () => {
 
 describe("추천을 받았을 때", () => {
   test("추천 시각·비용·절감액을 보여준다", async () => {
+    // "오늘/내일"은 실제 오늘 기준이다. 조건의 날짜(10월 7일)를 오늘로 맞춘다.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-07T09:00:00+09:00"));
     stubFetch({});
 
     render(withSession(QUERY));

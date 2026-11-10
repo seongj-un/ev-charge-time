@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/Badge";
 import type { RecommendResponse } from "@/lib/api/types";
-import { formatHm, formatSignedWon, formatWon } from "@/lib/format";
+import { formatHm, formatSignedWon, formatWon, kstToday } from "@/lib/format";
 import { motionDelay } from "@/lib/motion";
 import type { RecommendForm } from "@/lib/recommend-params";
 
@@ -53,7 +53,7 @@ export function PlanCards({
 
         <p className="mt-4 text-base font-bold text-brand lg:mt-6">
           {planSummarySentence({
-            earliestStart: form.earliestStart,
+            today: kstToday(),
             deadline: form.deadline,
             start: best.start,
             end: best.end,

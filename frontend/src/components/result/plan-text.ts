@@ -4,9 +4,12 @@ import { formatDuration, formatKoreanDate, parseKstWallClock } from "@/lib/forma
  * 추천 계획을 사람 말로 옮기는 곳.
  *
  * "오늘 밤 시작 · 약 3시간 · 내일 08시 전 완료" 한 줄이 이 화면에서 제일 많이 읽힌다.
- * 상대 날짜의 기준을 `new Date()`로 잡지 않는 것이 중요하다. 실제 현재 시각을 기준으로
- * 삼으면 자정을 넘길 때마다 같은 링크가 다른 문장을 내고, 미래 날짜로 시연하면
- * "오늘"이 통째로 사라진다. 기준은 사용자가 넣은 "시작 가능 시각"의 날짜다.
+ *
+ * "오늘/내일"의 기준은 **실제 오늘(한국 날짜)**이다. 예전엔 "시작 가능 시각"의 날짜를
+ * 기준으로 삼았는데, 그러면 내일 날짜로 조건을 넣어도 "오늘 아침 시작"이라고 말했다 —
+ * 사람은 "오늘"을 달력의 오늘로 읽는다. 같은 링크를 다음날 열면 문장이 바뀌는 건
+ * 맞는 동작이다(어제의 "내일"은 오늘이다). 기준 날짜는 인자로 받아 테스트가 시계에
+ * 묶이지 않게 한다.
  */
 
 const MS_PER_DAY = 86_400_000;
@@ -36,8 +39,8 @@ export function partOfDay(hour: number): string {
 }
 
 type PlanSentenceInput = {
-  /** 상대 날짜말의 기준이자 사용자가 넣은 조건 */
-  earliestStart: string;
+  /** 상대 날짜말의 기준. 한국 날짜 "YYYY-MM-DD" (kstToday()) */
+  today: string;
   deadline: string;
   /** 추천 구간 (서버 값) */
   start: string;
@@ -46,7 +49,7 @@ type PlanSentenceInput = {
 
 /** "오늘 밤 시작 · 약 3시간 · 내일 08시 전 완료" */
 export function planSummarySentence({
-  earliestStart,
+  today,
   deadline,
   start,
   end,
@@ -54,10 +57,10 @@ export function planSummarySentence({
   const startWall = parseKstWallClock(start);
   const deadlineWall = parseKstWallClock(deadline);
 
-  const startPhrase = `${relativeDayWord(earliestStart, start)} ${partOfDay(startWall.hour)} 시작`;
+  const startPhrase = `${relativeDayWord(today, start)} ${partOfDay(startWall.hour)} 시작`;
   const durationPhrase = formatDuration(durationHours(start, end));
   const deadlinePhrase =
-    `${relativeDayWord(earliestStart, deadline)} ` +
+    `${relativeDayWord(today, deadline)} ` +
     `${String(deadlineWall.hour).padStart(2, "0")}시 전 완료`;
 
   return `${startPhrase} · ${durationPhrase} · ${deadlinePhrase}`;
