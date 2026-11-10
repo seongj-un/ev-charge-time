@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useSession } from "@/components/auth/SessionProvider";
 import { PageContainer } from "@/components/shell/AppShell";
@@ -17,7 +17,8 @@ import { StationMap } from "./StationMap";
 import {
   AREAS,
   DEFAULT_AREA,
-  geoBlockMessage,
+  geoFailureMessage,
+  type GeoFailure,
   type GeoPermission,
   FAST_MIN_KW,
   type Area,
@@ -51,12 +52,28 @@ type GeoState =
   | { kind: "ready"; coords: Coords; origin: Origin };
 
 /**
- * 위치 요청에 거는 제한 시간.
+ * 위치 요청에 거는 제한 시간(getCurrentPosition의 timeout 옵션).
  *
- * 없으면 OS가 응답을 주지 않을 때 화면이 영원히 로딩에 갇힌다. 에러가 오는
- * 것보다 나쁜 실패 모드다 — 에러는 최소한 다음 화면을 그릴 수 있다.
+ * 없으면 OS가 응답을 주지 않을 때 화면이 영원히 로딩에 갇힌다. 그렇다고 짧게
+ * 잡으면 안 된다 — 8초였을 때 macOS Chrome에서 "허용돼 있는데 좌표를 받지
+ * 못했어요"가 났다. 노트북은 GPS가 없어 Wi-Fi로 위치를 잡는데 첫 측위가 8초를
+ * 넘는 일이 흔하고, 그러면 TIMEOUT으로 떨어진다. 권한도 설정도 다 켜져 있는데
+ * 실패하던 이유다.
  */
-const GEO_TIMEOUT_MS = 8000;
+const GEO_TIMEOUT_MS = 30_000;
+
+/**
+ * 우리 쪽 안전망. 브라우저가 timeout 옵션을 안 지킬 때를 위한 것이다.
+ * timeout 옵션은 권한 창에 답한 **뒤부터** 세므로, 권한 창이 떠 있는 시간까지
+ * 넉넉히 더한다 — 8.5초짜리 안전망은 "허용"을 천천히 누른 사람의 위치를 버렸다.
+ */
+const GEO_BACKSTOP_MS = GEO_TIMEOUT_MS + 30_000;
+
+/**
+ * 처음 열 때 이만큼 기다려도 위치가 안 오면 기본 지역을 먼저 보여 준다. 위치
+ * 요청은 계속 기다리고, 늦게라도 오면(그사이 지역을 고르지 않았다면) 내 위치로 바꾼다.
+ */
+const MOUNT_FALLBACK_MS = 8000;
 
 const SIGN_IN_HREF = `/login?next=${encodeURIComponent("/stations")}`;
 
@@ -66,34 +83,40 @@ const TYPE_OPTIONS: { value: StationFilter["type"]; label: string }[] = [
   { value: "slow", label: "완속" },
 ];
 
+type GeoResult = { ok: true; coords: Coords } | { ok: false; failure: GeoFailure };
+
 /**
- * 기기 위치를 물어본다. 못 얻으면 null.
+ * 기기 위치를 물어본다.
  *
- * 실패를 종류별로 나누지 않는 건 화면이 할 일이 같기 때문이다. 사이트 권한이
- * "허용"이어도 OS가 막으면 PERMISSION_DENIED가 오는데, 그때 "브라우저에서
- * 허용해 주세요"라고 안내하면 사용자는 이미 허용해 둔 설정을 다시 확인하러
- * 갔다가 돌아온다. 어느 쪽이든 지금 할 수 있는 건 지역을 고르는 것이다.
+ * 실패는 종류를 남긴다(거부·못 찾음·시간 초과). 예전엔 전부 null로 뭉쳐서
+ * 화면이 "좌표를 받지 못했어요"까지밖에 말할 수 없었고, 실제 원인(시간 초과)을
+ * 아무도 못 봤다.
  */
-function askDeviceLocation(): Promise<Coords | null> {
+function askDeviceLocation(): Promise<GeoResult> {
   return new Promise((resolve) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      resolve(null);
+      resolve({ ok: false, failure: "unsupported" });
       return;
     }
     let settled = false;
-    const done = (value: Coords | null) => {
+    const done = (value: GeoResult) => {
       if (settled) return;
       settled = true;
+      clearTimeout(backstop);
       resolve(value);
     };
+    // 브라우저가 timeout 옵션을 지키지 않는 경우가 있어 우리도 한 번 더 건다.
+    const backstop = setTimeout(() => done({ ok: false, failure: "timeout" }), GEO_BACKSTOP_MS);
     navigator.geolocation.getCurrentPosition(
       (position) =>
-        done({ lat: position.coords.latitude, lng: position.coords.longitude }),
-      () => done(null),
+        done({ ok: true, coords: { lat: position.coords.latitude, lng: position.coords.longitude } }),
+      (error) =>
+        done({
+          ok: false,
+          failure: error?.code === 1 ? "denied" : error?.code === 3 ? "timeout" : "unavailable",
+        }),
       { timeout: GEO_TIMEOUT_MS, maximumAge: 5 * 60 * 1000 },
     );
-    // 브라우저가 timeout 옵션을 지키지 않는 경우가 있어 우리도 한 번 더 건다.
-    setTimeout(() => done(null), GEO_TIMEOUT_MS + 500);
   });
 }
 
@@ -127,6 +150,19 @@ export function StationsScreen() {
   const [favorites, setFavorites] = useState<Record<string, boolean>>({});
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /**
+   * 지금 유효한 위치 요청의 번호. 지역을 고르거나 새로 물어보면 올라간다 —
+   * 그보다 앞선 요청의 답이 늦게 와도 버린다. 고른 지역이 말없이 바뀌면 안 된다.
+   */
+  const requestRef = useRef(0);
+
+  /** 실패 안내. 사이트 권한 상태까지 봐야 쓸모 있는 말이 된다. */
+  const explainFailure = useCallback((failure: GeoFailure, id: number) => {
+    void askPermission().then((permission) => {
+      if (requestRef.current !== id) return;
+      setGeoNotice(geoFailureMessage(failure, permission, GEO_TIMEOUT_MS / 1000));
+    });
+  }, []);
 
   /**
    * 기기 위치를 (다시) 물어본다.
@@ -140,52 +176,67 @@ export function StationsScreen() {
    * 돌아오면 무슨 일이 일어난 건지 알 수 없다.
    */
   const useMyLocation = useCallback(() => {
+    const id = ++requestRef.current;
     setLocating(true);
     setGeoNotice(null);
-    void askDeviceLocation().then((coords) => {
+    void askDeviceLocation().then((result) => {
+      if (requestRef.current !== id) return;
       setLocating(false);
-      if (coords === null) {
-        /*
-         * 왜 실패했는지까지 봐야 쓸모 있는 안내가 된다. 사이트 권한이 허용인데
-         * 실패했다면 막는 쪽은 기기다 — 그때 "브라우저에서 허용해 주세요"라고
-         * 하면 이미 해 둔 일을 다시 시키는 셈이다.
-         */
-        void askPermission().then((permission) => setGeoNotice(geoBlockMessage(permission)));
+      if (!result.ok) {
+        explainFailure(result.failure, id);
         return;
       }
-      setGeo({ kind: "ready", coords, origin: { kind: "device" } });
+      setGeo({ kind: "ready", coords: result.coords, origin: { kind: "device" } });
     });
-  }, []);
+  }, [explainFailure]);
 
   const selectArea = useCallback((id: string) => {
     const found = AREAS.find((area) => area.id === id);
     if (!found) return;
+    // 기다리던 위치 요청은 버린다. 늦게 와서 고른 지역을 덮으면 안 된다.
+    requestRef.current += 1;
+    setLocating(false);
     setGeoNotice(null);
     setGeo(areaState(found));
   }, []);
 
   /*
-   * 마운트 때 한 번 물어보고, 못 얻으면 기본 지역으로 넘어간다.
+   * 마운트 때 한 번 물어본다.
    *
-   * 답을 기다리는 동안(최대 8초) 사용자가 먼저 지역을 골랐다면 그 선택이
-   * 이긴다. 뒤늦게 온 위치가 덮어쓰면 고른 지역이 말없이 다른 곳으로 바뀐다.
+   * 8초 안에 답이 없으면 기본 지역을 먼저 보여 주되 요청은 계속 기다린다.
+   * 늦게라도 위치가 오면 내 위치로 바꾼다 — 예전엔 8.5초에서 요청을 버려서,
+   * 첫 측위가 느린 노트북이나 권한 창을 천천히 누른 사람은 늘 빛가람에 남았다.
+   * 그사이 사용자가 지역을 골랐다면 그 선택이 이긴다(requestRef).
    */
   useEffect(() => {
     let alive = true;
-    void askDeviceLocation().then((coords) => {
-      if (!alive) return;
-      setGeo((prev) =>
-        prev.kind !== "asking"
-          ? prev
-          : coords === null
-            ? areaState(DEFAULT_AREA)
-            : { kind: "ready", coords, origin: { kind: "device" } },
-      );
+    const id = ++requestRef.current;
+    const fallback = setTimeout(() => {
+      if (!alive || requestRef.current !== id) return;
+      setGeo((prev) => (prev.kind === "asking" ? areaState(DEFAULT_AREA) : prev));
+      setGeoNotice(`내 위치를 확인하는 중이에요. 그동안 ${DEFAULT_AREA.name} 기준으로 보여 드려요.`);
+    }, MOUNT_FALLBACK_MS);
+    void askDeviceLocation().then((result) => {
+      clearTimeout(fallback);
+      if (!alive || requestRef.current !== id) return;
+      if (result.ok) {
+        setGeoNotice(null);
+        setGeo({ kind: "ready", coords: result.coords, origin: { kind: "device" } });
+        return;
+      }
+      setGeo((prev) => (prev.kind === "asking" ? areaState(DEFAULT_AREA) : prev));
+      // 위치 기능이 없거나 권한 창에서 거부한 건 사용자가 이미 아는 일이다. 말없이 기본 지역을 보인다.
+      if (result.failure === "timeout" || result.failure === "unavailable") {
+        explainFailure(result.failure, id);
+      } else {
+        setGeoNotice(null);
+      }
     });
     return () => {
       alive = false;
+      clearTimeout(fallback);
     };
-  }, []);
+  }, [explainFailure]);
 
   useEffect(() => {
     if (geo.kind !== "ready") return;

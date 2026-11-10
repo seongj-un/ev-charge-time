@@ -584,3 +584,74 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
     expect(screen.getByText(/상태 갱신 (\d+월 \d+일 )?22:10/)).toBeInTheDocument();
   });
 });
+
+/*
+ * 첫 측위가 느린 기기. macOS Chrome에서 "허용돼 있는데 좌표를 받지 못했어요"가
+ * 났던 원인이 8초 제한 시간이었다 — 권한·설정은 다 켜져 있었다.
+ */
+describe("주변 충전소 — 느린 위치", () => {
+  test("제한 시간을 노트북 첫 측위가 들어올 만큼 넉넉히 건다", async () => {
+    const geo = stubGeolocation({ kind: "hang" });
+    renderScreen(routes(NOT_IMPLEMENTED));
+
+    await waitFor(() => expect(geo.calls).toBe(1));
+    expect(geo.options[0]?.timeout).toBeGreaterThanOrEqual(20_000);
+  });
+
+  test("기본 지역을 먼저 보여 주고, 위치가 늦게 오면 내 위치로 바꾼다", async () => {
+    vi.useFakeTimers();
+    try {
+      let answer: ((position: { coords: { latitude: number; longitude: number } }) => void) | null =
+        null;
+      Object.defineProperty(navigator, "geolocation", {
+        configurable: true,
+        value: {
+          getCurrentPosition(onSuccess: typeof answer) {
+            answer = onSuccess;
+          },
+        },
+      });
+      const calls = renderScreen(routes(NOT_IMPLEMENTED));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9_000);
+      });
+      // 8초가 지나 기본 지역으로 먼저 찾고, 아직 확인 중이라고 밝힌다.
+      expect(callsTo(calls, "GET", "/api/chargers").at(-1)?.url).toContain(`lat=${DEFAULT_AREA.lat}`);
+      expect(screen.getByRole("status")).toHaveTextContent(/내 위치를 확인하는 중/);
+
+      // 12초째 위치가 온다 — 예전엔 버렸다.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+        answer!({ coords: { latitude: SEOUL.lat, longitude: SEOUL.lng } });
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      expect(callsTo(calls, "GET", "/api/chargers").at(-1)?.url).toContain(`lat=${SEOUL.lat}`);
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("시간 초과면 권한 탓을 하지 않고 시간이 넘었다고 말한다", async () => {
+    const user = userEvent.setup();
+    stubGeolocation([{ kind: "denied" }, { kind: "timeout" }]);
+    renderScreen(routes(NOT_IMPLEMENTED));
+
+    await user.click(await screen.findByRole("button", { name: /내 위치/ }));
+
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent(/초 안에 끝나지 않았어요/);
+    expect(notice).not.toHaveTextContent(/허용/);
+  });
+
+  test("기기가 위치를 못 찾으면(code 2) 그렇게 말한다", async () => {
+    const user = userEvent.setup();
+    stubGeolocation([{ kind: "denied" }, { kind: "failed" }]);
+    renderScreen(routes(NOT_IMPLEMENTED));
+
+    await user.click(await screen.findByRole("button", { name: /내 위치/ }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/위치를 찾지 못했어요/);
+  });
+});
