@@ -35,6 +35,14 @@ export function parseKstWallClock(iso: string): WallClock {
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
+/**
+ * 지금 한국 날짜 "YYYY-MM-DD". 한국은 서머타임이 없어 늘 UTC+9다.
+ * 기기 시간대를 따르지 않는다 — 해외 기기에서 열어도 한국 날짜다.
+ */
+export function kstToday(now: Date = new Date()): string {
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 /** "22:00" */
 export function formatHm(iso: string): string {
   const { hour, minute } = parseKstWallClock(iso);
