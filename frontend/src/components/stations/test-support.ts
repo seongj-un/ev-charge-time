@@ -93,6 +93,8 @@ export type GeoResult =
   | { kind: "denied" }
   /** 위치는 물어봤지만 못 받음 (POSITION_UNAVAILABLE) */
   | { kind: "failed" }
+  /** 브라우저가 timeout 옵션대로 포기함 (TIMEOUT, code 3) */
+  | { kind: "timeout" }
   /** 브라우저에 Geolocation API가 아예 없음 */
   | { kind: "missing" }
   /**
@@ -138,7 +140,7 @@ export function stubGeolocation(
         onSuccess({ coords: { latitude: result.lat, longitude: result.lng } });
         return;
       }
-      onError({ code: result.kind === "denied" ? 1 : 2, message: "" });
+      onError({ code: result.kind === "denied" ? 1 : result.kind === "timeout" ? 3 : 2, message: "" });
     },
   });
   return counter;

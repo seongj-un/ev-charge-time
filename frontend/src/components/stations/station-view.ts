@@ -69,6 +69,33 @@ export function geoBlockMessage(permission: GeoPermission): string {
   }
 }
 
+/** 위치를 못 얻은 이유. getCurrentPosition의 오류 코드(1·2·3)와 API 부재. */
+export type GeoFailure = "denied" | "unavailable" | "timeout" | "unsupported";
+
+/**
+ * 실패 종류까지 보고 안내한다.
+ *
+ * 권한 거부(1)만 사이트 권한 상태로 갈라 말한다(geoBlockMessage). 못 찾음(2)과
+ * 시간 초과(3)는 권한 문제가 아니다 — 거기에 "허용돼 있는데…"를 붙이면 사용자는
+ * 이미 켜 둔 권한을 또 들여다본다. 실제로 그랬다: 원인은 8초 시간 초과였다.
+ */
+export function geoFailureMessage(
+  failure: GeoFailure,
+  permission: GeoPermission,
+  timeoutSeconds: number,
+): string {
+  switch (failure) {
+    case "denied":
+      return geoBlockMessage(permission);
+    case "timeout":
+      return `위치 확인이 ${timeoutSeconds}초 안에 끝나지 않았어요. 잠시 뒤 '내 위치로 찾기'를 다시 눌러 보세요.`;
+    case "unavailable":
+      return "기기가 지금 위치를 찾지 못했어요. 노트북은 Wi-Fi가 꺼져 있으면 위치를 못 잡을 때가 많아요.";
+    case "unsupported":
+      return "이 브라우저는 위치 기능을 지원하지 않아요.";
+  }
+}
+
 /** 이름이 아직 없는 즐겨찾기에 쓸 문구. 한 곳에만 둔다. */
 export const NAME_MISSING = "이름을 아직 불러오지 못했어요";
 
