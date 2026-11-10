@@ -6,11 +6,19 @@ import type { ChartMarker } from "@/components/chart/PriceBarChart";
 import { PageBody, PageContainer } from "@/components/shell/AppShell";
 import { Notice } from "@/components/ui/Notice";
 import { ApiError } from "@/lib/api/client";
-import { fetchRecommendation, fetchTimeline } from "@/lib/api/endpoints";
-import type { RecommendResponse } from "@/lib/api/types";
+import { fetchRecommendation, fetchSolarForecast, fetchTimeline } from "@/lib/api/endpoints";
+import type { RecommendResponse, SolarForecast } from "@/lib/api/types";
 import { fromSearchParams, toRecommendRequest, type RecommendForm } from "@/lib/recommend-params";
 
-import { axisHours, bandSummary, buildAxis, buildColumns, type Axis } from "./chart-data";
+import {
+  axisHours,
+  bandSummary,
+  buildAxis,
+  buildColumns,
+  buildSolarHours,
+  type Axis,
+  type SolarRow,
+} from "./chart-data";
 import { unverifiedNotice } from "@/lib/tariff";
 
 import { assumptionsSentence } from "./plan-text";
@@ -40,8 +48,17 @@ type PlanState =
 
 type ChartState =
   | { status: "loading" }
-  | { status: "ready"; axis: Axis; columns: ReturnType<typeof buildColumns> }
+  | {
+      status: "ready";
+      axis: Axis;
+      columns: ReturnType<typeof buildColumns>;
+      /** 단가 차트 아래 태양광 막대. 예보를 하나도 못 받으면 null — 막대 줄 자체를 그리지 않는다. */
+      solar: SolarRow | null;
+    }
   | { status: "error" };
+
+/** 하루 단가 화면과 같은 지역. 데이터가 전남·광주만 있다. */
+const SOLAR_REGION = "전남";
 
 /** 어느 요청에 대한 결과인지를 결과와 함께 들고 다닌다. */
 type Loaded = { key: string; plan: PlanState; chart: ChartState };
@@ -173,7 +190,12 @@ export function ResultView({ query }: { query: string }) {
           />
 
           {chart.status === "ready" && columns.length > 0 ? (
-            <PriceChartCard axis={chart.axis} columns={columns} markers={markers} />
+            <PriceChartCard
+              axis={chart.axis}
+              columns={columns}
+              markers={markers}
+              solar={chart.solar}
+            />
           ) : null}
 
           {chart.status === "error" ? (
@@ -230,14 +252,44 @@ async function loadChart(axis: Axis, form: RecommendForm): Promise<ChartState> {
   // 공공 급속은 사업자마다 단가가 달라, 기본 설정의 백엔드는 단가 없이 timeline을
   // 거절한다(422). 추천 요청에 실은 값을 단가 요청에도 똑같이 실어야 차트가 나온다.
   const publicBasePrice = form.mode === "public_fast" ? form.publicBasePrice : undefined;
+  // 태양광은 단가와 함께 받되, 실패해도 단가 차트는 그린다. 덤 정보가 본 정보를 막으면 안 된다.
+  const solarPromise = loadSolar(axis);
   try {
     const timelines = await Promise.all(
       axis.days.map((day) => fetchTimeline({ day, mode: form.mode, publicBasePrice })),
     );
-    return { status: "ready", axis, columns: buildColumns(axis, timelines) };
+    return {
+      status: "ready",
+      axis,
+      columns: buildColumns(axis, timelines),
+      solar: await solarPromise,
+    };
   } catch {
     return { status: "error" };
   }
+}
+
+/**
+ * 축이 걸친 날짜마다 태양광 예측을 받는다.
+ *
+ * 기상청 단기예보는 약 2일 앞까지라 먼 날짜는 422로 거절된다. 날짜 하나가 실패했다고
+ * 전부 버리지 않고 받은 날만 쓴다. 하나도 못 받으면(키 없음 501 포함) null.
+ */
+async function loadSolar(axis: Axis): Promise<SolarRow | null> {
+  const settled = await Promise.allSettled(
+    axis.days.map((day) => fetchSolarForecast({ region: SOLAR_REGION, day })),
+  );
+  const forecasts = settled
+    .filter((item): item is PromiseFulfilledResult<SolarForecast> => item.status === "fulfilled")
+    .map((item) => item.value);
+  if (forecasts.length === 0) return null;
+  const hours = buildSolarHours(axis, forecasts);
+  if (hours.length === 0) return null;
+  return {
+    hours,
+    assumptions: forecasts[0].assumptions,
+    partial: forecasts.length < axis.days.length,
+  };
 }
 
 function messageOf(error: unknown): string {

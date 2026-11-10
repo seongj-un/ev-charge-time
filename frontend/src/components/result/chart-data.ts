@@ -1,6 +1,6 @@
 import { bandKeyOf, BAND_KEY_LONG_LABEL, type BandKey } from "@/components/chart/bands";
 import type { PriceColumn } from "@/components/chart/PriceBarChart";
-import type { TimelineResponse } from "@/lib/api/types";
+import type { SolarForecast, SolarHour, TimelineResponse } from "@/lib/api/types";
 import { parseKstWallClock } from "@/lib/format";
 
 /**
@@ -168,6 +168,33 @@ export function bandSummary(columns: PriceColumn[], hours: number[]): string | n
   const label = BAND_KEY_LONG_LABEL[topKey];
   return counts.size === 1 ? label : `${label} 위주`;
 }
+
+/**
+ * 축의 시각마다 태양광 예측을 골라 낸다. 날짜별 예보를 축 순서로 이어 붙인다 —
+ * 단가와 같은 이유로, 첫날 예보를 둘째 날에 재활용하면 내일 아침 해를 오늘 하늘로 그린다.
+ *
+ * 축은 24칸을 넘지 않아(MAX_AXIS_HOURS) 축 안에서 시각이 겹치지 않는다. 그래서
+ * SolarOverlay가 시각으로 찾아도 된다. 예보가 없는 날(기상청 단기예보는 약 2일 앞까지)의
+ * 시각은 넣지 않는다 — 0으로 채우면 "그때는 해가 없다"는 거짓이 된다.
+ */
+export function buildSolarHours(axis: Axis, forecasts: SolarForecast[]): SolarHour[] {
+  const byDay = new Map(forecasts.map((forecast) => [forecast.day, forecast]));
+  const hours: SolarHour[] = [];
+  for (let offset = 0; offset < axis.length; offset += 1) {
+    const index = axis.startIndex + offset;
+    const found = byDay.get(dayStringOfIndex(index))?.hours.find((item) => item.hour === hourOfIndex(index));
+    if (found) hours.push(found);
+  }
+  return hours;
+}
+
+/** 추천 결과 차트 아래에 그리는 태양광 막대 한 줄. */
+export type SolarRow = {
+  hours: SolarHour[];
+  assumptions: string[];
+  /** 축의 일부 날짜만 예보가 있는지. 빈 칸이 "해가 없음"으로 읽히지 않게 말해 준다. */
+  partial: boolean;
+};
 
 /** 시각이 든 칸의 절대 번호. 분은 버린다 — 18:40에 시작해도 18시 막대부터다. */
 function hourIndexOf(iso: string): number {

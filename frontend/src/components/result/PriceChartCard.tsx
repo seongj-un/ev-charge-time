@@ -9,10 +9,11 @@ import {
   type ChartMarker,
   type PriceColumn,
 } from "@/components/chart/PriceBarChart";
+import { SolarOverlay } from "@/components/chart/SolarOverlay";
 import { Card } from "@/components/ui/Card";
 import { motionDelay } from "@/lib/motion";
 
-import { axisRangeLabel, type Axis } from "./chart-data";
+import { axisRangeLabel, type Axis, type SolarRow } from "./chart-data";
 
 /**
  * "충전 가능 시간의 단가" 카드.
@@ -29,10 +30,13 @@ export function PriceChartCard({
   axis,
   columns,
   markers,
+  solar = null,
 }: {
   axis: Axis;
   columns: PriceColumn[];
   markers: ChartMarker[];
+  /** 단가 막대 아래 태양광 막대. 없으면 줄을 그리지 않는다. */
+  solar?: SolarRow | null;
 }) {
   const desktop = useIsDesktop();
 
@@ -70,6 +74,28 @@ export function PriceChartCard({
             labelEvery={desktop ? 1 : 4}
             plotHeight={desktop ? 190 : 116}
           />
+          {solar ? (
+            /*
+             * 단가 막대와 같은 칸 폭으로 바로 아래에 둔다. 같은 y축에 올리지 않는 이유는
+             * SolarOverlay 주석 참고 — 단위가 달라 이중축이 되면 높이를 마음대로 과장할 수 있다.
+             * 추천 계산에는 들어가지 않은 참고 정보라는 점을 제목에서 밝힌다.
+             */
+            <div className="mt-4 border-t border-line pt-3">
+              <p className="text-sm font-bold">
+                태양광 발전 예측 <span className="font-normal text-ink-2">· 전남 · 참고용</span>
+              </p>
+              <SolarOverlay
+                className="mt-2"
+                hours={solar.hours}
+                columns={columns.map((column) => column.hour)}
+                assumptions={
+                  solar.partial
+                    ? [...solar.assumptions, "기상청 예보가 아직 없는 날짜의 시각은 비워 두었습니다"]
+                    : solar.assumptions
+                }
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 
