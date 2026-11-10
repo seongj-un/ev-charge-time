@@ -45,7 +45,7 @@ type Coords = { lat: number; lng: number };
  * 화면이 이걸 밝혀야 한다 — 기본 지역으로 찾아 놓고 "내 주변"이라고 하면
  * 사용자는 자기 근처에 이 충전소들이 있다고 믿는다.
  */
-type Origin = { kind: "device" } | { kind: "area"; area: Area };
+type Origin = { kind: "device" } | { kind: "pin" } | { kind: "area"; area: Area };
 
 type GeoState =
   | { kind: "asking" }
@@ -82,6 +82,24 @@ const TYPE_OPTIONS: { value: StationFilter["type"]; label: string }[] = [
   { value: "fast", label: "급속" },
   { value: "slow", label: "완속" },
 ];
+
+/**
+ * 위치 실패를 서버 로그에 남긴다(좌표는 없다 — 실패했으니 애초에 없다).
+ *
+ * 원인을 사용자 화면 캡처로만 추측하다 보니 "설정을 확인해 보세요"를 되풀이했다.
+ * 실패 종류·사이트 권한·브라우저를 남겨 두면 원인을 서버에서 직접 본다.
+ * 보내기가 실패해도 화면에는 영향이 없다.
+ */
+function reportGeoFailure(failure: GeoFailure, permission: GeoPermission) {
+  try {
+    const body = JSON.stringify({ failure, permission });
+    if (typeof navigator.sendBeacon === "function") {
+      navigator.sendBeacon("/geo-report", new Blob([body], { type: "application/json" }));
+    }
+  } catch {
+    // 진단용이다. 실패해도 조용히 넘긴다.
+  }
+}
 
 type GeoResult = { ok: true; coords: Coords } | { ok: false; failure: GeoFailure };
 
@@ -159,6 +177,7 @@ export function StationsScreen() {
   /** 실패 안내. 사이트 권한 상태까지 봐야 쓸모 있는 말이 된다. */
   const explainFailure = useCallback((failure: GeoFailure, id: number) => {
     void askPermission().then((permission) => {
+      reportGeoFailure(failure, permission);
       if (requestRef.current !== id) return;
       setGeoNotice(geoFailureMessage(failure, permission, GEO_TIMEOUT_MS / 1000));
     });
@@ -189,6 +208,20 @@ export function StationsScreen() {
       setGeo({ kind: "ready", coords: result.coords, origin: { kind: "device" } });
     });
   }, [explainFailure]);
+
+  /**
+   * 지도를 눌러 기준점을 정한다.
+   *
+   * 브라우저 위치는 브라우저와 OS가 둘 다 내줘야 온다. 그중 하나라도 막히면 화면이
+   * 할 수 있는 게 없었고, 안내 문구로 사용자에게 설정을 고치게 할 수밖에 없었다.
+   * 지도를 누르는 건 어느 브라우저에서나 된다 — 위치 기능과 무관한 길을 하나 둔다.
+   */
+  const pickOnMap = useCallback((coords: Coords) => {
+    requestRef.current += 1;
+    setLocating(false);
+    setGeoNotice(null);
+    setGeo({ kind: "ready", coords, origin: { kind: "pin" } });
+  }, []);
 
   const selectArea = useCallback((id: string) => {
     const found = AREAS.find((area) => area.id === id);
@@ -328,7 +361,11 @@ export function StationsScreen() {
               >
                 {currentAreaId === null ? (
                   <option value="" disabled>
-                    {geo.kind === "asking" ? "위치 확인 중…" : "내 위치 기준"}
+                    {geo.kind === "asking"
+                      ? "위치 확인 중…"
+                      : geo.origin.kind === "pin"
+                        ? "지도에서 고른 곳"
+                        : "내 위치 기준"}
                   </option>
                 ) : null}
                 {AREAS.map((area) => (
@@ -357,7 +394,7 @@ export function StationsScreen() {
            */}
           {geoNotice ? (
             <p role="status" className="mt-2 rounded-field bg-warn-bg px-3.5 py-2.5 text-sm text-warn-fg">
-              {geoNotice} 지역을 골라 찾아볼 수 있어요.
+              {geoNotice} 지도를 눌러 그 자리를 기준으로 찾거나, 지역을 골라 찾아볼 수 있어요.
             </p>
           ) : null}
 
@@ -522,11 +559,15 @@ export function StationsScreen() {
          * 오른쪽 칸(시안 p-18).
          */}
         {geo.kind === "ready" ? (
-          <StationMap
-            center={geo.coords}
-            stations={stations}
-            className="order-first mt-4 h-44 lg:order-none lg:mt-0 lg:h-[520px]"
-          />
+          <div className="order-first mt-4 lg:order-none lg:mt-0">
+            <StationMap
+              center={geo.coords}
+              stations={stations}
+              onPick={pickOnMap}
+              className="h-44 lg:h-[520px]"
+            />
+            <p className="mt-2 text-sm text-ink-2">지도를 누르면 그 자리를 기준으로 찾아요.</p>
+          </div>
         ) : (
           <div
             className="order-first mt-4 h-44 animate-pulse rounded-card bg-sunken lg:order-none lg:mt-0 lg:h-[520px]"
