@@ -23,10 +23,17 @@ type Props = {
   stations: Station[] | null;
   /** 지도 자리의 높이. 모바일과 데스크톱이 다르다. */
   className?: string;
+  /** 지도를 누른 곳을 기준점으로 쓴다. 브라우저가 위치를 못 줄 때의 길이다. */
+  onPick?: (coords: { lat: number; lng: number }) => void;
 };
 
-export function StationMap({ center, stations, className = "" }: Props) {
+export function StationMap({ center, stations, className = "", onPick }: Props) {
   const holder = useRef<HTMLDivElement>(null);
+  /* 지도는 한 번만 만들어서, 최신 콜백은 ref로 읽는다. */
+  const pickRef = useRef(onPick);
+  useEffect(() => {
+    pickRef.current = onPick;
+  }, [onPick]);
   /* Leaflet 인스턴스는 렌더와 무관하다. state에 두면 매번 지도를 다시 그린다. */
   const map = useRef<{ remove: () => void } | null>(null);
   const layer = useRef<{ clearLayers: () => void } | null>(null);
@@ -51,6 +58,11 @@ export function StationMap({ center, stations, className = "" }: Props) {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       }).addTo(instance);
 
+      // 끌어서 옮길 때는 click이 나지 않는다(Leaflet). 손가락으로 지도를 밀다 기준점이 바뀌지 않는다.
+      instance.on("click", (event: { latlng: { lat: number; lng: number } }) => {
+        pickRef.current?.({ lat: event.latlng.lat, lng: event.latlng.lng });
+      });
+
       map.current = instance;
       layer.current = L.layerGroup().addTo(instance);
       cleanup = () => {
@@ -71,7 +83,9 @@ export function StationMap({ center, stations, className = "" }: Props) {
   /* 기준점이 바뀌면(내 위치 ↔ 지역) 그쪽으로 옮긴다. */
   useEffect(() => {
     const instance = map.current as { setView?: (c: [number, number], z: number) => void } | null;
-    instance?.setView?.([center.lat, center.lng], 15);
+    // 지도를 눌러 고른 경우엔 확대 수준을 건드리지 않는다 — 고른 자리로 옮기기만 한다.
+    const zoom = (map.current as { getZoom?: () => number } | null)?.getZoom?.() ?? 15;
+    instance?.setView?.([center.lat, center.lng], zoom);
   }, [center.lat, center.lng]);
 
   /* 목록이 바뀌면 표시를 다시 찍는다. */
