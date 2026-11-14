@@ -472,3 +472,10 @@ class CarLeakCheckResponse(BaseModel):
     unit_price_member: float | None = None
     speech: str
     assumptions: list[str]
+
+
+class CarDeviceOut(BaseModel):
+    """``POST /api/car/devices`` 201. 토큰은 이 응답에서 한 번만 보인다."""
+
+    device_id: str
+    device_token: str

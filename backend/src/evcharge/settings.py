@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # 몇십~몇백 원 차이로 운전 중에 말을 거는 것은 편의성(1순위)을 해친다.
     car_leak_min_won: int = Field(default=500, ge=0)
 
+    # 와트잇 BE-5 기기 발급(POST /api/car/devices)의 IP별 한도. 공개 엔드포인트라
+    # 기기를 마구 만들어 DB를 채우는 것을 막는다. 앱은 설치 때 한 번만 부른다.
+    car_device_rate_limit_count: int = Field(default=10, ge=1)
+    car_device_rate_limit_window_minutes: int = Field(default=60, ge=1)
+
     # 인증 (infra/security.py, api/auth_deps.py)
     cookie_secure: bool = False
     session_days: int = 14
