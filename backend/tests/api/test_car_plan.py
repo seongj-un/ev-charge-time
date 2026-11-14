@@ -340,6 +340,30 @@ def test_plan_speech_when_one_reservation_cannot_hold_it():
     assert speech.endswith("차량 예약 충전 한 번으로는 설정할 수 없습니다.")
 
 
+def test_plan_speech_when_the_window_rounds_to_nothing():
+    speech = compose_plan_speech(
+        window=(kst(2026, 10, 7, 18, 1), kst(2026, 10, 7, 18, 0)),
+        savings_won=0,
+        reservable=False,
+        arriving=False,
+        now=NOW,
+    )
+
+    assert speech == (
+        "충전할 양이 아주 적어 차량 예약 충전으로 설정할 수 없습니다. 출발 전에 바로 충전해 주세요."
+    )
+
+
+def test_tight_window_with_seconds_keeps_the_reservation_before_departure(client, monkeypatch):
+    monkeypatch.setattr(car, "now_kst", lambda: kst(2026, 10, 7, 18, 0, 30))
+    # 70kWh × 30% / 7kW = 3시간. 지금부터 출발까지 꼭 3시간이다.
+    body = post(client, plug_in_at=None, depart_at="2026-10-07T21:00:30").json()
+
+    assert body["reservation"]["start_at"] == "2026-10-07T18:01:00+09:00"
+    assert body["reservation"]["end_at"] == "2026-10-07T21:00:00+09:00"
+    assert "저녁 6시 1분 시작, 밤 9시 종료" in body["speech"]
+
+
 def test_plan_speech_has_no_markdown_or_symbols():
     speech = compose_plan_speech(
         window=(kst(2026, 10, 8, 1), kst(2026, 10, 8, 5, 30)),

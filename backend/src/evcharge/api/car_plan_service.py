@@ -65,8 +65,9 @@ def compute_car_plan(payload: CarPlanRequest, now: datetime) -> CarPlanResponse:
     )
 
     best = result.best
-    reservation = build_reservation(best.start, best.end, plug_in_at)
-    window = round_window(best.start, best.end, plug_in_at)
+    deadline = payload.depart_at
+    reservation = build_reservation(best.start, best.end, plug_in_at, deadline=deadline)
+    window = round_window(best.start, best.end, plug_in_at, deadline=deadline)
     arriving = payload.plug_in_at is not None and payload.plug_in_at > now
 
     return CarPlanResponse(
@@ -144,6 +145,12 @@ def compose_plan_speech(
     ``arriving``은 꽂는 시각이 아직 오지 않았다는 뜻이다 (도착 전 브리핑).
     """
     start, end = (moment.astimezone(KST) for moment in window)
+    if end <= start:
+        # 충전이 1분 남짓이라 분 단위로 맞추면 구간이 빈다 (domain/reservation.py).
+        return (
+            "충전할 양이 아주 적어 차량 예약 충전으로 설정할 수 없습니다. "
+            "출발 전에 바로 충전해 주세요."
+        )
     sentences = [f"{spoken_range(start, end, now)} 충전하면 가장 쌉니다."]
 
     if savings_won > 0:
