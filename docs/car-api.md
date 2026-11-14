@@ -1,7 +1,8 @@
 # 차량 앱 API (`/api/car/*`)
 
 현대자동차그룹 차량용 앱 개발 공모전(Pleos Connect, Android Automotive)용 차량 앱이
-부르는 API. 차량 앱은 로그인 없이(게스트) 쓰고, 이 엔드포인트들은 DB를 쓰지 않는다.
+부르는 API. 차량 앱은 로그인 없이(게스트) 쓰고, `/api/car/*`는 DB를 쓰지 않는다.
+주변 충전소는 기존 `GET /api/chargers`를 그대로 쓴다 (맨 아래 절).
 
 핵심 원칙
 
@@ -124,3 +125,44 @@ Reservation:
 72시간 상한은 `/api/recommend`(14일)보다 짧다. 계산량이 구간 길이의 제곱으로 늘어
 로그인 없이 부를 수 있는 이 엔드포인트에서 14일 구간은 요청 하나에 약 3초가 걸리기
 때문이다. 도착부터 다음 출발까지는 주말을 넘겨도 72시간 안에 든다.
+
+## `GET /api/chargers` 빈 충전기만 찾기 ("충전 실패 피하기")
+
+차량 앱은 주변 충전소에 웹과 같은 `GET /api/chargers`를 쓴다. 공공 API를 부르지 않고
+수집기가 채운 공유 캐시만 읽는다. 장거리 이동 중 급속충전이 필요할 때는 아래 선택 쿼리로
+지금 꽂을 수 있는 충전소만 받는다.
+
+| 쿼리 | 타입 | 기본 | 규칙 |
+| --- | --- | --- | --- |
+| `lat`, `lng` | number | 필수 | 위도 -90~90, 경도 -180~180. 조회에만 쓰고 저장하지 않는다 |
+| `radius_m` | int | 2000 | 1~20000 |
+| `charger_type` | string | | 공공 API `chgerType` 원문 코드. 최대 32자 |
+| `available_only` | bool | false | true면 상태 코드 `2`(충전대기)인 충전기가 있는 충전소만 |
+| `min_kw` | number | | 0 초과 1000 이하. NaN, Infinity는 422. 출력이 이 값 이상인 충전기가 있는 충전소만 |
+
+- 세 조건(`charger_type`, `available_only`, `min_kw`)을 여러 개 주면 **같은 충전기 한 대가**
+  모두 맞아야 한다. 예: `available_only=true&min_kw=50`은 "50kW 이상이면서 충전대기인
+  충전기가 한 대 이상"인 충전소다. 빈 7kW와 충전 중인 100kW만 있는 충전소는 빠진다.
+- 조건을 하나도 주지 않으면(`available_only=false`, `min_kw` 생략) 응답은 예전과 같다.
+  충전기가 0대인 충전소도 그대로 나온다.
+- 거르는 단위는 충전소다. 남긴 충전소의 `chargers`에는 조건에 안 맞는 충전기도 전부
+  들어 있다. 상태·종류 코드는 원문 그대로다 (`2`만 "사용 가능").
+- 캐시의 출력 값이 숫자가 아니면 `min_kw` 조건을 못 맞춘 것으로 본다.
+- 정렬은 가까운 순서다.
+
+예: 현재 위치 반경 10km에서 50kW 이상 빈 충전기가 있는 충전소
+
+```
+GET /api/chargers?lat=35.0175&lng=126.7905&radius_m=10000&available_only=true&min_kw=50
+```
+
+| 상태 | 언제 |
+| --- | --- |
+| 200 `[]` | 캐시는 있는데 조건에 맞는 충전소가 없음 |
+| 422 | 쿼리 범위·타입 오류 (FastAPI 검증 오류 `{"detail": [...]}`) |
+| 501 | 서버에 `CHARGER_API_KEY`가 없음 |
+| 503 | 캐시를 아직 수집하지 않음 |
+
+응답 필드는 `StationOut` 그대로다 (`station_id`, `name`, `address`, `lat`, `lng`,
+`distance_m`, `operator`, `available_hours`, `is_favorite`(게스트는 null), `chargers[]`:
+`charger_id`, `type`, `capacity_kw`, `status`, `status_updated_at`).
