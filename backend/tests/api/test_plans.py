@@ -352,7 +352,7 @@ def test_list_plans_limit_boundary_is_accepted(client, auth_user, limit):
     "month", ["26-10", "2026-2", "2026/10", "2026-13", "not-a-month", ""]
 )
 def test_summary_invalid_month_format_is_422(client, auth_user, month):
-    """``_month_bounds``가 ``"26-10"``·``"2026-2"``처럼 자릿수가 다른 값을
+    """``months.month_bounds``가 ``"26-10"``·``"2026-2"``처럼 자릿수가 다른 값을
     조용히 받아 그대로 응답에 되돌려주던 것을 막는다."""
     response = client.get("/api/me/plans/summary", params={"month": month})
     assert response.status_code == 422
