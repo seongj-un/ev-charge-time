@@ -19,7 +19,7 @@ from ..car_leak_service import compute_leak_check
 from ..car_plan_service import compute_car_plan
 from ..car_savings import confirm, summarize, to_out, try_record
 from ..car_voice_quota import VoiceQuotaExceededError, consume_voice_quota
-from ..car_voice_service import arrival_briefing, converse
+from ..car_voice_service import arrival_briefing, check_arrival_at, converse
 from ..deps import get_public_prices
 from ..months import month_of
 from ..schemas import (
@@ -167,6 +167,7 @@ def car_voice(
     device = require_device(request, session)
     session.commit()  # last_seen_at
     now = now_kst()
+    check_arrival_at(payload.context, now)
     if payload.text is None:
         return arrival_briefing(payload.context)
     if not api_key:

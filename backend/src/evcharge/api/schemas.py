@@ -537,9 +537,21 @@ class CarVoiceContext(BaseModel):
     lng: float | None = Field(default=None, ge=-180, le=180, allow_inf_nan=False)
     # NaviHelper의 목적지 도착 예상 잔량(%)
     arrival_soc: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    # NaviHelper의 목적지 도착 예정 시각. 충전 계획의 꽂는 시각으로 쓴다. 지금부터 24시간
+    # 안이어야 한다(라우터가 서버 시각으로 검사). 이미 지났으면 지금으로 본다.
+    arrival_at: datetime | None = None
     charger_kw: float = Field(default=7.0, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
     charging: bool | None = None
     place: Literal["home", "public"] | None = None
+
+    @field_validator("arrival_at")
+    @classmethod
+    def _arrival_in_kst(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=KST)
+        return value.astimezone(KST)
 
     @model_validator(mode="after")
     def _lat_lng_together(self) -> CarVoiceContext:

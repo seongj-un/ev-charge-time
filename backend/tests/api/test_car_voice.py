@@ -675,3 +675,75 @@ def test_driver_words_stay_out_of_the_system_prompt(client, fake):
         "savings_summary",
     ]
     assert "2026-11-16 18:00 (월요일" in call["system"]
+
+
+# ── 도착 예정 시각 (context.arrival_at) ─────────────────────────────────
+
+
+def test_plan_starts_at_the_arrival_time(client, fake):
+    fake.replies = [use("plan_charge", {"depart_time": "07:30"}), say("도착하면 예약해 주세요.")]
+    context = {**CONTEXT, "arrival_soc": 30, "arrival_at": "2026-11-16T21:50:00+09:00"}
+
+    body = ask(client, register(client), "7시 반", context=context).json()
+
+    content = tool_results(fake, 1)[0]["content"]
+    assert content["arrival_at"] == "2026-11-16 21:50"
+    assert content["depart_at"] == "2026-11-17 07:30"
+    # 지금(18:00)이 아니라 도착(21:50)과 비교한다: 21:50~22:00 중간부하 10분만큼만 아낀다.
+    assert content["reservation"] == {"start": "22:00", "end": "03:32"}
+    assert content["savings_won"] == 63
+    assert "도착하자마자 충전하는 것보다 약 63원 아낍니다." in content["speech"]
+    assert body["actions"][0]["start_hhmm"] == content["reservation"]["start"]
+    assert "도착 예정 21:50" in fake.calls[0]["system"]
+
+
+def test_arrival_after_off_peak_starts_saves_nothing_and_records_nothing(
+    client, fake, db_session
+):
+    fake.replies = [use("plan_charge", {"depart_time": "07:30"}), say("도착하면 바로 충전하세요.")]
+    context = {**CONTEXT, "arrival_soc": 30, "arrival_at": "2026-11-16T22:30:00+09:00"}
+    headers = register(client)
+
+    body = ask(client, headers, "7시 반", context=context).json()
+
+    content = tool_results(fake, 1)[0]["content"]
+    assert content["savings_won"] == 0
+    assert content["reservation"]["start"] == "22:30"
+    assert body["saving_id"] is None
+    assert db_session.query(CarSaving).filter_by(
+        device_id=device_of(db_session, headers).id
+    ).count() == 0
+
+
+def test_without_arrival_at_the_plan_starts_now_as_before(client, fake):
+    plan = expected_plan(client, soc_now=30)
+    fake.replies = [use("plan_charge", {"depart_time": "08:00"}), say("예약했어요.")]
+
+    ask(client, register(client), "8시", context={**CONTEXT, "arrival_soc": 30})
+
+    content = tool_results(fake, 1)[0]["content"]
+    assert "arrival_at" not in content
+    assert content["savings_won"] == plan["savings_won"]
+
+
+def test_past_arrival_is_treated_as_now(client, fake):
+    plan = expected_plan(client, soc_now=30)
+    fake.replies = [use("plan_charge", {"depart_time": "08:00"}), say("예약했어요.")]
+    context = {**CONTEXT, "arrival_soc": 30, "arrival_at": "2026-11-16T17:40:00+09:00"}
+
+    response = ask(client, register(client), "8시", context=context)
+
+    assert response.status_code == 200
+    assert tool_results(fake, 1)[0]["content"]["savings_won"] == plan["savings_won"]
+
+
+def test_arrival_more_than_a_day_ahead_is_422(client, fake):
+    context = {**CONTEXT, "arrival_at": "2026-11-17T18:01:00+09:00"}
+
+    response = ask(client, register(client), "8시", context=context)
+    briefing = ask(client, register(client), None, trigger="arrival_briefing", context=context)
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "context", "arrival_at"]
+    assert briefing.status_code == 422
+    assert fake.calls == []

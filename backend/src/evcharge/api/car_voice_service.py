@@ -40,7 +40,11 @@ from ..infra.claude import ClaudeClient, ClaudeError, ClaudeReply, TextPart, Too
 from ..infra.models import CarDevice
 from ..settings import get_settings
 from .car_leak_service import compute_leak_check
-from .car_plan_service import compose_no_charge_speech, compute_car_plan, spoken_percent
+from .car_plan_service import (
+    compose_no_charge_speech,
+    compute_car_plan,
+    spoken_percent,
+)
 from .car_savings import record_pending, summarize
 from .deps import get_public_prices
 from .months import month_bounds, month_of
@@ -70,6 +74,8 @@ MAX_TOOL_CALLS_PER_REPLY = 4
 # 운전 중 TTS로 듣기에 너무 긴 답은 버리고 서버 문장으로 대신한다.
 MAX_SPEECH_CHARS = 200
 MAX_STATIONS = 3
+# context.arrival_at이 받을 수 있는 가장 먼 시각 (지금부터)
+MAX_ARRIVAL_AHEAD = timedelta(hours=24)
 DEFAULT_RADIUS_M = 3_000
 
 ERROR_SPEECH = "지금은 대답하기 어려워요. 잠시 후 다시 말씀해 주세요."
@@ -286,9 +292,16 @@ class VoiceTools:
         ctx = self.context
         return ctx.arrival_soc if ctx.arrival_soc is not None else ctx.soc_now
 
+    def _plug_in_at(self) -> datetime:
+        """충전을 시작할 수 있는 가장 이른 시각. 귀가 중이면 도착 예정 시각이다."""
+        arrival = self.context.arrival_at
+        return max(arrival, self.now) if arrival is not None else self.now
+
     def _plan(self, raw: dict[str, Any]) -> ToolOutcome:
         args = _PlanInput.model_validate(raw)
-        depart_at = resolve_clock_time(args.depart_time, self.now)
+        plug_in_at = self._plug_in_at()
+        # 출발은 꽂은 뒤 처음 오는 그 시각이다(도착 23:00, "7시 반" → 다음 날 07:30).
+        depart_at = resolve_clock_time(args.depart_time, plug_in_at)
         soc = self._plan_soc()
         if soc >= args.soc_target:
             # CarPlanRequest는 soc_now < 100만 받는다. 충전이 필요 없는 답은 같은 문장이다.
@@ -302,6 +315,7 @@ class VoiceTools:
                 battery_capacity_wh=self.context.battery_capacity_wh,
                 soc_target=args.soc_target,
                 charger_kw=self.context.charger_kw,
+                plug_in_at=plug_in_at,
                 depart_at=depart_at,
             ),
             self.now,
@@ -314,6 +328,8 @@ class VoiceTools:
             "depart_at": f"{depart_at:%Y-%m-%d %H:%M}",
             "speech": result.speech,
         }
+        if plug_in_at > self.now:
+            content["arrival_at"] = f"{plug_in_at:%Y-%m-%d %H:%M}"
         action = None
         saving_id = None
         if result.reservation is not None:
@@ -702,6 +718,21 @@ def unsupported_numbers(speech: str, sources: NumberSources) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def check_arrival_at(ctx: CarVoiceContext, now: datetime) -> None:
+    """``arrival_at``이 지금부터 24시간 안인지. 넘으면 다른 스키마 오류와 같은 422."""
+    if ctx.arrival_at is not None and ctx.arrival_at - now > MAX_ARRIVAL_AHEAD:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "context", "arrival_at"),
+                    "msg": "arrival_at은 지금부터 24시간 안이어야 합니다.",
+                    "input": ctx.arrival_at.isoformat(),
+                }
+            ]
+        )
+
+
 def arrival_briefing(ctx: CarVoiceContext) -> CarVoiceResponse:
     """귀가길 브리핑의 첫 질문. 서버 문장이라 Claude도 한도도 쓰지 않는다."""
     question = "내일 몇 시에 출발하세요?"
@@ -726,6 +757,8 @@ def _system_prompt(payload: CarVoiceRequest, now: datetime) -> str:
     ]
     if ctx.arrival_soc is not None:
         state.append(f"목적지 도착 예상 잔량 {spoken_percent(ctx.arrival_soc)}")
+    if ctx.arrival_at is not None and ctx.arrival_at > now:
+        state.append(f"도착 예정 {ctx.arrival_at.astimezone(KST):%H:%M}")
     if ctx.charging is not None:
         state.append("충전 중" if ctx.charging else "충전 중 아님")
     if ctx.place is not None:
