@@ -45,7 +45,7 @@ class PublicPrices:
         for speed in SPEEDS:
             item = tariff.items.get(speed)
             if item is None or not isinstance(item.value, dict):
-                raise TariffConfigError(f"공공 충전 단가 설정에 '{speed}' 값이 없습니다: {path}")
+                raise TariffConfigError(f"공공 충전 단가 설정에 '{speed}' 값이 없습니다.")
             prices: dict[str, float] = {}
             for payment in PAYMENTS:
                 value = item.value.get(payment)
