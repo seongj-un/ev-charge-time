@@ -133,6 +133,19 @@ def test_server_now_with_seconds_never_starts_the_reservation_early(client, monk
     assert body["reservation"]["end_at"] == "2026-10-08T01:04:00+09:00"
 
 
+def test_past_plug_in_is_pulled_up_to_now(client, monkeypatch):
+    # 도착 예정 22:00이 이미 지난 22:10에 다시 계산한다.
+    monkeypatch.setattr(car, "now_kst", lambda: kst(2026, 10, 7, 22, 10))
+    body = post(client, plug_in_at="2026-10-07T22:00").json()
+
+    assert body["baseline_now"]["start"] == "2026-10-07T22:10:00+09:00"
+    assert body["plan"]["start"] == "2026-10-07T22:10:00+09:00"
+    assert body["reservation"]["start_at"] == "2026-10-07T22:10:00+09:00"
+    # 이미 꽂혀 있을 시각이니 "도착하면"이 아니라 "지금 바로"다.
+    assert "도착하면" not in body["speech"]
+    assert "밤 10시 10분 시작" in body["speech"]
+
+
 def test_no_savings_says_there_is_no_difference(client):
     body = post(client, plug_in_at="2026-10-07T23:00", depart_at="2026-10-08T07:00").json()
 
@@ -172,7 +185,14 @@ def test_insufficient_time_is_the_existing_422(client):
         ({"plug_in_at": None, "depart_at": "2026-10-07T16:00"}, "depart_at은 현재 시각보다"),
         ({"depart_at": "2026-10-22T18:00"}, "14일을 넘을 수 없습니다."),
         # 충전이 필요 없어도 시각 검사는 한다.
-        ({"soc_target": 20, "depart_at": "2026-10-07T17:00"}, "depart_at은 plug_in_at보다"),
+        ({"soc_target": 20, "depart_at": "2026-10-07T17:30"}, "depart_at은 plug_in_at보다"),
+        # 이미 지난 출발 시각은 꽂는 시각이 더 이르더라도 422다.
+        (
+            {"plug_in_at": "2026-10-07T15:00", "depart_at": "2026-10-07T16:30"},
+            "depart_at은 현재 시각보다 뒤여야 합니다.",
+        ),
+        ({"plug_in_at": "2026-10-07T15:00", "depart_at": "2026-10-07T17:00"}, "현재 시각보다"),
+        ({"soc_target": 20, "depart_at": "2026-10-07T16:00"}, "현재 시각보다"),
     ],
 )
 def test_bad_time_window_is_a_validation_422(client, overrides, message):

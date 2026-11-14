@@ -32,14 +32,15 @@ from .schemas import (
 def compute_car_plan(payload: CarPlanRequest, now: datetime) -> CarPlanResponse:
     """차량 충전 계획. ``now``는 KST aware 서버 현재 시각이다.
 
-    ``plug_in_at``이 없으면 ``now``를 쓴다. 시각 순서와 구간 상한은
-    ``RecommendRequest``와 같은 규칙으로 보고, 어기면 같은 모양의 422를 낸다.
-    충전이 필요 없는 요청도 이 검사는 거친다 — 출발 시각이 이상한 요청을
-    \"충전 필요 없음\"으로 넘기지 않는다.
+    ``plug_in_at``이 없거나 이미 지났으면 ``now``를 쓴다. 지난 시각부터 계산하면
+    예약 시작이 지금보다 앞서고, 실제 충전은 지금부터라 그만큼 덜 찬다.
+    ``depart_at``이 지금 이전이거나 꽂는 시각 이전이면 422다. 충전이 필요 없는
+    요청도 이 검사는 거친다 — 출발 시각이 이상한 요청을 \"충전 필요 없음\"으로
+    넘기지 않는다.
     """
     now = now.astimezone(KST)
-    plug_in_at = payload.plug_in_at or now
-    _check_window(payload, plug_in_at)
+    plug_in_at = max(payload.plug_in_at or now, now)
+    _check_window(payload, plug_in_at, now)
 
     tariff = get_tariff()
     if payload.soc_target <= payload.soc_now:
@@ -95,13 +96,15 @@ def compute_car_plan(payload: CarPlanRequest, now: datetime) -> CarPlanResponse:
     )
 
 
-def _check_window(payload: CarPlanRequest, plug_in_at: datetime) -> None:
-    given = payload.plug_in_at is not None
+def _check_window(payload: CarPlanRequest, plug_in_at: datetime, now: datetime) -> None:
+    """``plug_in_at``은 ``now``로 당긴 뒤의 값이다. 오류 문장은 실제로 쓴 기준을 말한다."""
+    if payload.depart_at <= now:
+        _reject("depart_at", "depart_at은 현재 시각보다 뒤여야 합니다.", payload.depart_at)
+    from_now = plug_in_at == now
     if payload.depart_at <= plug_in_at:
-        after = "plug_in_at" if given else "현재 시각"
-        _reject("depart_at", f"depart_at은 {after}보다 뒤여야 합니다.", payload.depart_at)
+        _reject("depart_at", "depart_at은 plug_in_at보다 뒤여야 합니다.", payload.depart_at)
     if payload.depart_at - plug_in_at > MAX_REQUEST_SPAN:
-        start = "plug_in_at" if given else "현재 시각"
+        start = "현재 시각" if from_now else "plug_in_at"
         _reject(
             "depart_at",
             f"{start}과 depart_at 사이는 {MAX_REQUEST_SPAN.days}일을 넘을 수 없습니다.",
