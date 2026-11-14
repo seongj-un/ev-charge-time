@@ -14,7 +14,13 @@ from ...domain.pricing import KST
 from ...infra.claude import AnthropicClaudeClient, ClaudeClient
 from ...infra.db import get_session
 from ...settings import get_settings
-from ..car_devices import client_ip, consume_device_quota, issue_device, require_device
+from ..car_devices import (
+    client_ip,
+    consume_device_quota,
+    ip_key,
+    issue_device,
+    require_device,
+)
 from ..car_leak_service import compute_leak_check
 from ..car_plan_service import compute_car_plan
 from ..car_savings import confirm, summarize, to_out, try_record
@@ -163,7 +169,8 @@ def car_voice(
     api_key: str = Depends(anthropic_api_key),
     client: ClaudeClient = Depends(claude_client),
 ):
-    """음성 대화. 순서: 기기 토큰(401) → 귀가길 브리핑 첫 질문(200) → 키(501) → 한도(429).
+    """음성 대화. 순서: 기기 토큰(401) → 귀가길 브리핑 첫 질문(200) → 키(501)
+    → 하루 한도(429, 기기 → IP → 서비스).
 
     Claude 오류·시간 초과는 200과 서버 문장(``fallback=true``)이다. 운전 중 화면에 오류를
     띄우지 않는다.
@@ -177,7 +184,7 @@ def car_voice(
     if not api_key:
         return _spoken_error(501, VOICE_NOT_READY)
     try:
-        consume_voice_quota(session, device, now)
+        consume_voice_quota(session, device, ip_key(client_ip(request)), now)
     except VoiceQuotaExceededError as exc:
         return _spoken_error(
             429,

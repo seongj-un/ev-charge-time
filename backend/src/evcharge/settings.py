@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     claude_workspace_id: str = ""
     # 기기별·서비스 전체 하루(KST) 호출 한도. Claude를 부르는 요청만 센다.
     car_voice_daily_max: int = Field(default=60, ge=1)
+    # IP별 하루 한도. 기기 토큰을 여러 개 받아 기기 한도를 피하는 것을 막는다.
+    car_voice_ip_daily_max: int = Field(default=120, ge=1)
     # 0이면 걸지 않는다(개발·테스트용, chat_service_limit_count와 같은 규칙).
     car_voice_service_daily_max: int = Field(default=2000, ge=0)
 

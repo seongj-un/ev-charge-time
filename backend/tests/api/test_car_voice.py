@@ -794,3 +794,18 @@ def test_claude_5xx_is_not_a_warning(client, fake, caplog):
         ask(client, register(client))
 
     assert not [r for r in caplog.records if "Claude가 요청을 거절" in r.getMessage()]
+
+
+def test_ip_daily_limit_is_429_across_devices(client, fake, monkeypatch):
+    monkeypatch.setenv("CAR_VOICE_IP_DAILY_MAX", "1")
+    fake.replies = [say("네.")]
+
+    assert ask(client, register(client)).status_code == 200
+    over = ask(client, register(client))
+
+    assert over.status_code == 429
+    assert over.headers["x-ratelimit-scope"] == "ip"
+    assert over.json()["speech"] == (
+        "이 네트워크에서 오늘 음성 대화를 많이 써서 여기까지예요. 내일 다시 말씀해 주세요."
+    )
+    assert len(fake.calls) == 1

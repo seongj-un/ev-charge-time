@@ -33,6 +33,7 @@ CAR_TABLES = {
     "car_device_rate_limits",
     "car_voice_rate_limits",
     "car_voice_service_quota",
+    "car_voice_ip_limits",
 }
 
 
@@ -105,7 +106,7 @@ def test_voice_quota_migration_goes_down_alone(migration_db):
 
     command.downgrade(config, "c4e8a1f2b7d3")
     tables = _tables(migration_db)
-    assert not {"car_voice_rate_limits", "car_voice_service_quota"} & tables
+    assert not {"car_voice_rate_limits", "car_voice_service_quota", "car_voice_ip_limits"} & tables
     assert {"car_devices", "car_savings", "car_device_rate_limits"} <= tables
 
     command.upgrade(config, "head")
