@@ -58,8 +58,15 @@ def migration_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
 
 
 def _alembic() -> Config:
-    # env.py가 DATABASE_URL(settings)에서 주소를 읽는다.
-    return Config(str(BACKEND / "alembic.ini"))
+    """alembic.ini 없이 만든 설정. env.py가 DATABASE_URL(settings)에서 주소를 읽는다.
+
+    ini 파일을 넘기면 env.py가 ``fileConfig``로 로깅을 다시 설정하면서 이미 있는
+    로거를 꺼 버린다(``disable_existing_loggers``). 그러면 뒤에 도는 다른 테스트의
+    ``caplog``가 아무것도 못 받는다.
+    """
+    config = Config()
+    config.set_main_option("script_location", str(BACKEND / "migrations"))
+    return config
 
 
 def _tables(url: str) -> set[str]:
