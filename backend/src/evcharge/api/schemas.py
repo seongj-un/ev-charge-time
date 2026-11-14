@@ -20,6 +20,37 @@ Band = Literal["light", "middle", "peak"]
 Season = Literal["summer", "spring_fall", "winter"]
 
 
+# 요청 시각이 받을 수 있는 연도. 계산 범위를 좁히려는 것이 아니라 KST 변환과 시각 덧셈이
+# datetime 범위(1~9999년)를 넘어 OverflowError(본문 없는 500)가 나는 것을 막는 상한·하한이다.
+# 9999-12-31T23:59+00:00은 KST로 옮기면 10000년이 되고, 0001년은 계산 중에 0년 아래로 내려간다.
+MIN_REQUEST_YEAR = 1970
+MAX_REQUEST_YEAR = 9998
+
+
+def to_kst(value: datetime | None) -> datetime | None:
+    """요청 시각을 KST aware로. 타임존 없는 입력은 한국 시간으로 읽는다(API 명세서 1장).
+
+    연도는 보낸 그대로와 KST로 옮긴 뒤를 모두 본다. 변환 전 검사는 변환 자체의 넘침을
+    막고, 변환 후 검사는 서비스가 이 값으로 요청 모델을 다시 만들 때(car/leak-check →
+    car/plan) 같은 검사에 걸려 처리되지 않은 ValidationError(500)가 나는 것을 막는다.
+    범위 밖이면 ValueError라 pydantic이 422로 바꾼다 — OverflowError는 pydantic이 검증
+    오류로 바꾸지 않아 500이 된다.
+    """
+    if value is None:
+        return None
+    _check_year(value)
+    converted = value.replace(tzinfo=KST) if value.tzinfo is None else value.astimezone(KST)
+    _check_year(converted)
+    return converted
+
+
+def _check_year(value: datetime) -> None:
+    if not MIN_REQUEST_YEAR <= value.year <= MAX_REQUEST_YEAR:
+        raise ValueError(
+            f"시각은 {MIN_REQUEST_YEAR}년부터 {MAX_REQUEST_YEAR}년 사이여야 합니다."
+        )
+
+
 def _to_kst_isoformat(value: datetime) -> str:
     """DB/도메인에서 어떤 tzinfo로 오든, 응답 시각은 항상 +09:00으로 (API 명세서 1장)."""
     return value.astimezone(KST).isoformat()
@@ -137,9 +168,7 @@ class RecommendRequest(BaseModel):
 
         내부 계산이 전부 KST aware라는 전제를 입구에서 세운다 (API 명세서 1장).
         """
-        if value.tzinfo is None:
-            return value.replace(tzinfo=KST)
-        return value.astimezone(KST)
+        return to_kst(value)
 
     @model_validator(mode="after")
     def _check_ranges(self) -> RecommendRequest:
@@ -400,11 +429,7 @@ class CarPlanRequest(BaseModel):
     @classmethod
     def _normalize_to_kst(cls, value: datetime | None) -> datetime | None:
         """``RecommendRequest``와 같은 규칙: 오프셋이 없으면 KST로 읽는다."""
-        if value is None:
-            return None
-        if value.tzinfo is None:
-            return value.replace(tzinfo=KST)
-        return value.astimezone(KST)
+        return to_kst(value)
 
 
 class ReservationOut(BaseModel):
@@ -454,11 +479,7 @@ class CarLeakCheckRequest(BaseModel):
     @field_validator("depart_at")
     @classmethod
     def _normalize_to_kst(cls, value: datetime | None) -> datetime | None:
-        if value is None:
-            return None
-        if value.tzinfo is None:
-            return value.replace(tzinfo=KST)
-        return value.astimezone(KST)
+        return to_kst(value)
 
 
 class CarLeakCheckResponse(BaseModel):
@@ -547,11 +568,7 @@ class CarVoiceContext(BaseModel):
     @field_validator("arrival_at")
     @classmethod
     def _arrival_in_kst(cls, value: datetime | None) -> datetime | None:
-        if value is None:
-            return None
-        if value.tzinfo is None:
-            return value.replace(tzinfo=KST)
-        return value.astimezone(KST)
+        return to_kst(value)
 
     @model_validator(mode="after")
     def _lat_lng_together(self) -> CarVoiceContext:
