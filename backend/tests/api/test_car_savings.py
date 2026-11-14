@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import threading
 import uuid
 from datetime import datetime
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import OperationalError
 
 from evcharge.api import car_savings
@@ -14,6 +15,7 @@ from evcharge.api.car_savings import MAX_PENDING_PER_DEVICE, record_pending
 from evcharge.api.routes import car
 from evcharge.domain.pricing import KST
 from evcharge.infra.models import CarDevice, CarSaving
+from evcharge.infra.security import hash_token
 
 # 2026-11-16(월) 18:00, 겨울 평일 최대부하. 밤 10시까지 기다리면 아낀다.
 MONDAY_EVENING = datetime(2026, 11, 16, 18, 0, tzinfo=KST)
@@ -374,3 +376,125 @@ def test_device_last_seen_moves_on_use(client, db_session):
 
     db_session.expire_all()
     assert device_of(db_session, headers).last_seen_at > kst(2026, 1, 1)
+
+
+# ── 확정 남용 막기: 72시간 기한, 하루 3건 ───────────────────────────────
+
+def new_saving(client, headers) -> str:
+    return client.post("/api/car/plan", json=PLAN, headers=headers).json()["saving_id"]
+
+
+def confirm_saving(client, headers, saving_id: str):
+    return client.post(f"/api/car/savings/{saving_id}/confirm", headers=headers)
+
+
+def age(db_session, saving_id: str, interval: str) -> None:
+    """기록을 DB 시계 기준으로 ``interval``만큼 오래된 것으로 만든다."""
+    db_session.execute(
+        text(
+            "UPDATE car_savings SET created_at = clock_timestamp() - CAST(:age AS interval) "
+            "WHERE id = :id"
+        ),
+        {"age": interval, "id": saving_id},
+    )
+    db_session.commit()
+
+
+def test_confirm_window_is_72_hours(client, db_session):
+    headers = register(client)
+    fresh, old = new_saving(client, headers), new_saving(client, headers)
+    age(db_session, fresh, "71 hours 59 minutes")
+    age(db_session, old, "72 hours 1 minute")
+
+    assert client.post(f"/api/car/savings/{fresh}/confirm", headers=headers).status_code == 200
+    expired = client.post(f"/api/car/savings/{old}/confirm", headers=headers)
+    assert expired.status_code == 410
+    assert expired.json() == {"detail": "이 기록은 확정할 수 있는 기간(72시간)이 지났습니다."}
+    assert db_session.get(CarSaving, old).confirmed_at is None
+
+
+def test_fourth_confirm_of_the_day_is_429_and_works_the_next_day(client, monkeypatch):
+    headers = register(client)
+    ids = [new_saving(client, headers) for _ in range(4)]
+
+    for saving_id in ids[:3]:
+        assert confirm_saving(client, headers, saving_id).status_code == 200
+    fourth = confirm_saving(client, headers, ids[3])
+
+    assert fourth.status_code == 429
+    assert fourth.json() == {
+        "detail": "오늘 확정할 수 있는 횟수(3건)를 다 썼습니다. 내일 다시 확정해 주세요."
+    }
+    # 18:00 → 다음 날 0시(KST)까지 6시간
+    assert fourth.headers["retry-after"] == "21600"
+    # 이미 확정한 기록을 다시 부르는 것은 한도를 쓰지 않는다.
+    again = confirm_saving(client, headers, ids[0])
+    assert again.status_code == 200
+
+    monkeypatch.setattr(car, "now_kst", lambda: kst(2026, 11, 17, 0, 0))
+    assert confirm_saving(client, headers, ids[3]).status_code == 200
+    november = summary(client, headers).json()
+    assert november["month_count"] == 4
+
+
+def test_daily_confirm_max_comes_from_settings(client, monkeypatch):
+    monkeypatch.setenv("CAR_SAVINGS_DAILY_CONFIRM_MAX", "1")
+    headers = register(client)
+    first, second = new_saving(client, headers), new_saving(client, headers)
+
+    assert client.post(f"/api/car/savings/{first}/confirm", headers=headers).status_code == 200
+    assert client.post(f"/api/car/savings/{second}/confirm", headers=headers).status_code == 429
+
+
+def test_parallel_confirms_never_pass_the_daily_limit(concurrent, monkeypatch):
+    monkeypatch.setattr(car, "now_kst", lambda: MONDAY_EVENING)
+    token = f"race-{uuid.uuid4()}"
+    device_id = str(uuid.uuid4())
+    saving_ids = [str(uuid.uuid4()) for _ in range(6)]
+
+    setup = concurrent.session()
+    try:
+        setup.add(CarDevice(id=device_id, token_hash=hash_token(token)))
+        setup.flush()
+        for saving_id in saving_ids:
+            setup.add(
+                CarSaving(
+                    id=saving_id, device_id=device_id, cause="time", savings_won=1000,
+                    energy_kwh=10.0, source="plan",
+                )
+            )
+        setup.commit()
+    finally:
+        setup.close()
+
+    queue = list(saving_ids)
+    lock = threading.Lock()
+
+    def confirm_one(client) -> int:
+        with lock:
+            saving_id = queue.pop()
+        return client.post(
+            f"/api/car/savings/{saving_id}/confirm",
+            headers={"Authorization": f"Bearer {token}"},
+        ).status_code
+
+    try:
+        codes = concurrent.run(confirm_one, count=len(saving_ids))
+        assert sorted(codes) == [200, 200, 200, 429, 429, 429]
+        check = concurrent.session()
+        try:
+            confirmed_count = check.scalar(
+                select(func.count()).where(
+                    CarSaving.device_id == device_id, CarSaving.confirmed_at.is_not(None)
+                )
+            )
+        finally:
+            check.close()
+        assert confirmed_count == 3
+    finally:
+        cleanup = concurrent.session()
+        try:
+            cleanup.execute(text("DELETE FROM car_devices WHERE id = :id"), {"id": device_id})
+            cleanup.commit()
+        finally:
+            cleanup.close()

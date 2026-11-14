@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, time, timedelta
+from math import ceil
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
@@ -25,6 +26,7 @@ from sqlalchemy.orm import Session as DbSession
 from ..domain.pricing import KST
 from ..infra.db import session_scope
 from ..infra.models import MAX_CAR_SAVING_WON, CarDevice, CarSaving
+from ..settings import get_settings
 from .car_devices import bearer_token, find_device
 from .months import month_bounds, month_of, year_bounds
 from .schemas import CarSavingOut, CarSavingsByCause, CarSavingsSummary
@@ -114,20 +116,67 @@ def try_record(
 def confirm(
     session: DbSession, device: CarDevice, saving_id: str, now: datetime
 ) -> CarSaving | None:
-    """확정. 이미 확정됐으면 그대로 돌려준다(멱등). 이 기기의 기록이 아니면 None."""
+    """확정. 이 기기의 기록이 아니면 None(→ 404).
+
+    - 이미 확정됐으면 그대로 돌려준다(멱등). 하루 한도를 쓰지 않는다.
+    - 기록을 만든 뒤 ``car_savings_confirm_window_hours``가 지났으면 410.
+    - 이 기기가 오늘(KST) 이미 ``car_savings_daily_confirm_max``건 확정했으면 429.
+
+    하루 건수를 세기 전에 **기기 행을 ``FOR UPDATE``로 잡는다.** 같은 기기의 확정이
+    여기서 줄을 서므로, 병렬 요청이 모두 "아직 2건"을 읽고 한도를 넘는 일이 없다.
+
+    확정 기한은 DB 시계(``clock_timestamp()``)로 잰다. ``created_at``이 DB 시계로
+    찍히기 때문이다. 하루 경계와 ``confirmed_at``은 앱 시계(``now``)다.
+    """
     try:
         uuid.UUID(saving_id)
     except ValueError:
         return None
+    settings = get_settings()
+
+    session.execute(select(CarDevice.id).where(CarDevice.id == device.id).with_for_update())
     saving = session.scalar(
         select(CarSaving)
         .where(CarSaving.id == saving_id, CarSaving.device_id == device.id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if saving is None:
         return None
-    if saving.confirmed_at is None:
-        saving.confirmed_at = now
+    if saving.confirmed_at is not None:
+        session.commit()
+        return saving
+
+    window = timedelta(hours=settings.car_savings_confirm_window_hours)
+    db_now = session.scalar(select(func.clock_timestamp()))
+    if db_now - saving.created_at > window:
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                f"이 기록은 확정할 수 있는 기간({settings.car_savings_confirm_window_hours}시간)이 "
+                "지났습니다."
+            ),
+        )
+
+    local = now.astimezone(KST)
+    day_start = datetime.combine(local.date(), time(), tzinfo=KST)
+    day_end = day_start + timedelta(days=1)
+    used = session.scalar(
+        select(func.count()).where(
+            CarSaving.device_id == device.id,
+            CarSaving.confirmed_at >= day_start,
+            CarSaving.confirmed_at < day_end,
+        )
+    )
+    limit = settings.car_savings_daily_confirm_max
+    if used >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"오늘 확정할 수 있는 횟수({limit}건)를 다 썼습니다. 내일 다시 확정해 주세요.",
+            headers={"Retry-After": str(max(1, ceil((day_end - now).total_seconds())))},
+        )
+
+    saving.confirmed_at = now
     session.commit()
     return saving
 

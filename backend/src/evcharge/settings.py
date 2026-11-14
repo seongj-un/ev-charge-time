@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     car_device_rate_limit_count: int = Field(default=10, ge=1)
     car_device_rate_limit_window_minutes: int = Field(default=60, ge=1)
 
+    # 와트잇 BE-5 확정 남용 막기. 토큰 하나로 "계산 → 확정"을 되풀이해 합계와 DB 행을
+    # 끝없이 늘리지 못하게 한다.
+    # - 기록을 만든 뒤 이 시간(시)이 지나면 확정할 수 없다(410). car/plan의 계산 구간
+    #   상한(MAX_CAR_PLAN_SPAN, 72시간)과 맞췄다: 그보다 늦게 따를 계획은 없다.
+    # - 기기당 KST 하루 확정 건수 상한(429). 실제 충전은 하루 한두 번이다.
+    car_savings_confirm_window_hours: int = Field(default=72, ge=1)
+    car_savings_daily_confirm_max: int = Field(default=3, ge=1)
+
     # 인증 (infra/security.py, api/auth_deps.py)
     cookie_secure: bool = False
     session_days: int = 14
