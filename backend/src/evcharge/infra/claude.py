@@ -27,7 +27,16 @@ from typing import Any, Literal, Protocol
 
 
 class ClaudeError(RuntimeError):
-    """Claude 호출 실패(타임아웃 포함). 문구에 API 키가 들어가지 않는다."""
+    """Claude 호출 실패(타임아웃 포함). 문구에 API 키가 들어가지 않는다.
+
+    ``kind``(예외 이름)와 ``status``(HTTP 상태, 없으면 None)는 로그용이다. 문구는
+    로그에 남기지 않는다: 오류 본문이 요청 내용(운전자 말)을 되비칠 수 있다.
+    """
+
+    def __init__(self, message: str, *, kind: str = "", status: int | None = None) -> None:
+        super().__init__(message)
+        self.kind = kind or "ClaudeError"
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -106,7 +115,11 @@ class AnthropicClaudeClient:
             # 타임아웃, 연결, 4xx/5xx, 응답 검증이 서로 다른 예외로 온다. 운전자에게는
             # 모두 "지금은 대답하기 어렵다"는 같은 뜻이다. 원본을 매달면 traceback에
             # 가리지 않은 문구가 찍힐 수 있어 ``from None``으로 끊는다.
-            raise ClaudeError(f"Claude 호출 실패: {self._describe(exc)}") from None
+            raise ClaudeError(
+                f"Claude 호출 실패: {self._describe(exc)}",
+                kind=type(exc).__name__,
+                status=getattr(exc, "status_code", None),
+            ) from None
         return self._to_reply(message)
 
     def _ensure_client(self) -> Any:

@@ -64,6 +64,8 @@ def test_sdk_errors_become_claude_error_without_the_key():
 
     assert KEY not in str(caught.value)
     assert "<ANTHROPIC_API_KEY>" in str(caught.value)
+    assert caught.value.kind == "RuntimeError"
+    assert caught.value.status is None
     assert caught.value.__cause__ is None
     assert caught.value.__suppress_context__
 
