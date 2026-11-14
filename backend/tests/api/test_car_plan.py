@@ -101,6 +101,13 @@ def test_battery_capacity_is_converted_from_wh(client):
     assert body["plan"]["energy_kwh"] == pytest.approx(77.4 * 0.6, abs=0.001)
 
 
+def test_smallest_battery_capacity_is_accepted(client):
+    response = post(client, battery_capacity_wh=1000)
+
+    assert response.status_code == 200
+    assert response.json()["plan"]["energy_kwh"] == pytest.approx(0.3)
+
+
 def test_defaults_target_80_and_7kw(client):
     body = post(client, soc_target=None).json()
 
@@ -212,6 +219,8 @@ def test_bad_time_window_is_a_validation_422(client, overrides, message):
         {"soc_target": 0},
         {"soc_target": 100.5},
         {"battery_capacity_wh": 0},
+        {"battery_capacity_wh": 999},
+        {"battery_capacity_wh": 5e-324},
         {"battery_capacity_wh": 1_000_001},
         {"battery_capacity_wh": "Infinity"},
         {"charger_kw": 0},

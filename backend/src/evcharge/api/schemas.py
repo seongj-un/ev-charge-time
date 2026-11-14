@@ -370,6 +370,9 @@ class ChatResponse(BaseModel):
 # 계약: docs/car-api.md. 차량 앱은 로그인 없이(게스트) 쓴다.
 
 
+MIN_BATTERY_CAPACITY_WH = 1000
+
+
 class CarPlanRequest(BaseModel):
     """``POST /api/car/plan`` 요청. 차량이 아는 값으로 충전 계획을 묻는다.
 
@@ -381,8 +384,11 @@ class CarPlanRequest(BaseModel):
 
     soc_now: float = Field(ge=0, lt=100, allow_inf_nan=False)
     # Pleos Vehicle SDK getEvBatteryCapacity가 Wh로 준다. 서버가 kWh로 바꾼다.
+    # 하한 1,000Wh(1kWh): 그보다 작은 값은 실제 차에서 오지 않고, 5e-324처럼 아주
+    # 작은 값은 충전 시간이 0이 되어 500이 나거나 "22:00 시작, 22:00 종료" 같은
+    # 예약을 만든다.
     battery_capacity_wh: float = Field(
-        gt=0, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
+        ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
     )
     soc_target: float = Field(default=80, gt=0, le=100, allow_inf_nan=False)
     charger_kw: float = Field(default=7.0, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
