@@ -2,7 +2,8 @@
 
 현대자동차그룹 차량용 앱 개발 공모전(Pleos Connect, Android Automotive)용 차량 앱이
 부르는 API. 차량 앱은 로그인 없이(게스트) 쓴다. 계산 엔드포인트(`car/plan`, `car/leak-check`)는
-기기 토큰 없이 부르면 DB를 쓰지 않는다. 절감 기록(아래 "절감 리포트" 절)만 기기 토큰과 DB를 쓴다.
+기기 토큰 없이 부르면 DB를 쓰지 않는다. 절감 기록(아래 "절감 리포트" 절)과 음성 대화
+(`car/voice`)는 기기 토큰이 필요하다.
 주변 충전소는 기존 `GET /api/chargers`를 그대로 쓴다 (맨 아래 절).
 
 핵심 원칙
@@ -310,6 +311,131 @@ IP가 다시 발급할 때 재사용되어 따로 정리하지 않는다.
 | 422 | `month` 형식 오류(연도는 1~9998) | `{"detail": "month는 YYYY-MM 형식이어야 합니다."}` |
 | 429 | confirm 하루 한도 초과 | `{"detail": "오늘 확정할 수 있는 횟수(3건)를 다 썼습니다. 내일 다시 확정해 주세요."}`, `Retry-After` |
 | 429 | 기기 발급 IP 한도 초과 | `{"detail": "..."}`, `Retry-After` |
+
+## `POST /api/car/voice` 음성 대화 (Claude)
+
+운전자 말(Pleos STT가 바꾼 글자)을 받아 Claude가 이해하고 도구를 골라 부르고, TTS로 읽을
+답(`speech`)과 앱이 보여 줄 동작(`actions`)을 돌려준다. 금액·시각·잔량 같은 숫자는 도구가
+낸 서버 계산값만 쓴다.
+
+순서: 기기 토큰(401) → 귀가길 브리핑 첫 질문(200, 키·한도 없이) → 키(501) → 하루 한도(429)
+→ Claude. 요청 본문 검증(422)은 이 모든 것보다 먼저다.
+
+### 요청 (JSON), `Authorization: Bearer <device_token>` 필수
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `text` | string | `trigger`가 없으면 필수 | 운전자 말. 1~500자, 공백만이면 422 |
+| `trigger` | string \| null | | `"arrival_briefing"`(귀가길 브리핑) |
+| `history` | array | | 최근 6턴까지 `{role: "driver"\|"wattit", text: 1~500자}`. 오래된 것부터 |
+| `context` | object | 필수 | 앱이 Pleos SDK로 읽은 차량 상태 (아래) |
+
+`context`:
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `soc_now` | number | 필수 | 지금 잔량 %, 0~100 |
+| `battery_capacity_wh` | number | 필수 | 배터리 용량 Wh, 1,000~1,000,000 |
+| `lat`, `lng` | number | | 현재 위치. 둘 다 보내거나 둘 다 빼야 한다. 없으면 `find_chargers`가 "위치 없음" |
+| `arrival_soc` | number | | NaviHelper 목적지 도착 예상 잔량 %. 있으면 충전 계획은 이 값에서 시작한다 |
+| `charger_kw` | number | | 충전기 출력, 기본 7.0 |
+| `charging` | bool | | 지금 충전 중인지 (Claude에게 상황으로만 알린다) |
+| `place` | string | | `"home"`·`"public"`. `leak_check`가 쓴다(없으면 home) |
+
+### 응답 200
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `speech` | string | TTS로 읽을 답. 2문장 이하·80자 안팎을 Claude에 요청하고, 200자를 넘으면 서버 문장으로 바꾼다 |
+| `actions` | array | 앱이 실행·표시할 것. 종류마다 많아야 하나, 아래 순서 보장 없음 |
+| `fallback` | bool | Claude의 문장을 버리고 서버 문장으로 대신했으면 true |
+| `saving_id` | string \| null | `plan_charge`·`leak_check`가 대기 절감 기록을 만들었으면 (BE-5와 같은 기록, 같은 확정 API) |
+
+`actions` 종류:
+
+- `{"type": "set_reservation", "start_hhmm", "end_hhmm"}`: 차량 기본 예약 충전에 넣을 값.
+  `plan_charge`나 집 충전 `leak_check`가 예약 값을 냈을 때. 앱은 충전을 켜고 끄지 않고, 운전자가
+  넣도록 보여 준다.
+- `{"type": "navigate", "station_id", "name", "lat", "lng"}`: `find_chargers`가 찾은 가장 가까운
+  충전소.
+- `{"type": "ask", "question"}`: 와트잇이 질문으로 끝냈다. 앱은 읽은 뒤 바로 마이크를 연다.
+  귀가길 브리핑 첫 질문과, Claude의 답이 `?`로 끝날 때(마지막 문장).
+
+### 귀가길 브리핑
+
+`trigger: "arrival_briefing"`이고 `text`가 없으면 서버 문장으로 첫 질문을 한다. Claude를 부르지
+않으므로 키가 없어도 200이고 하루 한도도 쓰지 않는다.
+
+- `arrival_soc`가 있으면: "집에 도착하면 배터리가 32% 남아요. 내일 몇 시에 출발하세요?"
+- 없으면: "지금 배터리가 32%예요. 내일 몇 시에 출발하세요?"
+- `actions`: `[{"type": "ask", "question": "내일 몇 시에 출발하세요?"}]`
+
+다음 턴에서 앱은 운전자 답을 `text`로, 위 질문을 `history: [{"role": "wattit", ...}]`로 보내고
+`trigger`는 그대로 두어도 된다(Claude에게 "귀가 중, 출발 시각을 물었다"는 상황을 알린다).
+Claude는 `plan_charge(depart_time)`를 불러 예약 시각을 돌려준다.
+
+### 도구 (모두 읽기 전용, 서버 함수를 직접 부른다)
+
+Claude가 넣는 값은 운전자의 의도뿐이고, 차량 값(잔량, 용량, 출력, 위치, 장소)은 서버가
+`context`에서 채운다. Claude가 다른 값을 넣어도 무시한다. 입력이 틀리면 Claude에게 오류
+결과를 돌려준다.
+
+| 도구 | Claude 입력 | 서버가 하는 일 |
+| --- | --- | --- |
+| `plan_charge` | `depart_time` "HH:MM"(필수), `soc_target` 1~100(기본 80) | `car/plan` 계산. 출발은 지금 이후 처음 오는 그 시각, 시작 잔량은 `arrival_soc` 또는 `soc_now` |
+| `find_chargers` | `available_only`(기본 true), `min_kw`, `radius_m` 500~20,000(기본 3,000) | `GET /api/chargers`와 같은 검색, 가까운 순 최대 3곳 |
+| `leak_check` | `payment`, `charger_speed`, `depart_time` | `car/leak-check` 계산. 장소는 `context.place` |
+| `savings_summary` | `month` "YYYY-MM"(기본 이번 달) | 이 기기의 절약 리포트 |
+
+### 숫자 검증과 서버 문장
+
+- Claude 답의 숫자(아라비아 숫자, `1,995`의 쉼표는 무시)가 도구 결과·`context`·운전자 `text`에
+  모두 없으면 그 답을 버리고 **마지막 도구의 서버 문장**을 읽는다(`fallback: true`). 도구를 안
+  썼으면 "정확한 숫자를 확인하지 못했어요. 충전 계획이나 주변 충전기를 다시 물어봐 주세요."
+- 사람이 말하는 모양은 허용한다: `HH:MM`의 12시간제 시(18:00 → "6시"), 소수의 반올림(32.46 →
+  "32", "32.5").
+- 한글로 쓴 수("천 원", "여덟 시")는 검사하지 못한다. 시스템 프롬프트로 아라비아 숫자를 쓰게 한다.
+
+### 실패해도 200
+
+운전 중 화면에 오류를 띄우지 않는다. 아래는 모두 200 + `fallback: true`이고, 그때까지 실행한
+도구의 `actions`·`saving_id`는 그대로 준다. `speech`는 마지막 도구의 서버 문장, 도구를 안
+썼으면 "지금은 대답하기 어려워요. 잠시 후 다시 말씀해 주세요."
+
+- Claude 오류(4xx/5xx, 연결 실패)·시간 초과: 대화 한 번 전체가 8초(호출마다 남은 시간을 넘김,
+  재시도 없음)
+- 잘린 답(`max_tokens` 300)·거절
+- Claude 호출이 3번 모두 도구를 부르고 끝남(루프 상한). 한 응답의 도구는 4개까지 실행하고
+  넘는 것은 오류 결과를 준다.
+- 답이 비었거나 200자를 넘음
+
+### 하루 한도 (KST 0시 기준)
+
+Claude를 부르는 요청만 센다. 기기 한도를 먼저 보고, 넘지 않았을 때만 서비스 한도를 쓴다.
+
+- 기기별 `CAR_VOICE_DAILY_MAX`(기본 60)
+- 서비스 전체 `CAR_VOICE_SERVICE_DAILY_MAX`(기본 2,000, 0이면 걸지 않음)
+
+### 오류
+
+| 상태 | 언제 | 본문 |
+| --- | --- | --- |
+| 401 | 기기 토큰이 없거나 틀림 | `{"detail": "..."}`, `WWW-Authenticate: Bearer` |
+| 422 | 요청 검증 실패 (`text`·`trigger` 둘 다 없음, 500자 초과, history 7턴 이상, `lat`만 있음 등) | FastAPI 기본 `detail` 배열 |
+| 429 | 하루 한도 초과 | `{"detail": s, "speech": s}`, `Retry-After`(다음 날 0시까지 초), `X-RateLimit-Scope: device\|service` |
+| 501 | `ANTHROPIC_API_KEY` 미설정 (브리핑 첫 질문 제외) | `{"detail": "음성 대화는 아직 준비 중이에요.", "speech": 같은 문장}` |
+
+기기 한도 문장: "오늘은 음성 대화를 많이 쓰셔서 여기까지예요. 내일 다시 말씀해 주세요."
+서비스 한도 문장: "지금은 음성 대화를 쓰는 분이 많아 오늘은 여기까지예요. 내일 다시 말씀해 주세요."
+
+### 프롬프트와 로그
+
+- 시스템 프롬프트에는 규칙, 지금 시각, 차량 상태만 있고 키·내부 정보는 없다. 운전자 말과
+  history는 user/assistant 메시지로만 넣는다. history가 와트잇 말로 시작하면 앞에
+  "(대화 시작)" user 메시지를 둔다(Messages API는 user로 시작해야 한다).
+- 로그에는 운전자 말의 길이, history 턴 수, 부른 도구 이름, fallback 이유(오류 종류와 HTTP
+  상태)만 남긴다. 운전자 말과 Claude 오류 문구는 남기지 않는다.
+- 모델 `CLAUDE_MODEL`(기본 `claude-haiku-5-5`), 키 `ANTHROPIC_API_KEY`(.env에만).
 
 ## `GET /api/chargers` 빈 충전기만 찾기 ("충전 실패 피하기")
 
