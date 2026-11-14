@@ -21,7 +21,7 @@ from collections.abc import Callable
 from datetime import datetime, time, timedelta
 
 from ..domain.errors import InsufficientTimeError
-from ..domain.pricing import KST
+from ..domain.pricing import KST, price_at
 from ..domain.public_prices import PublicPrices
 from .car_plan_service import (
     compute_car_plan,
@@ -30,10 +30,12 @@ from .car_plan_service import (
     spoken_moment,
     spoken_percent,
 )
+from .deps import get_holidays, get_tariff
 from .schemas import (
     CarLeakCheckRequest,
     CarLeakCheckResponse,
     CarPlanRequest,
+    CarPlanResponse,
 )
 
 # depart_at이 없을 때 가정하는 출발 시각 (KST).
@@ -85,27 +87,25 @@ def is_leaking(leak_won: int, min_won: int) -> bool:
 
 
 def _home(payload: CarLeakCheckRequest, now: datetime, *, min_won: int) -> CarLeakCheckResponse:
-    assumptions: list[str] = []
-    depart_at = payload.depart_at
-    if depart_at is None:
-        depart_at = default_depart_at(now)
-        assumptions.append(
-            f"출발 시각 미입력: {depart_at.month}월 {depart_at.day}일 오전 8시(KST) 출발로 가정"
-        )
-
-    plan_request = CarPlanRequest(
-        soc_now=payload.soc_now,
-        battery_capacity_wh=payload.battery_capacity_wh,
-        soc_target=payload.soc_target,
-        charger_kw=payload.charger_kw,
-        plug_in_at=None,  # 이미 충전 중이다: 지금부터
-        depart_at=depart_at,
-        mode=payload.mode,
-    )
     energy_kwh = _energy_kwh(payload)
+    assumptions: list[str] = []
     try:
-        # 시각 검증(지난 출발 시각, 72시간 상한)도 여기서 같은 422로 난다.
-        result = compute_car_plan(plan_request, now)
+        if payload.depart_at is not None:
+            # 시각 검증(지난 출발 시각, 72시간 상한)도 여기서 같은 422로 난다.
+            result = _plan(payload, payload.depart_at, now)
+        else:
+            depart_at = default_depart_at(now)
+            try:
+                result = _plan(payload, depart_at, now)
+            except InsufficientTimeError:
+                # 가정한 출발(예: 07:00에 부르면 08:00)까지 모자란 것은 운전자가 정한
+                # 시각이 아니다. 그걸로 "지금 바로 충전해야 해요"라고 단정하지 않고,
+                # 다음 날 같은 시각으로 한 번 더 본다 (48시간 이내라 72시간 상한 안).
+                depart_at += timedelta(days=1)
+                assumptions.append(_assumed_depart(depart_at))
+                result = _plan(payload, depart_at, now)
+            else:
+                assumptions.append(_assumed_depart(depart_at))
     except InsufficientTimeError:
         # 지금 바로 충전해도 출발 전에 다 못 채운다. 더 싼 선택지가 없으니 새는
         # 돈도 없다 — 422로 막는 대신 할 일(지금 계속 충전)을 말한다.
@@ -136,13 +136,15 @@ def _home(payload: CarLeakCheckRequest, now: datetime, *, min_won: int) -> CarLe
     reservation = result.reservation
     start = reservation.start_at if reservation is not None else plan.start
     sentences = [
-        "지금은 요금이 비싼 시간이라 돈이 새고 있어요.",
+        _time_leak_cause(now, payload),
         f"{spoken_moment(start.astimezone(KST), now)}부터 충전하면 "
         f"약 {leak_won:,}원 아낄 수 있어요.",
     ]
     if reservation is not None:
+        # 이미 충전 중이라, 예약만 걸면 지금 충전이 계속될 수 있다. 할 일을 한 문장으로.
         sentences.append(
-            f"차량 예약 충전을 {spoken_clock(reservation.start_at.astimezone(KST))} 시작, "
+            "지금 충전을 멈추고 차량 예약 충전을 "
+            f"{spoken_clock(reservation.start_at.astimezone(KST))} 시작, "
             f"{spoken_clock(reservation.end_at.astimezone(KST))} 종료로 설정해 주세요."
         )
     else:
@@ -158,6 +160,38 @@ def _home(payload: CarLeakCheckRequest, now: datetime, *, min_won: int) -> CarLe
         speech=" ".join(sentences),
         assumptions=assumptions,
     )
+
+
+def _plan(payload: CarLeakCheckRequest, depart_at: datetime, now: datetime) -> CarPlanResponse:
+    return compute_car_plan(
+        CarPlanRequest(
+            soc_now=payload.soc_now,
+            battery_capacity_wh=payload.battery_capacity_wh,
+            soc_target=payload.soc_target,
+            charger_kw=payload.charger_kw,
+            plug_in_at=None,  # 이미 충전 중이다: 지금부터
+            depart_at=depart_at,
+            mode=payload.mode,
+        ),
+        now,
+    )
+
+
+def _assumed_depart(depart_at: datetime) -> str:
+    return f"출발 시각 미입력: {depart_at.month}월 {depart_at.day}일 오전 8시(KST) 출발로 가정"
+
+
+def _time_leak_cause(now: datetime, payload: CarLeakCheckRequest) -> str:
+    """돈이 새는 까닭을 지금 시간대에 맞게 말한다.
+
+    지금이 경부하(가장 싼 시간대)여도, 바로 충전하면 뒤이은 중간·최대부하까지
+    이어져서 새는 경우가 있다 (예: 평일 07:00 시작). 그때 "지금은 비싼 시간"이라고
+    말하면 사실과 다르다.
+    """
+    band = price_at(now, payload.mode, get_tariff(), get_holidays()).band
+    if band == "light":
+        return "지금 바로 충전하면 비싼 시간대까지 이어져서 돈이 새고 있어요."
+    return "지금은 요금이 비싼 시간이라 돈이 새고 있어요."
 
 
 # ---------------------------------------------------------------------------
