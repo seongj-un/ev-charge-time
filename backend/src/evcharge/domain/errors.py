@@ -3,7 +3,16 @@ class DomainError(Exception):
 
 
 class TariffConfigError(DomainError):
-    """요금 설정 파일 자체가 잘못됐다. 앱 기동 시점에 터뜨린다."""
+    """설정 파일(요금, 공휴일, 공공 충전 단가) 자체가 잘못됐다.
+
+    문구에는 파일 경로가 들어갈 수 있어 로그에만 쓴다. 응답에는 ``source``에 맞는 일반
+    문구를 쓴다(``api/errors.py``).
+    """
+
+    def __init__(self, message: str, *, source: str = "tariff") -> None:
+        super().__init__(message)
+        # "tariff" | "holidays" | "public_prices"
+        self.source = source
 
 
 class TariffNotConfiguredError(DomainError):

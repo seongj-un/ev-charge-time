@@ -8,6 +8,14 @@ from ..domain.errors import DomainError, TariffConfigError
 
 logger = logging.getLogger(__name__)
 
+# 설정 파일 오류의 응답 문구. 예외 문구(파일 경로 포함)는 로그에만 남긴다.
+CONFIG_ERROR_DETAILS = {
+    "tariff": "요금 설정을 읽지 못했습니다.",
+    "holidays": "공휴일 설정을 읽지 못했습니다.",
+    "public_prices": "공공 충전 단가 설정을 읽지 못했습니다.",
+}
+CONFIG_ERROR_FALLBACK = "서버 설정을 읽지 못했습니다."
+
 
 def register_error_handlers(app: FastAPI) -> None:
     """도메인 예외를 HTTP로 옮긴다.
@@ -18,8 +26,11 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(TariffConfigError)
     def _tariff_config_error(request: Request, exc: TariffConfigError) -> JSONResponse:
-        # 설정 파일이 잘못된 것은 서버 잘못이지 요청 잘못이 아니다
-        return JSONResponse(status_code=500, content={"detail": str(exc)})
+        # 설정 파일이 잘못된 것은 서버 잘못이지 요청 잘못이 아니다. 예외 문구에는 서버
+        # 경로가 들어 있어 운영자만 보도록 로그에 남기고, 응답에는 일반 문구를 쓴다.
+        logger.error("설정 파일 오류 (%s): %s", exc.source, exc)
+        detail = CONFIG_ERROR_DETAILS.get(exc.source, CONFIG_ERROR_FALLBACK)
+        return JSONResponse(status_code=500, content={"detail": detail})
 
     @app.exception_handler(DomainError)
     def _domain_error(request: Request, exc: DomainError) -> JSONResponse:

@@ -33,15 +33,26 @@ class YamlHolidayProvider:
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
-            raise TariffConfigError(f"공휴일 설정 파일이 없습니다: {path}") from exc
+            raise TariffConfigError(
+                f"공휴일 설정 파일이 없습니다: {path}", source="holidays"
+            ) from exc
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            raise TariffConfigError(
+                f"공휴일 설정 파일을 읽지 못했습니다: {path} ({type(exc).__name__})",
+                source="holidays",
+            ) from exc
 
         raw = raw or {}
+        if not isinstance(raw, dict):
+            raise TariffConfigError(
+                f"공휴일 설정 파일의 최상위가 매핑이 아닙니다: {path}", source="holidays"
+            )
         days = frozenset(_as_date(key) for key in raw.get("holidays") or {})
         years = frozenset(int(year) for year in raw.get("years") or [])
         stray = sorted({day.year for day in days} - years)
         if stray:
             raise TariffConfigError(
-                f"공휴일 설정의 years에 없는 연도의 날짜가 있습니다: {stray}"
+                f"공휴일 설정의 years에 없는 연도의 날짜가 있습니다: {stray}", source="holidays"
             )
         return cls(days=days, years=years)
 
