@@ -376,3 +376,134 @@ def test_the_cache_the_sync_writes_fills_in_the_favorites_screen(client, db_sess
     # 거리는 요청 좌표가 있어야 나오는 값이라 캐시에 넣지 않는다 — 즐겨찾기
     # 화면은 위치를 묻지 않으므로 null이 맞다.
     assert favorite["distance_m"] is None
+
+
+# ---------------------------------------------------------------------------
+# available_only · min_kw 필터 (와트잇 BE-2 "충전 실패 피하기")
+# ---------------------------------------------------------------------------
+
+
+def _ids(response) -> list[str]:
+    assert response.status_code == 200
+    return [station["station_id"] for station in response.json()]
+
+
+def _seed_mixed(db_session) -> None:
+    """빈 충전기·출력이 서로 다른 충전소들. 가까운 순서는 이 순서다."""
+    _cache(db_session, "ST-FREE-SLOW", HERE, chargers=[_charger("01", status="2", capacity_kw=7)])
+    _cache(
+        db_session,
+        "ST-SPLIT",
+        (HERE[0] + 0.002, HERE[1]),
+        # 7kW는 비었고 100kW는 충전중이다.
+        chargers=[
+            _charger("01", status="2", capacity_kw=7),
+            _charger("02", status="3", capacity_kw=100),
+        ],
+    )
+    _cache(
+        db_session,
+        "ST-FREE-FAST",
+        (HERE[0] + 0.004, HERE[1]),
+        chargers=[_charger("01", status="2", capacity_kw=100)],
+    )
+    _cache(
+        db_session,
+        "ST-BUSY",
+        (HERE[0] + 0.006, HERE[1]),
+        chargers=[_charger("01", status="3", capacity_kw=50), _charger("02", status="5")],
+    )
+    _cache(db_session, "ST-EMPTY", NEAR, chargers=[])
+
+
+def test_defaults_return_exactly_what_they_did_before(client, db_session):
+    _seed_mixed(db_session)
+
+    plain = _get(client)
+    explicit = _get(client, available_only="false")
+
+    assert _ids(plain) == ["ST-FREE-SLOW", "ST-SPLIT", "ST-FREE-FAST", "ST-BUSY", "ST-EMPTY"]
+    assert explicit.json() == plain.json()
+
+
+def test_available_only_keeps_stations_with_a_waiting_charger(client, db_session):
+    _seed_mixed(db_session)
+
+    response = _get(client, available_only="true")
+
+    assert _ids(response) == ["ST-FREE-SLOW", "ST-SPLIT", "ST-FREE-FAST"]
+    # 남긴 충전소의 충전기는 충전중인 것까지 전부 보인다. 상태 코드는 원문 그대로다.
+    split = response.json()[1]
+    assert [(c["charger_id"], c["status"]) for c in split["chargers"]] == [("01", "2"), ("02", "3")]
+
+
+def test_min_kw_keeps_stations_with_a_charger_at_least_that_fast(client, db_session):
+    _seed_mixed(db_session)
+
+    assert _ids(_get(client, min_kw=50)) == ["ST-SPLIT", "ST-FREE-FAST", "ST-BUSY"]
+    # 경계: 같은 출력이면 남긴다.
+    assert _ids(_get(client, min_kw=100)) == ["ST-SPLIT", "ST-FREE-FAST"]
+    assert _ids(_get(client, min_kw=100.5)) == []
+
+
+def test_both_filters_must_hold_on_the_same_charger(client, db_session):
+    _seed_mixed(db_session)
+
+    # ST-SPLIT는 빈 7kW와 충전중인 100kW라, 각 조건만 따로 보면 남지만 같이 보면 빠진다.
+    assert _ids(_get(client, available_only="true", min_kw=50)) == ["ST-FREE-FAST"]
+
+
+def test_charger_type_joins_the_same_charger_rule(client, db_session):
+    _cache(
+        db_session,
+        "ST-MIXED",
+        HERE,
+        # 02(AC완속)는 비었고 06은 충전중이다.
+        chargers=[
+            _charger("01", charger_type="02", status="2", capacity_kw=7),
+            _charger("02", charger_type="06", status="3", capacity_kw=50),
+        ],
+    )
+
+    # charger_type 하나만 주면 지금과 같다.
+    assert _ids(_get(client, charger_type="06")) == ["ST-MIXED"]
+    assert _ids(_get(client, charger_type="06", available_only="true")) == []
+    assert _ids(_get(client, charger_type="02", available_only="true")) == ["ST-MIXED"]
+
+
+def test_no_station_matching_with_a_filled_cache_is_an_empty_200(client, db_session):
+    _seed_mixed(db_session)
+
+    response = _get(client, available_only="true", min_kw=200)
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_filters_on_an_empty_cache_still_say_it_is_not_collected(client):
+    assert _get(client, available_only="true").status_code == 503
+
+
+def test_unreadable_capacity_never_matches_min_kw(client, db_session):
+    _cache(
+        db_session,
+        "ST-ODD",
+        HERE,
+        chargers=[
+            _charger("01", capacity_kw=0.0),
+            {**_charger("02"), "capacity_kw": "NaN"},
+            {**_charger("03"), "capacity_kw": None},
+        ],
+    )
+    _cache(db_session, "ST-OK", NEAR, chargers=[_charger("01", capacity_kw="50")])
+
+    assert _ids(_get(client, min_kw=1)) == ["ST-OK"]
+
+
+@pytest.mark.parametrize("min_kw", ["0", "-1", "1001", "nan", "inf", "-inf", "Infinity", "fast"])
+def test_min_kw_out_of_range_is_422(client, min_kw):
+    assert _get(client, min_kw=min_kw).status_code == 422
+
+
+def test_available_only_must_be_a_boolean(client):
+    assert _get(client, available_only="maybe").status_code == 422
