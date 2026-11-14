@@ -267,6 +267,14 @@ IP가 다시 발급할 때 재사용되어 따로 정리하지 않는다.
 | `created_at` | datetime | 대기 기록을 만든 시각 |
 | `confirmed_at` | datetime | 처음 확정한 시각. 다시 불러도 바뀌지 않는다(멱등) |
 
+확정 남용 막기(토큰 하나로 "계산 → 확정"을 되풀이해 합계와 DB 행을 늘리지 못하게):
+
+- 기록을 만든 뒤 `CAR_SAVINGS_CONFIRM_WINDOW_HOURS`(기본 72, car/plan 계산 구간 상한과 같음)
+  시간이 지나면 410. 기한은 DB 시계로 잰다.
+- 기기당 KST 하루 `CAR_SAVINGS_DAILY_CONFIRM_MAX`(기본 3)건까지. 넘으면 429와 다음 날 0시(KST)까지의
+  `Retry-After`(초). 기기 행을 잡고 세므로 병렬 요청으로도 넘을 수 없다.
+- 이미 확정된 기록을 다시 부르면 기한·한도와 상관없이 200이고 한도를 쓰지 않는다.
+
 ### `GET /api/car/savings/summary?month=YYYY-MM` 합산
 
 `Authorization: Bearer <device_token>` 필수. `month`를 빼면 서버 현재 시각의 KST 달. 200:
@@ -298,7 +306,9 @@ IP가 다시 발급할 때 재사용되어 따로 정리하지 않는다.
 | --- | --- | --- |
 | 401 | confirm·summary에 토큰이 없거나 틀림 | `{"detail": "..."}`, `WWW-Authenticate: Bearer` |
 | 404 | confirm할 기록이 없음(다른 기기의 기록, 20개 상한으로 지워진 대기 기록, UUID가 아닌 id 포함) | `{"detail": "절감 기록을 찾을 수 없습니다."}` |
-| 422 | `month` 형식 오류 | `{"detail": "month는 YYYY-MM 형식이어야 합니다."}` |
+| 410 | 만든 지 72시간이 지난 기록을 확정 | `{"detail": "이 기록은 확정할 수 있는 기간(72시간)이 지났습니다."}` |
+| 422 | `month` 형식 오류(연도는 1~9998) | `{"detail": "month는 YYYY-MM 형식이어야 합니다."}` |
+| 429 | confirm 하루 한도 초과 | `{"detail": "오늘 확정할 수 있는 횟수(3건)를 다 썼습니다. 내일 다시 확정해 주세요."}`, `Retry-After` |
 | 429 | 기기 발급 IP 한도 초과 | `{"detail": "..."}`, `Retry-After` |
 
 ## `GET /api/chargers` 빈 충전기만 찾기 ("충전 실패 피하기")
