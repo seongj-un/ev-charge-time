@@ -1,0 +1,39 @@
+# 공공 충전기 결제 방식별 평균 단가 (와트잇 BE-4 "돈이 새고 있어요", place=public).
+#
+# 1차 자료: 한국소비자원 보도자료 2025-12-17
+#   「전기차 충전요금, 사업자별 차이 커 소비자 정보제공 시급」
+#   충전기 보급 대수 기준 상위 20개 충전사업자의 요금 평균값.
+#   원문 게재처(강원특별자치도 소비생활센터 재게시): https://consumer.gwd.go.kr/board_news/76316
+#   (2026-11-15 이 서버에서는 접속되지 않아 검색 결과의 본문 발췌로 대조했다.)
+#
+# 개별 사업자 요금이 아니라 **20개 사업자 평균**이다. 그래서 이 값으로 낸 금액은
+# 응답과 문장에서 항상 "사업자 평균 기준 추정"이라고 밝힌다.
+#
+# 단위: 원/kWh. 회원가 = 그 사업자 회원, 로밍가 = 다른 사업자 회원이 이 사업자
+# 충전기를 쓸 때, 비회원가 = 회원 아님.
+#
+# status 의미는 tariff.yaml과 같다 (verified / derived / unverified). 같은 로더
+# (domain/tariff.py)로 읽는다.
+
+version: "2025.12.17-kca"
+
+slow:
+  value:
+    member: 293.3
+    roaming: 397.9
+    nonmember: 446.0
+  source: "한국소비자원 보도자료 2025-12-17 (20개 사업자 완속 평균). 보도자료 본문 발췌
+    (consumer.gwd.go.kr/board_news/76316)와 경향신문 https://www.khan.co.kr/article/202512171543011 ,
+    뉴시스 https://www.newsis.com/view/NISX20251216_0003443559 , 전자신문
+    https://www.etnews.com/20251217000122 보도가 같은 값"
+  status: verified
+
+fast:
+  value:
+    member: 358.1
+    roaming: 418.5
+    nonmember: 466.5
+  source: "한국소비자원 2025-12-17 발표 급속 평균을 전한 경향신문 보도
+    https://www.khan.co.kr/article/202512171543011 . 보도자료 본문 발췌와 다른 보도에는
+    급속 평균 숫자가 없어(\"회원가·로밍가·비회원가 순\"만 있음) 한 곳에서만 확인했다"
+  status: unverified

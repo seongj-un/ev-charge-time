@@ -1,7 +1,7 @@
 from pathlib import Path
 from urllib.parse import unquote
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     postgres_db: str = "evcharge"
     tariff_path: Path = BACKEND_ROOT / "config" / "tariff.yaml"
     holidays_path: Path = BACKEND_ROOT / "config" / "holidays.yaml"
+    # 와트잇 BE-4 공공 충전기 결제 방식별 평균 단가 (출처·상태는 파일 안에 있다)
+    public_prices_path: Path = BACKEND_ROOT / "config" / "public_charging_prices.yaml"
+
+    # 와트잇 BE-4 "돈이 새고 있어요": 새는 금액이 이 값(원) 이상일 때만 알린다.
+    # 몇십~몇백 원 차이로 운전 중에 말을 거는 것은 편의성(1순위)을 해친다.
+    car_leak_min_won: int = Field(default=500, ge=0)
 
     # 인증 (infra/security.py, api/auth_deps.py)
     cookie_secure: bool = False

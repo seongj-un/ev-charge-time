@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import NoReturn
 
 from fastapi.exceptions import RequestValidationError
 
@@ -105,29 +106,33 @@ def compute_car_plan(payload: CarPlanRequest, now: datetime) -> CarPlanResponse:
 def _check_window(payload: CarPlanRequest, plug_in_at: datetime, now: datetime) -> None:
     """``plug_in_at``은 ``now``로 당긴 뒤의 값이다. 오류 문장은 실제로 쓴 기준을 말한다."""
     if payload.depart_at <= now:
-        _reject("depart_at", "depart_at은 현재 시각보다 뒤여야 합니다.", payload.depart_at)
+        reject_field("depart_at", "depart_at은 현재 시각보다 뒤여야 합니다.", payload.depart_at)
     from_now = plug_in_at == now
     if payload.depart_at <= plug_in_at:
-        _reject("depart_at", "depart_at은 plug_in_at보다 뒤여야 합니다.", payload.depart_at)
+        reject_field("depart_at", "depart_at은 plug_in_at보다 뒤여야 합니다.", payload.depart_at)
     if payload.depart_at - plug_in_at > MAX_CAR_PLAN_SPAN:
         start = "현재 시각" if from_now else "plug_in_at"
         hours = int(MAX_CAR_PLAN_SPAN.total_seconds() // 3600)
-        _reject(
+        reject_field(
             "depart_at",
             f"{start}과 depart_at 사이는 {hours}시간을 넘을 수 없습니다.",
             payload.depart_at,
         )
 
 
-def _reject(field: str, message: str, value: datetime) -> None:
-    """FastAPI 기본 검증 오류와 같은 모양(``detail`` 배열)의 422를 낸다."""
+def reject_field(field: str, message: str, value: object) -> NoReturn:
+    """FastAPI 기본 검증 오류와 같은 모양(``detail`` 배열)의 422를 낸다.
+
+    스키마 밖에서 하는 검사(서버 현재 시각에 기대는 시각 검사, 다른 필드에 따라
+    필수가 되는 필드)가 스키마 오류와 같은 본문을 내게 한다.
+    """
     raise RequestValidationError(
         [
             {
                 "type": "value_error",
                 "loc": ("body", field),
                 "msg": message,
-                "input": value.isoformat(),
+                "input": value.isoformat() if isinstance(value, datetime) else value,
             }
         ]
     )
@@ -180,7 +185,7 @@ def compose_plan_speech(
 
 def compose_no_charge_speech(soc_now: float, soc_target: float) -> str:
     return (
-        f"잔량 {_percent(soc_now)}가 목표 {_percent(soc_target)} 이상이라 "
+        f"잔량 {spoken_percent(soc_now)}가 목표 {spoken_percent(soc_target)} 이상이라 "
         "충전하지 않아도 됩니다."
     )
 
@@ -201,8 +206,13 @@ def spoken_range(start: datetime, end: datetime, now: datetime) -> str:
         end_parts.append(end_period)
     end_parts.append(_clock_only(end))
 
-    start_text = f"{start_day} {spoken_clock(start)}"
+    start_text = spoken_moment(start, now)
     return f"{start_text}부터 {' '.join(end_parts)}까지"
+
+
+def spoken_moment(moment: datetime, now: datetime) -> str:
+    """날까지 붙인 시각: "오늘 밤 10시", "내일 0시 29분"."""
+    return f"{_day_label(moment, now)} {spoken_clock(moment)}"
 
 
 def spoken_clock(moment: datetime) -> str:
@@ -250,6 +260,6 @@ def _day_label(moment: datetime, now: datetime) -> str:
     return relative or f"{local.month}월 {local.day}일"
 
 
-def _percent(value: float) -> str:
+def spoken_percent(value: float) -> str:
     """85.0 → "85%", 32.46 → "32.5%". 요청 값을 소수 첫째 자리까지만 읽는다."""
     return f"{round(value, 1):g}%"

@@ -426,3 +426,49 @@ class CarPlanResponse(BaseModel):
     speech: str
     assumptions: list[str]
     unverified_tariff_items: list[str]
+
+
+class CarLeakCheckRequest(BaseModel):
+    """``POST /api/car/leak-check`` 요청. 계약: docs/car-api.md.
+
+    ``place``에 따라 쓰는 필드가 다르다. home은 ``depart_at``·``mode``를, public은
+    ``payment``·``charger_speed``를 쓰고 다른 쪽 필드는 무시한다. public에서
+    ``payment``·``charger_speed``가 빠졌는지는 서비스(``car_leak_service``)가 보고
+    필드 위치를 담은 422를 낸다.
+    """
+
+    place: Literal["home", "public"] = "home"
+    soc_now: float = Field(ge=0, lt=100, allow_inf_nan=False)
+    battery_capacity_wh: float = Field(
+        ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
+    )
+    soc_target: float = Field(default=80, gt=0, le=100, allow_inf_nan=False)
+    charger_kw: float = Field(default=7.0, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
+    depart_at: datetime | None = None
+    mode: Mode = "self_low"
+    payment: Literal["member", "roaming", "nonmember"] | None = None
+    charger_speed: Literal["slow", "fast"] | None = None
+
+    @field_validator("depart_at")
+    @classmethod
+    def _normalize_to_kst(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=KST)
+        return value.astimezone(KST)
+
+
+class CarLeakCheckResponse(BaseModel):
+    leaking: bool
+    leak_won: int
+    cause: Literal["time", "payment"] | None = None
+    energy_kwh: float
+    # home에서 돈이 샐 때만: 가장 싼 구간과 차량 예약 충전 값 (car/plan과 같은 모양)
+    plan: ChargePlanOut | None = None
+    reservation: ReservationOut | None = None
+    # public일 때만: 지금 결제 방식과 회원가의 사업자 평균 단가(원/kWh)
+    unit_price_now: float | None = None
+    unit_price_member: float | None = None
+    speech: str
+    assumptions: list[str]

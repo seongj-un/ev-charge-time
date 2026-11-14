@@ -37,12 +37,20 @@ uv run uvicorn evcharge.main:app --reload
 | `GET /api/solar-forecast` | F-09 태양광 예측 | 구현 (키 필요) |
 | `POST /api/chat` | F-10 자연어 질의 | 구현 (키 필요) |
 | `POST /api/car/plan` | 차량 앱: 충전 계획·예약 충전 값·TTS 문장 | 구현 |
+| `POST /api/car/leak-check` | 차량 앱: "돈이 새고 있어요" 알림 (시간대·결제 방식) | 구현 |
 
 **기능 명세의 F-01~F-14가 전부 구현됐다.** 스텁으로 남은 엔드포인트는 없다.
 
 `/api/car/*`는 차량용 앱(Pleos Connect, 현대자동차그룹 공모전)이 부르는 API다. 로그인 없이
 쓰고, 서버는 가장 싼 충전 구간과 차량 기본 예약 충전에 넣을 시각만 계산한다 — 충전을 직접
 켜고 끄지 않는다. 필드, 반올림 규칙, 오류는 [docs/car-api.md](docs/car-api.md)에 있다.
+
+`POST /api/car/leak-check`는 충전 중에 돈이 새고 있는지 알려 준다. 집·회사 완속은
+지금 바로 충전과 출발 전 최저 구간의 차이를, 공공 충전기는 로밍가·비회원가와 회원가의
+차이를 본다. 공공 단가는 한국소비자원 2025-12-17 발표 20개 사업자 **평균**이라 개별
+사업자 요금과 다를 수 있고, 응답과 문장에 "사업자 평균 기준 추정"이라고 밝힌다. 단가와
+출처는 `config/public_charging_prices.yaml`에 있다(급속 평균은 한 보도에서만 확인해
+`unverified`). 새는 금액이 `CAR_LEAK_MIN_WON`(기본 500원) 이상일 때만 알린다.
 
 세 엔드포인트는 외부 자격증명이 있어야 동작하고, 없으면 각자 501을 낸다.
 키 없이도 나머지 기능은 전부 돈다 — 기동 시점에 막지 않는다.
@@ -206,7 +214,7 @@ backend/src/evcharge/
 │   ├── charger_sync.py   응답 → 공유 캐시         (F-07)
 │   └── llm.py            Gemini 호출기            (F-10)
 └── sync.py     `python -m evcharge.sync` 수집 진입점
-backend/config/  tariff.yaml · holidays.yaml
+backend/config/  tariff.yaml · holidays.yaml · public_charging_prices.yaml
 ```
 
 요금 계산이 이 프로젝트에서 가장 자주 바뀌고 가장 검증이 필요한 부분이라
