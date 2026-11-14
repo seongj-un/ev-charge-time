@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from .api.errors import register_error_handlers
 from .api.routes import (
     auth,
+    car,
     chargers,
     extensions,
     health,
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(timeline.router)
     app.include_router(recommend.router)
+    app.include_router(car.router)  # 차량 앱 (Pleos Connect), docs/car-api.md
     app.include_router(me_vehicles.router)
     app.include_router(me_plans.router)  # F-13 충전 기록. me.router보다 먼저 등록.
 
