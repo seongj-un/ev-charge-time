@@ -1,7 +1,8 @@
 # 차량 앱 API (`/api/car/*`)
 
 현대자동차그룹 차량용 앱 개발 공모전(Pleos Connect, Android Automotive)용 차량 앱이
-부르는 API. 차량 앱은 로그인 없이(게스트) 쓰고, `/api/car/*`는 DB를 쓰지 않는다.
+부르는 API. 차량 앱은 로그인 없이(게스트) 쓴다. 계산 엔드포인트(`car/plan`, `car/leak-check`)는
+기기 토큰 없이 부르면 DB를 쓰지 않는다. 절감 기록(아래 "절감 리포트" 절)만 기기 토큰과 DB를 쓴다.
 주변 충전소는 기존 `GET /api/chargers`를 그대로 쓴다 (맨 아래 절).
 
 핵심 원칙
@@ -46,6 +47,7 @@
 | `speech` | string | TTS가 그대로 읽을 한국어 문장 |
 | `assumptions` | string[] | 계산 전제. `needs_charging=false`면 빈 배열 |
 | `unverified_tariff_items` | string[] | 아직 공식 근거를 못 찾은 요금 항목 (`/health`와 같음) |
+| `saving_id` | string \| null | 기기 토큰과 함께 왔고 `savings_won > 0`이라 대기 절감 기록을 만들었을 때만. 아래 "절감 리포트" 절 |
 
 ChargePlanOut: `start`, `end`(KST datetime), `energy_kwh`, `cost_won`, `discounted_kwh`.
 
@@ -169,6 +171,7 @@ home에서는 `payment`·`charger_speed`를, public에서는 `depart_at`·`mode`
 | `unit_price_member` | number \| null | public일 때만. 회원가 사업자 평균 단가(원/kWh) |
 | `speech` | string | TTS가 그대로 읽을 문장 |
 | `assumptions` | string[] | 계산 전제. public은 "사업자 평균 기준 추정"을 늘 포함하고, 급속이면 원문 대조 전이라는 줄이 붙는다 |
+| `saving_id` | string \| null | 기기 토큰과 함께 왔고 `leaking=true`라 대기 절감 기록을 만들었을 때만. 아래 "절감 리포트" 절 |
 
 `speech`:
 
@@ -205,6 +208,95 @@ home에서는 `payment`·`charger_speed`를, public에서는 `depart_at`·`mode`
 | 422 | 필드 범위·타입 오류, home의 `depart_at` 시각 오류 | FastAPI 검증 오류 `{"detail": [...]}`. 시각 오류의 `loc`은 `["body", "depart_at"]` |
 | 422 | public인데 `payment`나 `charger_speed`가 없음 | 같은 모양. `loc`은 `["body", "payment"]` 또는 `["body", "charger_speed"]`, `msg`는 "place가 public이면 payment가 필요합니다." |
 | 500 | public인데 단가 설정 파일이 잘못됨 | 서버 설정 오류. home은 이 파일을 읽지 않아 영향이 없다 |
+
+## 절감 리포트 (기기 토큰, 대기 → 확정 → 월·년 합산)
+
+1회 절감액만으로는 와닿지 않아서 달·해 합계를 보여 준다. 합계는 **"추천을 따랐을 때 아낀
+금액"(서버 계산값)**이고 실제 청구 요금이 아니다. 응답의 `note`가 늘 이 말을 한다.
+
+흐름
+
+1. 앱 설치 때 `POST /api/car/devices`로 기기 토큰을 한 번 받는다. 개인정보는 받지 않는다.
+2. `car/plan`·`car/leak-check`를 `Authorization: Bearer <device_token>`과 함께 부르면, 아끼는
+   돈이 있을 때(`savings_won > 0` / `leaking=true`) 서버가 **대기** 기록을 만들고 응답에
+   `saving_id`를 붙인다.
+   - 토큰이 없으면 지금과 같은 응답이다(`saving_id: null`). DB를 열지 않는다.
+   - 토큰이 틀려도 계산은 그대로 돌려주고 기록만 하지 않는다(`saving_id: null`).
+   - 기록 중 DB 오류가 나도 계산은 그대로 나간다(`saving_id: null`, 서버 로그에 경고).
+3. 앱이 추천을 실제로 따른 것을 보면(예약 시각에 충전 시작을 Vehicle SDK로 확인, 운전자가
+   회원 결제로 바꿨다고 확인) `POST /api/car/savings/{saving_id}/confirm`으로 **확정**한다.
+4. `GET /api/car/savings/summary`가 확정된 기록만 더한다.
+
+규칙
+
+- 대기 기록은 기기당 최근 20개만 남고, 더 오래된 대기 기록은 새 기록을 만들 때 지워진다.
+  확정된 기록은 지우지 않는다.
+- 기록 한 건은 최대 100,000원이다(넘으면 100,000원으로 저장). 공개 엔드포인트라 합계를
+  부풀리는 입력을 막는다.
+- 원인(`cause`)은 car/plan이면 `time`, car/leak-check면 응답의 `cause`(`time`·`payment`)다.
+  같은 상황에 두 엔드포인트를 다 부르면 대기 기록이 두 건 생기므로, 앱은 실제로 따른 쪽
+  하나만 확정한다.
+
+### `POST /api/car/devices` 기기 토큰 발급
+
+본문 없음. 201:
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `device_id` | string | UUID |
+| `device_token` | string | 이 응답에서만 보인다(`Cache-Control: no-store`). 서버는 sha256만 저장한다 |
+
+IP마다 `CAR_DEVICE_RATE_LIMIT_WINDOW_MINUTES`(기본 60)분에 `CAR_DEVICE_RATE_LIMIT_COUNT`(기본
+10)번까지다. 넘으면 429와 `Retry-After`(초). 운영에서는 Caddy 뒤라 `FORWARDED_ALLOW_IPS`로
+Caddy의 `X-Forwarded-For`를 믿게 해야 실제 클라이언트 IP로 센다(`docker-compose.prod.yml`).
+
+### `POST /api/car/savings/{saving_id}/confirm` 확정
+
+`Authorization: Bearer <device_token>` 필수. 200:
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `saving_id` | string | |
+| `cause` | string | `time`, `payment` |
+| `savings_won` | int | 서버 계산값(원) |
+| `energy_kwh` | number | |
+| `source` | string | `plan`, `leak_check` |
+| `created_at` | datetime | 대기 기록을 만든 시각 |
+| `confirmed_at` | datetime | 처음 확정한 시각. 다시 불러도 바뀌지 않는다(멱등) |
+
+### `GET /api/car/savings/summary?month=YYYY-MM` 합산
+
+`Authorization: Bearer <device_token>` 필수. `month`를 빼면 서버 현재 시각의 KST 달. 200:
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `month` | string | `YYYY-MM` |
+| `month_won`, `month_count` | int | 그 달(KST)에 **확정된** 기록의 합계·건수 |
+| `year` | int | `month`의 해 |
+| `year_won`, `year_count` | int | 그해(KST)에 확정된 기록의 합계·건수 |
+| `total_won` | int | 이 기기의 확정 기록 전체 합계 |
+| `by_cause` | object | `{time_won, payment_won}`. 전체 기간(`total_won`)을 원인별로 나눈 값 |
+| `speech` | string | 시동을 켤 때 읽을 한 줄 |
+| `note` | string | "추천을 따랐을 때 아낀 금액(서버 계산값)이며 실제 청구 요금과 다를 수 있습니다." |
+
+달·해는 확정 시각(`confirmed_at`)을 KST로 본다. `/api/me/plans/summary`와 같은 달 경계 함수
+(`api/months.py`)를 쓴다.
+
+`speech`:
+
+- 그 달 기록이 있음: "이번 달 와트잇으로 약 8,400원, 올해 약 52,000원 아꼈어요." 다른 달이면
+  "11월 …", 다른 해면 "2026년 12월 와트잇으로 약 …원, 2026년 한 해 약 …원 아꼈어요."
+- 그 달 기록은 없고 전에 있음: "2월에는 아낀 기록이 없어요. 지금까지 와트잇으로 약 9,600원 아꼈어요."
+- 기록이 하나도 없음: "아직 아낀 기록이 없어요. 와트잇 추천대로 충전하면 여기에 쌓여요."
+
+### 오류
+
+| 상태 | 언제 | 본문 |
+| --- | --- | --- |
+| 401 | confirm·summary에 토큰이 없거나 틀림 | `{"detail": "..."}`, `WWW-Authenticate: Bearer` |
+| 404 | confirm할 기록이 없음(다른 기기의 기록, 20개 상한으로 지워진 대기 기록, UUID가 아닌 id 포함) | `{"detail": "절감 기록을 찾을 수 없습니다."}` |
+| 422 | `month` 형식 오류 | `{"detail": "month는 YYYY-MM 형식이어야 합니다."}` |
+| 429 | 기기 발급 IP 한도 초과 | `{"detail": "..."}`, `Retry-After` |
 
 ## `GET /api/chargers` 빈 충전기만 찾기 ("충전 실패 피하기")
 
