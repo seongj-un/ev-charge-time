@@ -516,3 +516,109 @@ class CarSavingsSummary(BaseModel):
     by_cause: CarSavingsByCause
     speech: str
     note: str
+
+
+# ---------------------------------------------------------------------------
+# 와트잇 음성 대화 (BE-3) — 계약: docs/car-api.md
+# ---------------------------------------------------------------------------
+
+VOICE_TEXT_MAX = 500
+VOICE_HISTORY_MAX = 6
+
+
+class CarVoiceContext(BaseModel):
+    """앱이 Pleos SDK로 읽어 보내는 차량 상태. 도구의 차량 값은 전부 여기서 온다."""
+
+    soc_now: float = Field(ge=0, le=100, allow_inf_nan=False)
+    battery_capacity_wh: float = Field(
+        ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
+    )
+    lat: float | None = Field(default=None, ge=-90, le=90, allow_inf_nan=False)
+    lng: float | None = Field(default=None, ge=-180, le=180, allow_inf_nan=False)
+    # NaviHelper의 목적지 도착 예상 잔량(%)
+    arrival_soc: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    # NaviHelper의 목적지 도착 예정 시각. 충전 계획의 꽂는 시각으로 쓴다. 지금부터 24시간
+    # 안이어야 한다(라우터가 서버 시각으로 검사). 이미 지났으면 지금으로 본다.
+    arrival_at: datetime | None = None
+    charger_kw: float = Field(default=7.0, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
+    charging: bool | None = None
+    place: Literal["home", "public"] | None = None
+
+    @field_validator("arrival_at")
+    @classmethod
+    def _arrival_in_kst(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=KST)
+        return value.astimezone(KST)
+
+    @model_validator(mode="after")
+    def _lat_lng_together(self) -> CarVoiceContext:
+        if (self.lat is None) != (self.lng is None):
+            raise ValueError("lat과 lng는 함께 보내야 합니다.")
+        return self
+
+
+class CarVoiceTurn(BaseModel):
+    role: Literal["driver", "wattit"]
+    text: str = Field(min_length=1, max_length=VOICE_TEXT_MAX)
+
+
+class CarVoiceRequest(BaseModel):
+    """``POST /api/car/voice``. ``text``는 ``trigger``가 있을 때만 생략할 수 있다."""
+
+    text: str | None = Field(default=None, min_length=1, max_length=VOICE_TEXT_MAX)
+    trigger: Literal["arrival_briefing"] | None = None
+    history: list[CarVoiceTurn] = Field(default_factory=list, max_length=VOICE_HISTORY_MAX)
+    context: CarVoiceContext
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("text가 비어 있습니다.")
+        return value
+
+    @model_validator(mode="after")
+    def _text_or_trigger(self) -> CarVoiceRequest:
+        if self.text is None and self.trigger is None:
+            raise ValueError("text는 trigger가 없으면 필요합니다.")
+        return self
+
+
+class SetReservationAction(BaseModel):
+    """차량 기본 예약 충전에 넣을 값을 화면에 보여 준다(앱이 충전을 켜고 끄지 않는다)."""
+
+    type: Literal["set_reservation"] = "set_reservation"
+    start_hhmm: str
+    end_hhmm: str
+
+
+class NavigateAction(BaseModel):
+    type: Literal["navigate"] = "navigate"
+    station_id: str
+    name: str
+    lat: float
+    lng: float
+
+
+class AskAction(BaseModel):
+    """앱이 TTS로 읽은 뒤 바로 마이크를 열어 답을 받는다."""
+
+    type: Literal["ask"] = "ask"
+    question: str
+
+
+CarVoiceAction = Annotated[
+    SetReservationAction | NavigateAction | AskAction, Field(discriminator="type")
+]
+
+
+class CarVoiceResponse(BaseModel):
+    speech: str
+    actions: list[CarVoiceAction]
+    # Claude의 문장을 버리고 서버 문장으로 대신했으면 true
+    fallback: bool
+    # plan_charge·leak_check 도구가 대기 절감 기록을 만들었으면 (BE-5)
+    saving_id: str | None = None

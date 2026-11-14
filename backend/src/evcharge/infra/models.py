@@ -330,3 +330,71 @@ class CarDeviceRateLimit(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class CarVoiceRateLimit(Base):
+    """음성 대화(``POST /api/car/voice``)의 기기별 하루(KST) 카운터 (BE-3).
+
+    ``ChatRateLimit``과 같은 방식이다: 기기당 한 행, UPSERT 한 문장으로 같은 날이면
+    +1, 날이 바뀌었으면 1 (``api/car_voice_quota.py``).
+    """
+
+    __tablename__ = "car_voice_rate_limits"
+
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("car_devices.id", ondelete="CASCADE"), primary_key=True
+    )
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class CarVoiceIpLimit(Base):
+    """음성 대화의 IP별 하루(KST) 카운터 (BE-3).
+
+    기기 토큰은 IP당 시간당 10개까지 받을 수 있어서, 기기 한도만으로는 IP 하나가 서비스
+    전체 한도를 몇 시간 만에 다 쓸 수 있다. 키는 ``car_device_rate_limits``와 같은 가명
+    처리 값(``api/car_devices.ip_key``, HMAC)이다.
+    """
+
+    __tablename__ = "car_voice_ip_limits"
+
+    ip_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class CarVoiceServiceQuota(Base):
+    """음성 대화의 서비스 전체 하루(KST) 카운터 (BE-3). ``ChatServiceQuota``와 같이 행은
+    ``id=1`` 하나뿐이다. 기기 토큰은 누구나 받을 수 있어서 기기별 한도만으로는 Claude
+    비용을 막지 못한다.
+    """
+
+    __tablename__ = "car_voice_service_quota"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

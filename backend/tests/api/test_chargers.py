@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from evcharge.api.auth_deps import SESSION_COOKIE
-from evcharge.api.routes.chargers import charger_api_key
+from evcharge.api.routes.chargers import charger_api_key, charger_summary, find_nearby
 from evcharge.domain.pricing import KST
 from evcharge.infra.models import ChargerCache, FavoriteStation, User
 from evcharge.infra.models import Session as SessionModel
@@ -507,3 +507,39 @@ def test_min_kw_out_of_range_is_422(client, min_kw):
 
 def test_available_only_must_be_a_boolean(client):
     assert _get(client, available_only="maybe").status_code == 422
+
+
+# ── find_nearby / charger_summary: 음성 대화 도구가 직접 부르는 함수 ──────────
+
+
+def test_find_nearby_matches_the_route_order_and_filters(client, db_session):
+    _cache(db_session, "FAR", FAR, chargers=[_charger(status="2", capacity_kw=100.0)])
+    _cache(db_session, "NEAR", NEAR, chargers=[_charger(status="3", capacity_kw=7.0)])
+    _cache(db_session, "HERE", HERE, chargers=[_charger(status="2", capacity_kw=7.0)])
+
+    every = find_nearby(db_session, lat=HERE[0], lng=HERE[1], radius_m=5_000)
+    free_fast = find_nearby(
+        db_session, lat=HERE[0], lng=HERE[1], radius_m=5_000, available_only=True, min_kw=50
+    )
+    route = _get(client, radius_m=5_000).json()
+
+    assert [row.station_id for _, row in every] == ["HERE", "NEAR", "FAR"]
+    assert [station["station_id"] for station in route] == ["HERE", "NEAR", "FAR"]
+    assert [row.station_id for _, row in free_fast] == ["FAR"]
+    assert round(every[1][0]) == route[1]["distance_m"]
+
+
+def test_charger_summary_counts_free_chargers_and_top_output(db_session):
+    _cache(
+        db_session,
+        "MIX",
+        HERE,
+        chargers=[
+            _charger("01", status=" 2 ", capacity_kw=7.0),
+            _charger("02", status="3", capacity_kw=100.0),
+            _charger("03", status="2", capacity_kw="nan"),
+        ],
+    )
+    row = db_session.get(ChargerCache, "MIX")
+
+    assert charger_summary(row) == (2, 100.0)

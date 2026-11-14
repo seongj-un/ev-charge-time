@@ -27,7 +27,14 @@ from evcharge.infra.db import Base
 BACKEND = Path(__file__).resolve().parents[2]
 DB_NAME = "evcharge_test_migrations"
 PREVIOUS = "e557028bf5dd"
-CAR_TABLES = {"car_devices", "car_savings", "car_device_rate_limits"}
+CAR_TABLES = {
+    "car_devices",
+    "car_savings",
+    "car_device_rate_limits",
+    "car_voice_rate_limits",
+    "car_voice_service_quota",
+    "car_voice_ip_limits",
+}
 
 
 def _url_with_db(url: str, name: str) -> str:
@@ -87,6 +94,20 @@ def test_car_tables_migrate_up_down_and_up_again(migration_db):
     tables = _tables(migration_db)
     assert not CAR_TABLES & tables
     assert {"users", "saved_plans", "chat_service_quota"} <= tables
+
+    command.upgrade(config, "head")
+    assert _tables(migration_db) >= CAR_TABLES
+
+
+def test_voice_quota_migration_goes_down_alone(migration_db):
+    """BE-3 리비전만 되돌리면 음성 카운터 두 테이블만 사라지고 BE-5 테이블은 남는다."""
+    config = _alembic()
+    command.upgrade(config, "head")
+
+    command.downgrade(config, "c4e8a1f2b7d3")
+    tables = _tables(migration_db)
+    assert not {"car_voice_rate_limits", "car_voice_service_quota", "car_voice_ip_limits"} & tables
+    assert {"car_devices", "car_savings", "car_device_rate_limits"} <= tables
 
     command.upgrade(config, "head")
     assert _tables(migration_db) >= CAR_TABLES

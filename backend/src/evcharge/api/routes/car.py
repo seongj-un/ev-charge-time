@@ -7,15 +7,25 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session as DbSession
 
 from ...domain.pricing import KST
+from ...infra.claude import AnthropicClaudeClient, ClaudeClient
 from ...infra.db import get_session
 from ...settings import get_settings
-from ..car_devices import client_ip, consume_device_quota, issue_device, require_device
+from ..car_devices import (
+    client_ip,
+    consume_device_quota,
+    ip_key,
+    issue_device,
+    require_device,
+)
 from ..car_leak_service import compute_leak_check
 from ..car_plan_service import compute_car_plan
 from ..car_savings import confirm, summarize, to_out, try_record
+from ..car_voice_quota import VoiceQuotaExceededError, consume_voice_quota
+from ..car_voice_service import arrival_briefing, check_arrival_at, converse
 from ..deps import get_public_prices
 from ..months import month_of
 from ..schemas import (
@@ -26,9 +36,13 @@ from ..schemas import (
     CarPlanResponse,
     CarSavingOut,
     CarSavingsSummary,
+    CarVoiceRequest,
+    CarVoiceResponse,
 )
 
 router = APIRouter(prefix="/api/car", tags=["car"])
+
+VOICE_NOT_READY = "음성 대화는 아직 준비 중이에요."
 
 
 def now_kst() -> datetime:
@@ -115,3 +129,66 @@ def savings_summary(
     summary = summarize(session, device, month or month_of(now), now)
     session.commit()  # last_seen_at
     return summary
+
+
+def anthropic_api_key() -> str:
+    """설정의 Claude 키. 테스트가 ``dependency_overrides``로 "키 있음/없음"을 정한다."""
+    return get_settings().anthropic_api_key
+
+
+def claude_client() -> ClaudeClient:
+    """실제 호출기. 테스트는 여기에 가짜를 꽂는다. SDK 클라이언트는 첫 호출에서 만든다."""
+    settings = get_settings()
+    return AnthropicClaudeClient(
+        api_key=settings.anthropic_api_key,
+        model=settings.claude_model,
+        workspace_id=settings.claude_workspace_id,
+    )
+
+
+def _spoken_error(status_code: int, speech: str, headers: dict[str, str] | None = None):
+    """음성 대화의 오류 본문. ``detail`` 옆에 TTS로 읽을 ``speech``를 같은 문장으로 둔다."""
+    return JSONResponse(
+        status_code=status_code, content={"detail": speech, "speech": speech}, headers=headers
+    )
+
+
+@router.post(
+    "/voice",
+    response_model=CarVoiceResponse,
+    responses={
+        401: {"description": "기기 토큰이 없거나 틀림"},
+        429: {"description": "기기별 또는 서비스 전체 하루 한도 초과 ({detail, speech})"},
+        501: {"description": "ANTHROPIC_API_KEY 미설정 ({detail, speech})"},
+    },
+)
+def car_voice(
+    payload: CarVoiceRequest,
+    request: Request,
+    session: DbSession = Depends(get_session),
+    api_key: str = Depends(anthropic_api_key),
+    client: ClaudeClient = Depends(claude_client),
+):
+    """음성 대화. 순서: 기기 토큰(401) → 귀가길 브리핑 첫 질문(200) → 키(501)
+    → 하루 한도(429, 기기 → IP → 서비스).
+
+    Claude 오류·시간 초과는 200과 서버 문장(``fallback=true``)이다. 운전 중 화면에 오류를
+    띄우지 않는다.
+    """
+    device = require_device(request, session)
+    session.commit()  # last_seen_at
+    now = now_kst()
+    check_arrival_at(payload.context, now)
+    if payload.text is None:
+        return arrival_briefing(payload.context)
+    if not api_key:
+        return _spoken_error(501, VOICE_NOT_READY)
+    try:
+        consume_voice_quota(session, device, ip_key(client_ip(request)), now)
+    except VoiceQuotaExceededError as exc:
+        return _spoken_error(
+            429,
+            exc.speech,
+            {"Retry-After": str(exc.retry_after), "X-RateLimit-Scope": exc.scope},
+        )
+    return converse(client, payload, session=session, device=device, now=now)

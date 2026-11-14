@@ -39,6 +39,7 @@ uv run uvicorn evcharge.main:app --reload
 | `POST /api/car/plan` | 차량 앱: 충전 계획·예약 충전 값·TTS 문장 | 구현 |
 | `POST /api/car/leak-check` | 차량 앱: "돈이 새고 있어요" 알림 (시간대·결제 방식) | 구현 |
 | `POST /api/car/devices`, `/api/car/savings/*` | 차량 앱: 기기 토큰, 절감 기록 확정, 월·년 합산 | 구현 |
+| `POST /api/car/voice` | 차량 앱: 음성 대화 (Claude tool use, 귀가길 브리핑) | 구현 (키 없으면 501) |
 
 **기능 명세의 F-01~F-14가 전부 구현됐다.** 스텁으로 남은 엔드포인트는 없다.
 
@@ -59,6 +60,12 @@ uv run uvicorn evcharge.main:app --reload
 발급은 IP별로 제한한다(`CAR_DEVICE_RATE_LIMIT_COUNT`/`_WINDOW_MINUTES`). 운영에서는 Caddy 뒤라
 `docker-compose.prod.yml`의 `FORWARDED_ALLOW_IPS`로 실제 클라이언트 IP를 받는다. IP는
 `CAR_IP_HASH_SECRET`(HMAC) 키로 가명 처리해 센다.
+
+음성 대화(`POST /api/car/voice`)는 `ANTHROPIC_API_KEY`가 있어야 하고(없으면 501, 귀가길
+브리핑 첫 질문만 200), 모델은 `CLAUDE_MODEL`(기본 `claude-haiku-5-5`)이다. Claude는 도구 4개
+(충전 계획, 빈 충전기, 돈이 새요, 절약 리포트)를 서버 함수로 부르고, 답의 숫자가 도구 결과에
+없으면 서버 문장으로 바꾼다(금액·잔량·시각을 단위별로 비교). 기기별·IP별·서비스 전체 하루
+한도는 `CAR_VOICE_DAILY_MAX`, `CAR_VOICE_IP_DAILY_MAX`, `CAR_VOICE_SERVICE_DAILY_MAX`다. 계약은 `docs/car-api.md`.
 
 세 엔드포인트는 외부 자격증명이 있어야 동작하고, 없으면 각자 501을 낸다.
 키 없이도 나머지 기능은 전부 돈다 — 기동 시점에 막지 않는다.
@@ -220,11 +227,14 @@ backend/src/evcharge/
 │   ├── car_leak_service.py "돈이 새고 있어요"       (차량 앱)
 │   ├── car_devices.py      기기 토큰·발급 한도       (차량 앱)
 │   ├── car_savings.py      절감 기록·월·년 합산      (차량 앱)
+│   ├── car_voice_service.py 음성 대화·도구·숫자 검증  (차량 앱)
+│   ├── car_voice_quota.py  음성 대화 하루 한도       (차량 앱)
 │   └── months.py           KST 달·해 경계            (F-13, 차량 앱)
 ├── infra/      SQLAlchemy 세션과 모델
 │   ├── charger_api.py    공공 충전소 API 호출     (F-07)
 │   ├── charger_sync.py   응답 → 공유 캐시         (F-07)
-│   └── llm.py            Gemini 호출기            (F-10)
+│   ├── llm.py            Gemini 호출기            (F-10)
+│   └── claude.py         Claude 호출기            (차량 앱 음성 대화)
 └── sync.py     `python -m evcharge.sync` 수집 진입점
 backend/config/  tariff.yaml · holidays.yaml · public_charging_prices.yaml
 ```

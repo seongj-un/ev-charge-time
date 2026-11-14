@@ -61,6 +61,14 @@ services:
       FORWARDED_ALLOW_IPS: "*"
       # 기기 발급 한도의 IP 키를 가명 처리하는 비밀값(HMAC). 비면 sha256 + 경고 로그.
       CAR_IP_HASH_SECRET: ${CAR_IP_HASH_SECRET:-}
+      # 와트잇 음성 대화(POST /api/car/voice). 키가 없으면 501(귀가길 브리핑 첫 질문만 200).
+      # 한도는 빈 값이면 숫자 변환에 실패해 백엔드가 뜨지 않으므로 기본값을 둔다.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-haiku-5-5}
+      CLAUDE_WORKSPACE_ID: ${CLAUDE_WORKSPACE_ID:-}
+      CAR_VOICE_DAILY_MAX: ${CAR_VOICE_DAILY_MAX:-60}
+      CAR_VOICE_IP_DAILY_MAX: ${CAR_VOICE_IP_DAILY_MAX:-120}
+      CAR_VOICE_SERVICE_DAILY_MAX: ${CAR_VOICE_SERVICE_DAILY_MAX:-2000}
 
   frontend:
     build:

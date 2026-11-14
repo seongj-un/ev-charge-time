@@ -18,6 +18,7 @@ dependencies = [
     # 프로덕션 의존성이다.
     "httpx>=0.28",
     "google-genai>=2.24.0",
+    "anthropic>=2.8.0",
 ]
 
 [dependency-groups]

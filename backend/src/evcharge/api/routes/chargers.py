@@ -92,6 +92,49 @@ def list_chargers(
             detail="주변 충전소 조회는 아직 준비되지 않았습니다. (충전소 API 인증키 미설정)",
         )
 
+    found = find_nearby(
+        session,
+        lat=lat,
+        lng=lng,
+        radius_m=radius_m,
+        charger_type=charger_type,
+        available_only=available_only,
+        min_kw=min_kw,
+    )
+
+    if not found and cache_is_empty(session):
+        # "주변에 충전소가 없다"와 "아직 수집하지 않았다"는 다른 말이다. 빈
+        # 목록으로 답하면 화면이 나주에 충전소가 없다고 말하게 된다.
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "충전소 정보를 아직 수집하지 않았습니다. "
+                "잠시 후 다시 시도해 주세요."
+            ),
+        )
+
+    favorites = _favorite_ids(session, user, [row.station_id for _, row in found])
+
+    return [
+        _to_station_out(row, distance, favorites if user is not None else None)
+        for distance, row in found
+    ]
+
+
+def find_nearby(
+    session: DbSession,
+    *,
+    lat: float,
+    lng: float,
+    radius_m: int,
+    charger_type: str | None = None,
+    available_only: bool = False,
+    min_kw: float | None = None,
+) -> list[tuple[float, ChargerCache]]:
+    """반경 안의 충전소를 가까운 순으로 (거리 m, 캐시 행). 필터 규칙은 위 쿼리 설명과 같다.
+
+    음성 대화(BE-3)의 ``find_chargers`` 도구도 HTTP를 거치지 않고 이 함수를 부른다.
+    """
     min_lat, min_lng, max_lat, max_lng = bounding_box(lat, lng, radius_m)
     # 1차 필터: 인덱스를 타는 범위 비교. 좌표가 없는 행(NULL)은 여기서 빠진다.
     candidates = session.scalars(
@@ -115,25 +158,18 @@ def list_chargers(
         if wanted.is_set() and not _has_matching_charger(row, wanted):
             continue
         found.append((distance, row))
-
-    if not found and _cache_is_empty(session):
-        # "주변에 충전소가 없다"와 "아직 수집하지 않았다"는 다른 말이다. 빈
-        # 목록으로 답하면 화면이 나주에 충전소가 없다고 말하게 된다.
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "충전소 정보를 아직 수집하지 않았습니다. "
-                "잠시 후 다시 시도해 주세요."
-            ),
-        )
-
     found.sort(key=lambda item: item[0])
-    favorites = _favorite_ids(session, user, [row.station_id for _, row in found])
+    return found
 
-    return [
-        _to_station_out(row, distance, favorites if user is not None else None)
-        for distance, row in found
-    ]
+
+def charger_summary(row: ChargerCache) -> tuple[int, float | None]:
+    """(지금 상태가 2(충전대기)인 충전기 수, 가장 높은 출력 kW). 출력 값이 이상하면 뺀다."""
+    chargers = _chargers(row)
+    available = sum(
+        1 for charger in chargers if str(charger.get("status", "")).strip() == STATUS_AVAILABLE
+    )
+    outputs = [kw for kw in (_as_kw(charger.get("capacity_kw")) for charger in chargers) if kw]
+    return available, max(outputs) if outputs else None
 
 
 @dataclass(frozen=True)
@@ -190,7 +226,7 @@ def _chargers(row: ChargerCache) -> list[dict]:
     return chargers if isinstance(chargers, list) else []
 
 
-def _cache_is_empty(session: DbSession) -> bool:
+def cache_is_empty(session: DbSession) -> bool:
     """수집기가 채운 행이 하나라도 있는지. 좌표 없는 행은 세지 않는다 —
     F-14가 즐겨찾기만으로 만든 행은 "수집됨"이 아니다."""
     return (
