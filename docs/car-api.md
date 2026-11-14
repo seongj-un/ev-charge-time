@@ -148,7 +148,7 @@ Reservation:
 | `battery_capacity_wh` | number | 예 | | 1,000 이상 1,000,000 이하 (Wh) |
 | `soc_target` | number | | 80 | 0 초과 100 이하 (%) |
 | `charger_kw` | number | | 7.0 | 0 초과 1000 이하 (kW). home에서만 쓴다 |
-| `depart_at` | datetime | | 다음 오전 8시 | home에서만 쓴다. 없으면 지금 다음에 처음 오는 오전 8시(KST)로 가정하고 `assumptions`에 적는다. 있으면 car/plan과 같은 검사(현재 시각 이후, 72시간 이내) |
+| `depart_at` | datetime | | 다음 오전 8시 | home에서만 쓴다. 없으면 지금 다음에 처음 오는 오전 8시(KST)로 가정하고 `assumptions`에 적는다. 가정한 8시까지 시간이 모자라면(예: 07:00에 부름) 다음 날 8시로 한 번 더 계산한다. 있으면 car/plan과 같은 검사(현재 시각 이후, 72시간 이내) |
 | `mode` | string | | `self_low` | home에서만 쓴다 |
 | `payment` | string | public이면 예 | | `member`, `roaming`, `nonmember` |
 | `charger_speed` | string | public이면 예 | | `slow`, `fast` |
@@ -173,8 +173,13 @@ home에서는 `payment`·`charger_speed`를, public에서는 `depart_at`·`mode`
 `speech`:
 
 - home, 새는 경우: "지금은 요금이 비싼 시간이라 돈이 새고 있어요. 오늘 밤 10시부터 충전하면
-  약 1,994원 아낄 수 있어요. 차량 예약 충전을 밤 10시 시작, 새벽 4시 39분 종료로 설정해
-  주세요." (시각 읽기는 car/plan과 같다)
+  약 1,994원 아낄 수 있어요. 지금 충전을 멈추고 차량 예약 충전을 밤 10시 시작, 새벽 4시 39분
+  종료로 설정해 주세요." (시각 읽기는 car/plan과 같다)
+  - 지금이 경부하(가장 싼 시간대)인데도 새는 경우(바로 충전하면 뒤이은 비싼 시간대까지
+    이어짐, 예: 평일 07:00)는 첫 문장이 "지금 바로 충전하면 비싼 시간대까지 이어져서 돈이
+    새고 있어요."다.
+  - 이미 충전 중이라 예약만 걸면 지금 충전이 계속될 수 있어서, 멈추라는 말을 같은 문장에
+    넣는다.
 - public, 새는 경우: "비회원가로 충전하고 있어서 돈이 새고 있어요. 이번 충전(약 35kWh)은
   회원가보다 약 5,344원 더 나와요. 이 충전소 사업자 회원으로 결제하면 아낄 수 있어요. 사업자
   평균 기준 추정이에요." (전력량은 10kWh 이상이면 정수, 그 밑은 소수 첫째 자리)
@@ -182,7 +187,7 @@ home에서는 `payment`·`charger_speed`를, public에서는 `depart_at`·`mode`
 - 이미 목표 잔량: "이미 목표 잔량 80%에 닿아서 더 충전하지 않아도 돼요."
 - home에서 지금 바로 충전해도 출발 전에 다 못 채움: "출발 전까지 목표만큼 채우려면 지금 바로
   충전해야 해요." (car/plan은 이때 422지만, 여기서는 더 싼 선택지가 없다는 뜻이라 200으로
-  답한다)
+  답한다). 출발 시각을 가정했을 때는 다음 날 8시로 다시 계산해도 모자랄 때만 이렇게 말한다.
 
 ### 오류
 
@@ -190,7 +195,7 @@ home에서는 `payment`·`charger_speed`를, public에서는 `depart_at`·`mode`
 | --- | --- | --- |
 | 422 | 필드 범위·타입 오류, home의 `depart_at` 시각 오류 | FastAPI 검증 오류 `{"detail": [...]}`. 시각 오류의 `loc`은 `["body", "depart_at"]` |
 | 422 | public인데 `payment`나 `charger_speed`가 없음 | 같은 모양. `loc`은 `["body", "payment"]` 또는 `["body", "charger_speed"]`, `msg`는 "place가 public이면 payment가 필요합니다." |
-| 500 | 단가 설정 파일이 잘못됨 | 서버 설정 오류 |
+| 500 | public인데 단가 설정 파일이 잘못됨 | 서버 설정 오류. home은 이 파일을 읽지 않아 영향이 없다 |
 
 ## `GET /api/chargers` 빈 충전기만 찾기 ("충전 실패 피하기")
 
