@@ -14,6 +14,9 @@
 
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -23,7 +26,7 @@ from ...infra.db import get_session
 from ...infra.models import ChargerCache, FavoriteStation, User
 from ...settings import get_settings
 from ..auth_deps import optional_user
-from ..schemas import ChargerOut, StationOut
+from ..schemas import MAX_CHARGER_KW, ChargerOut, StationOut
 
 router = APIRouter(prefix="/api", tags=["chargers"])
 
@@ -31,6 +34,10 @@ router = APIRouter(prefix="/api", tags=["chargers"])
 # 덮고도 남는다. 상한이 없으면 반경 하나로 캐시 전체를 파이썬으로 끌어올 수 있다.
 MAX_RADIUS_M = 20_000
 DEFAULT_RADIUS_M = 2_000
+
+# 공공 API 충전기 상태 코드(stat) 중 "충전대기" = 지금 꽂을 수 있음. 활용가이드의
+# 다른 코드(통신이상·충전중·운영중지·점검중·상태미확인)는 비어 있다고 보지 않는다.
+STATUS_AVAILABLE = "2"
 
 
 def charger_api_key() -> str:
@@ -56,6 +63,23 @@ def list_chargers(
             "(추정 매핑을 넣지 않는다). 한 대라도 맞으면 그 충전소를 남긴다."
         ),
     ),
+    available_only: bool = Query(
+        False,
+        description=(
+            "true면 상태 코드 2(충전대기)인 충전기가 한 대 이상 있는 충전소만 남긴다. "
+            "남긴 충전소의 충전기 목록은 전부 보여 준다."
+        ),
+    ),
+    min_kw: float | None = Query(
+        None,
+        gt=0,
+        le=MAX_CHARGER_KW,
+        allow_inf_nan=False,
+        description=(
+            "이 출력(kW) 이상인 충전기가 한 대 이상 있는 충전소만 남긴다. "
+            "available_only와 함께 주면 같은 충전기가 두 조건을 다 맞아야 한다."
+        ),
+    ),
     api_key: str = Depends(charger_api_key),
     user: User | None = Depends(optional_user),
     session: DbSession = Depends(get_session),
@@ -77,14 +101,18 @@ def list_chargers(
         )
     ).all()
 
-    wanted_type = charger_type.strip().lower() if charger_type else None
+    wanted = _ChargerFilter(
+        charger_type=charger_type.strip().lower() if charger_type else None,
+        available_only=available_only,
+        min_kw=min_kw,
+    )
     found: list[tuple[float, ChargerCache]] = []
     for row in candidates:
         # 2차 필터: 박스는 원보다 크다(모서리). 정확한 거리로 한 번 더 거른다.
         distance = haversine_m(lat, lng, row.lat, row.lng)
         if distance > radius_m:
             continue
-        if wanted_type is not None and not _has_type(row, wanted_type):
+        if wanted.is_set() and not _has_matching_charger(row, wanted):
             continue
         found.append((distance, row))
 
@@ -108,16 +136,53 @@ def list_chargers(
     ]
 
 
-def _has_type(row: ChargerCache, wanted_type: str) -> bool:
-    """충전기 한 대라도 종류가 맞으면 그 충전소를 남긴다.
+@dataclass(frozen=True)
+class _ChargerFilter:
+    """충전기 한 대에 거는 조건들. 주지 않은 조건은 검사하지 않는다."""
+
+    charger_type: str | None
+    available_only: bool
+    min_kw: float | None
+
+    def is_set(self) -> bool:
+        # 조건이 하나도 없으면 거르지 않는다 — 충전기가 0대인 충전소도 지금처럼 남는다.
+        return self.charger_type is not None or self.available_only or self.min_kw is not None
+
+    def matches(self, charger: dict) -> bool:
+        if (
+            self.charger_type is not None
+            and str(charger.get("type", "")).strip().lower() != self.charger_type
+        ):
+            return False
+        if self.available_only and str(charger.get("status", "")).strip() != STATUS_AVAILABLE:
+            return False
+        if self.min_kw is not None:
+            capacity = _as_kw(charger.get("capacity_kw"))
+            if capacity is None or capacity < self.min_kw:
+                return False
+        return True
+
+
+def _has_matching_charger(row: ChargerCache, wanted: _ChargerFilter) -> bool:
+    """주어진 조건을 **같은 충전기 한 대가** 모두 맞으면 그 충전소를 남긴다.
 
     걸러내는 단위는 충전기가 아니라 충전소다 — 조건에 맞는 충전기가 있는
     충전소를 찾는 화면이므로, 그 충전소의 나머지 충전기도 함께 보여준다.
+    조건을 충전기마다 따로 보면 "7kW 충전대기 + 100kW 충전중" 충전소가
+    "100kW 이상 빈 충전기" 조건에 걸려, 차 안에서 헛걸음하게 된다.
     """
-    return any(
-        str(charger.get("type", "")).strip().lower() == wanted_type
-        for charger in _chargers(row)
-    )
+    return any(wanted.matches(charger) for charger in _chargers(row))
+
+
+def _as_kw(value: object) -> float | None:
+    """캐시의 출력 값. 숫자가 아니거나 NaN이면 조건을 못 맞춘 것으로 본다."""
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        return None
+    try:
+        kw = float(value)
+    except ValueError:
+        return None
+    return kw if math.isfinite(kw) else None
 
 
 def _chargers(row: ChargerCache) -> list[dict]:

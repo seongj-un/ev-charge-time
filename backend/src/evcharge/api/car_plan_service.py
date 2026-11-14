@@ -40,7 +40,7 @@ def compute_car_plan(payload: CarPlanRequest, now: datetime) -> CarPlanResponse:
     ``plug_in_at``이 없거나 이미 지났으면 ``now``를 쓴다. 지난 시각부터 계산하면
     예약 시작이 지금보다 앞서고, 실제 충전은 지금부터라 그만큼 덜 찬다.
     ``depart_at``이 지금 이전이거나 꽂는 시각 이전이면 422다. 충전이 필요 없는
-    요청도 이 검사는 거친다 — 출발 시각이 이상한 요청을 \"충전 필요 없음\"으로
+    요청도 이 검사는 거친다 — 출발 시각이 이상한 요청을 "충전 필요 없음"으로
     넘기지 않는다.
     """
     now = now.astimezone(KST)
@@ -186,7 +186,7 @@ def compose_no_charge_speech(soc_now: float, soc_target: float) -> str:
 
 
 def spoken_range(start: datetime, end: datetime, now: datetime) -> str:
-    """\"오늘 밤 10시부터 내일 새벽 1시까지\", \"내일 새벽 1시부터 5시 30분까지\".
+    """"오늘 밤 10시부터 내일 새벽 1시까지", "내일 새벽 1시부터 5시 30분까지".
 
     끝 시각은 시작과 날이 같으면 날을, 날과 때(새벽·오전…)가 모두 같으면 때도
     뺀다.
@@ -206,15 +206,15 @@ def spoken_range(start: datetime, end: datetime, now: datetime) -> str:
 
 
 def spoken_clock(moment: datetime) -> str:
-    """\"새벽 1시\", \"오후 3시 15분\", \"밤 12시\", \"0시 29분\". 날짜는 붙이지 않는다."""
+    """"새벽 1시", "오후 3시 15분", "밤 12시", "0시 29분". 날짜는 붙이지 않는다."""
     return " ".join(part for part in (_period(moment), _clock_only(moment)) if part)
 
 
 def _period(moment: datetime) -> str:
-    """하루를 귀로 듣기 쉬운 때로 나눈다. 00:00은 전날 \"밤 12시\"로 읽는다.
+    """하루를 귀로 듣기 쉬운 때로 나눈다. 00:00은 전날 "밤 12시"로 읽는다.
 
-    00:01~00:59는 때 없이 \"0시 N분\"으로 읽는다 (``_clock_only``). \"새벽 12시 29분\"은
-    귀로 들으면 낮 12시로 헷갈리고, \"밤 12시 29분\"은 날짜를 전날로 당겨야 해서
+    00:01~00:59는 때 없이 "0시 N분"으로 읽는다 (``_clock_only``). "새벽 12시 29분"은
+    귀로 들으면 낮 12시로 헷갈리고, "밤 12시 29분"은 날짜를 전날로 당겨야 해서
     지금 시각도 0시대일 때 날이 어긋난다.
     """
     hour = moment.hour
@@ -241,7 +241,7 @@ def _clock_only(moment: datetime) -> str:
 
 
 def _day_label(moment: datetime, now: datetime) -> str:
-    """오늘·내일·모레, 그 밖에는 \"11월 18일\". 00:00은 전날로 센다 (밤 12시)."""
+    """오늘·내일·모레, 그 밖에는 "11월 18일". 00:00은 전날로 센다 (밤 12시)."""
     local = moment.astimezone(KST)
     if local.hour == 0 and local.minute == 0:
         local -= timedelta(minutes=1)
@@ -251,5 +251,5 @@ def _day_label(moment: datetime, now: datetime) -> str:
 
 
 def _percent(value: float) -> str:
-    """85.0 → \"85%\", 32.46 → \"32.5%\". 요청 값을 소수 첫째 자리까지만 읽는다."""
+    """85.0 → "85%", 32.46 → "32.5%". 요청 값을 소수 첫째 자리까지만 읽는다."""
     return f"{round(value, 1):g}%"
