@@ -53,6 +53,14 @@ services:
       CHAT_RATE_LIMIT_WINDOW_MINUTES: ${CHAT_RATE_LIMIT_WINDOW_MINUTES:-60}
       SOLAR_CAPACITY_MW: ${SOLAR_CAPACITY_MW:-}
       SOLAR_CAPACITY_SOURCE: ${SOLAR_CAPACITY_SOURCE:-}
+      # uvicorn이 앞단 Caddy의 X-Forwarded-For를 믿게 한다. 그래야 기기 등록
+      # (POST /api/car/devices)의 IP별 한도가 Caddy 주소 하나로 뭉치지 않는다.
+      # 백엔드 포트는 밖에 열지 않으므로 이 헤더를 붙일 수 있는 것은 같은 네트워크의
+      # Caddy·frontend뿐이고, Caddy는 trusted_proxies를 두지 않아 클라이언트가 보낸
+      # X-Forwarded-For를 버리고 실제 접속 주소로 채운다.
+      FORWARDED_ALLOW_IPS: "*"
+      # 기기 발급 한도의 IP 키를 가명 처리하는 비밀값(HMAC). 비면 sha256 + 경고 로그.
+      CAR_IP_HASH_SECRET: ${CAR_IP_HASH_SECRET:-}
 
   frontend:
     build:

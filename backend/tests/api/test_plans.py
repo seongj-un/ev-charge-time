@@ -352,7 +352,7 @@ def test_list_plans_limit_boundary_is_accepted(client, auth_user, limit):
     "month", ["26-10", "2026-2", "2026/10", "2026-13", "not-a-month", ""]
 )
 def test_summary_invalid_month_format_is_422(client, auth_user, month):
-    """``_month_bounds``가 ``"26-10"``·``"2026-2"``처럼 자릿수가 다른 값을
+    """``months.month_bounds``가 ``"26-10"``·``"2026-2"``처럼 자릿수가 다른 값을
     조용히 받아 그대로 응답에 되돌려주던 것을 막는다."""
     response = client.get("/api/me/plans/summary", params={"month": month})
     assert response.status_code == 422
@@ -748,3 +748,17 @@ def test_charge_start_is_exposed_at_top_level(client, auth_user):
 
     assert created["charge_start"] == created["result"]["best"]["start"]
     assert created["charge_start"].endswith("+09:00")
+
+
+@pytest.mark.parametrize("month", ["9999-01", "9999-12"])
+def test_month_in_year_9999_is_422_not_500(client, auth_user, month):
+    """다음 달·해 경계가 10000년이 되는 달. 예전에는 ValueError가 새어 500이었다."""
+    for path in ("/api/me/plans", "/api/me/plans/summary"):
+        response = client.get(path, params={"month": month})
+
+        assert response.status_code == 422
+        assert response.json() == {"detail": "month는 YYYY-MM 형식이어야 합니다."}
+
+
+def test_month_9998_12_still_works(client, auth_user):
+    assert client.get("/api/me/plans/summary", params={"month": "9998-12"}).status_code == 200

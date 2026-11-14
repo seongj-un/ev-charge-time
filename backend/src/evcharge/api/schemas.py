@@ -426,6 +426,8 @@ class CarPlanResponse(BaseModel):
     speech: str
     assumptions: list[str]
     unverified_tariff_items: list[str]
+    # 기기 토큰과 함께 와서 대기 절감 기록을 만들었을 때만 채운다 (BE-5). 아니면 null.
+    saving_id: str | None = None
 
 
 class CarLeakCheckRequest(BaseModel):
@@ -472,3 +474,45 @@ class CarLeakCheckResponse(BaseModel):
     unit_price_member: float | None = None
     speech: str
     assumptions: list[str]
+    # 기기 토큰과 함께 와서 대기 절감 기록을 만들었을 때만 채운다 (BE-5). 아니면 null.
+    saving_id: str | None = None
+
+
+class CarDeviceOut(BaseModel):
+    """``POST /api/car/devices`` 201. 토큰은 이 응답에서 한 번만 보인다."""
+
+    device_id: str
+    device_token: str
+
+
+class CarSavingOut(BaseModel):
+    """절감 기록 한 건. 금액은 서버 계산값이다(실측 요금 아님)."""
+
+    saving_id: str
+    cause: Literal["time", "payment"]
+    savings_won: int
+    energy_kwh: float
+    source: Literal["plan", "leak_check"]
+    created_at: KstDatetime
+    confirmed_at: KstDatetime | None = None
+
+
+class CarSavingsByCause(BaseModel):
+    time_won: int
+    payment_won: int
+
+
+class CarSavingsSummary(BaseModel):
+    """``GET /api/car/savings/summary``. 확정된 기록만 더한다 (KST 달·해, 확정 시각 기준)."""
+
+    month: str
+    month_won: int
+    month_count: int
+    year: int
+    year_won: int
+    year_count: int
+    total_won: int
+    # 전체 기간(total_won)을 원인별로 나눈 값
+    by_cause: CarSavingsByCause
+    speech: str
+    note: str

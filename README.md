@@ -38,6 +38,7 @@ uv run uvicorn evcharge.main:app --reload
 | `POST /api/chat` | F-10 자연어 질의 | 구현 (키 필요) |
 | `POST /api/car/plan` | 차량 앱: 충전 계획·예약 충전 값·TTS 문장 | 구현 |
 | `POST /api/car/leak-check` | 차량 앱: "돈이 새고 있어요" 알림 (시간대·결제 방식) | 구현 |
+| `POST /api/car/devices`, `/api/car/savings/*` | 차량 앱: 기기 토큰, 절감 기록 확정, 월·년 합산 | 구현 |
 
 **기능 명세의 F-01~F-14가 전부 구현됐다.** 스텁으로 남은 엔드포인트는 없다.
 
@@ -51,6 +52,13 @@ uv run uvicorn evcharge.main:app --reload
 사업자 요금과 다를 수 있고, 응답과 문장에 "사업자 평균 기준 추정"이라고 밝힌다. 단가와
 출처는 `config/public_charging_prices.yaml`에 있다(급속 평균은 한 보도에서만 확인해
 `unverified`). 새는 금액이 `CAR_LEAK_MIN_WON`(기본 500원) 이상일 때만 알린다.
+
+절감 리포트(`/api/car/savings/*`)는 로그인 대신 기기 토큰(`POST /api/car/devices`, 해시만
+저장)을 쓴다. 기기 토큰과 함께 부른 `car/plan`·`car/leak-check`가 대기 기록을 남기고, 앱이
+확정한 기록만 KST 달·해·전체로 더한다. 금액은 추천을 따랐을 때 아낀 서버 계산값이다. 기기
+발급은 IP별로 제한한다(`CAR_DEVICE_RATE_LIMIT_COUNT`/`_WINDOW_MINUTES`). 운영에서는 Caddy 뒤라
+`docker-compose.prod.yml`의 `FORWARDED_ALLOW_IPS`로 실제 클라이언트 IP를 받는다. IP는
+`CAR_IP_HASH_SECRET`(HMAC) 키로 가명 처리해 센다.
 
 세 엔드포인트는 외부 자격증명이 있어야 동작하고, 없으면 각자 501을 낸다.
 키 없이도 나머지 기능은 전부 돈다 — 기동 시점에 막지 않는다.
@@ -208,7 +216,11 @@ backend/src/evcharge/
 │   └── geo.py        거리·바운딩 박스            (F-07)
 ├── api/        라우터·스키마·에러 변환
 │   ├── chat_service.py   질문 → 조건 추출 → 문장  (F-10)
-│   └── car_plan_service.py 차량 충전 계획 → TTS 문장 (차량 앱)
+│   ├── car_plan_service.py 차량 충전 계획 → TTS 문장 (차량 앱)
+│   ├── car_leak_service.py "돈이 새고 있어요"       (차량 앱)
+│   ├── car_devices.py      기기 토큰·발급 한도       (차량 앱)
+│   ├── car_savings.py      절감 기록·월·년 합산      (차량 앱)
+│   └── months.py           KST 달·해 경계            (F-13, 차량 앱)
 ├── infra/      SQLAlchemy 세션과 모델
 │   ├── charger_api.py    공공 충전소 API 호출     (F-07)
 │   ├── charger_sync.py   응답 → 공유 캐시         (F-07)

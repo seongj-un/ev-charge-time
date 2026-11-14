@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import base64
-import re
 import uuid
 from datetime import datetime
 
@@ -29,13 +28,12 @@ from ...infra.db import get_session
 from ...infra.models import SavedPlan, User
 from ..auth_deps import current_user
 from ..deps import get_tariff
+from ..months import month_bounds
 from ..recommend_service import compute_recommendation
 from ..schemas import PlanSummary, RecommendRequest, SavedPlanOut, SavedPlanPage
 from ..vehicle_resolution import resolve_vehicle_defaults
 
 router = APIRouter(prefix="/api/me", tags=["me", "plans"])
-
-_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 
 
 @router.get("/plans", response_model=SavedPlanPage)
@@ -54,7 +52,7 @@ def list_plans(
     ``?limit=999999``가 DB를 통째로 긁어오는 것을 막기 위해서다.
 
     ``month``(``"YYYY-MM"``, 2번 수정)는 ``/plans/summary``가 쓰는
-    ``_month_bounds``를 그대로 재사용한다 — 프론트가 이 필터 없이 커서로 받아
+    ``months.month_bounds``를 그대로 재사용한다 — 프론트가 이 필터 없이 커서로 받아
     직접 거르면, 그 달 기록이 아직 안 넘어온 다음 페이지에 있어 화면에서
     누락되는 문제가 생겨서 서버가 먼저 걸러야 한다. 안 주면(``None``) 기존과
     완전히 동일하게 전체를 반환한다.
@@ -69,7 +67,7 @@ def list_plans(
     query = select(SavedPlan).where(SavedPlan.user_id == user.id)
 
     if month is not None:
-        start, end = _month_bounds(month)
+        start, end = month_bounds(month)
         query = query.where(
             SavedPlan.charge_start >= start, SavedPlan.charge_start < end
         )
@@ -116,7 +114,7 @@ def plans_summary(
     "10월에 얼마나 아끼나"이지 "9월에 계획을 몇 번 세웠나"가 아니다.
     ``/plans?month=``과 같은 기준이어야 목록 건수와 합계가 맞는다.
     """
-    start, end = _month_bounds(month)
+    start, end = month_bounds(month)
 
     rows = session.scalars(
         select(SavedPlan).where(
@@ -213,37 +211,6 @@ def _to_saved_plan_out(row: SavedPlan) -> SavedPlanOut:
         vehicle_name=row.vehicle_name,
         charge_start=row.charge_start,
     )
-
-
-def _month_bounds(month: str) -> tuple[datetime, datetime]:
-    """``"YYYY-MM"``을 KST 기준 [그 달 1일 00:00, 다음 달 1일 00:00) 경계로.
-
-    (B-3) 예전에는 형식 검증이 없어 ``"26-10"``이나 ``"2026-2"``도 조용히
-    받아 ``month``를 그대로 응답에 되돌려줬다. ``int()``/범위 체크만으로는
-    자릿수가 다른 값을 걸러내지 못해 ``YYYY-MM`` 정규식으로 먼저 형식 자체를
-    확인한다.
-    """
-    if not _MONTH_RE.match(month):
-        raise HTTPException(
-            status_code=422, detail="month는 YYYY-MM 형식이어야 합니다."
-        )
-    try:
-        year_str, month_str = month.split("-")
-        year, month_num = int(year_str), int(month_str)
-        if not 1 <= month_num <= 12:
-            raise ValueError(month)
-        start = datetime(year, month_num, 1, tzinfo=KST)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422, detail="month는 YYYY-MM 형식이어야 합니다."
-        ) from exc
-
-    if month_num == 12:
-        end = datetime(year + 1, 1, 1, tzinfo=KST)
-    else:
-        end = datetime(year, month_num + 1, 1, tzinfo=KST)
-
-    return start, end
 
 
 def _encode_cursor(charge_start: datetime, plan_id: str) -> str:

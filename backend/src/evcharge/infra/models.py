@@ -10,6 +10,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -251,3 +252,81 @@ class ChargerCache(Base):
     )
 
     __table_args__ = (Index("ix_charger_cache_lat_lng", "lat", "lng"),)
+
+
+# ── 와트잇 차량 앱 (BE-5 절약 리포트) ─────────────────────────────────────
+# 차량 앱은 로그인이 없다. 기기마다 토큰 하나를 발급하고 해시만 저장한다
+# (세션 토큰과 같은 방식, infra/security.py). 개인정보는 담지 않는다.
+
+# 1회 기록 상한(원). 서버 계산값이지만 공개 엔드포인트라 합계를 부풀리는 입력
+# (아주 큰 배터리 등)을 한 건으로 막는다. api/car_savings.py와 같은 값이다.
+MAX_CAR_SAVING_WON = 100_000
+
+
+class CarDevice(Base):
+    __tablename__ = "car_devices"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    # sha256 hex. 토큰 원본은 발급 응답에 한 번만 나간다.
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[datetime] = _now()
+    last_seen_at: Mapped[datetime] = _now()
+
+
+class CarSaving(Base):
+    """추천을 따랐을 때 아낀 금액 한 건 (서버 계산값, 실측 요금 아님).
+
+    ``confirmed_at``이 비어 있으면 대기 중이다. 앱이 실제로 따랐다고 확인해야
+    (``POST /api/car/savings/{id}/confirm``) 합산에 들어간다. 대기 기록은 기기당
+    최근 20개만 남긴다.
+    """
+
+    __tablename__ = "car_savings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("car_devices.id", ondelete="CASCADE"), nullable=False
+    )
+    cause: Mapped[str] = mapped_column(String(10), nullable=False)
+    savings_won: Mapped[int] = mapped_column(Integer, nullable=False)
+    energy_kwh: Mapped[float] = mapped_column(Float, nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = _now()
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("cause IN ('time', 'payment')", name="ck_car_savings_cause"),
+        CheckConstraint("source IN ('plan', 'leak_check')", name="ck_car_savings_source"),
+        CheckConstraint(
+            f"savings_won >= 0 AND savings_won <= {MAX_CAR_SAVING_WON}",
+            name="ck_car_savings_won_range",
+        ),
+        # 합산(확정분을 confirmed_at 구간으로)과 대기 기록 정리(대기분을 created_at
+        # 순으로) 모두 기기별로 읽는다.
+        Index("ix_car_savings_device_confirmed", "device_id", "confirmed_at"),
+        Index("ix_car_savings_device_created", "device_id", "created_at"),
+    )
+
+
+class CarDeviceRateLimit(Base):
+    """기기 발급(``POST /api/car/devices``)의 IP별 고정 창 카운터.
+
+    ``ChatRateLimit``과 같은 방식이다: IP당 한 행, UPSERT 한 문장으로 창이 같으면
+    +1, 넘어갔으면 1. IP 원문은 저장하지 않고 가명 처리한 키만 둔다
+    (``CAR_IP_HASH_SECRET``으로 만든 HMAC-SHA256, 비밀값이 없으면 sha256 —
+    ``api/car_devices.ip_key``).
+    """
+
+    __tablename__ = "car_device_rate_limits"
+
+    ip_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
