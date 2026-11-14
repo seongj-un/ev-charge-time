@@ -15,6 +15,7 @@ from ...settings import get_settings
 from ..car_devices import client_ip, consume_device_quota, issue_device
 from ..car_leak_service import compute_leak_check
 from ..car_plan_service import compute_car_plan
+from ..car_savings import try_record
 from ..deps import get_public_prices
 from ..schemas import (
     CarDeviceOut,
@@ -33,20 +34,46 @@ def now_kst() -> datetime:
 
 
 @router.post("/plan", response_model=CarPlanResponse)
-def car_plan(payload: CarPlanRequest) -> CarPlanResponse:
-    """가장 싼 충전 구간, 차량 예약 충전에 넣을 값, TTS로 읽을 문장을 돌려준다."""
-    return compute_car_plan(payload, now_kst())
+def car_plan(payload: CarPlanRequest, request: Request) -> CarPlanResponse:
+    """가장 싼 충전 구간, 차량 예약 충전에 넣을 값, TTS로 읽을 문장을 돌려준다.
+
+    기기 토큰이 있고 아끼는 돈이 있으면 대기 절감 기록을 만들고 ``saving_id``를 붙인다.
+    """
+    result = compute_car_plan(payload, now_kst())
+    if result.plan is not None and result.savings_won:
+        saving_id = try_record(
+            request,
+            cause="time",
+            savings_won=result.savings_won,
+            energy_kwh=result.plan.energy_kwh,
+            source="plan",
+        )
+        result = result.model_copy(update={"saving_id": saving_id})
+    return result
 
 
 @router.post("/leak-check", response_model=CarLeakCheckResponse)
-def car_leak_check(payload: CarLeakCheckRequest) -> CarLeakCheckResponse:
-    """충전 중에 돈이 새고 있는지(비싼 시간대·비싼 결제 방식) 알려 준다."""
-    return compute_leak_check(
+def car_leak_check(payload: CarLeakCheckRequest, request: Request) -> CarLeakCheckResponse:
+    """충전 중에 돈이 새고 있는지(비싼 시간대·비싼 결제 방식) 알려 준다.
+
+    기기 토큰이 있고 ``leaking=true``면 대기 절감 기록을 만들고 ``saving_id``를 붙인다.
+    """
+    result = compute_leak_check(
         payload,
         now_kst(),
         min_won=get_settings().car_leak_min_won,
         load_prices=get_public_prices,
     )
+    if result.leaking and result.cause is not None:
+        saving_id = try_record(
+            request,
+            cause=result.cause,
+            savings_won=result.leak_won,
+            energy_kwh=result.energy_kwh,
+            source="leak_check",
+        )
+        result = result.model_copy(update={"saving_id": saving_id})
+    return result
 
 
 @router.post("/devices", response_model=CarDeviceOut, status_code=201)

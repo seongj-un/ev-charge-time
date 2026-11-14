@@ -426,6 +426,8 @@ class CarPlanResponse(BaseModel):
     speech: str
     assumptions: list[str]
     unverified_tariff_items: list[str]
+    # 기기 토큰과 함께 와서 대기 절감 기록을 만들었을 때만 채운다 (BE-5). 아니면 null.
+    saving_id: str | None = None
 
 
 class CarLeakCheckRequest(BaseModel):
@@ -472,6 +474,8 @@ class CarLeakCheckResponse(BaseModel):
     unit_price_member: float | None = None
     speech: str
     assumptions: list[str]
+    # 기기 토큰과 함께 와서 대기 절감 기록을 만들었을 때만 채운다 (BE-5). 아니면 null.
+    saving_id: str | None = None
 
 
 class CarDeviceOut(BaseModel):
