@@ -9,7 +9,7 @@
   그대로 돌려준다. 기록만 하지 않는다 (편의 우선: 계산 실패 금지).
 
 기기 발급은 공개 엔드포인트라 IP별 고정 창 제한을 건다. ``chat`` 한도와 같은 UPSERT
-한 문장 카운터이고, IP 원문 대신 sha256을 키로 쓴다.
+한 문장 카운터이고, IP 원문 대신 가명 처리한 키(``ip_key``)를 쓴다.
 
 운영에서는 Caddy가 앞에 있어 ``request.client.host``가 Caddy 컨테이너 주소가 된다.
 uvicorn이 Caddy의 ``X-Forwarded-For``를 믿도록 ``FORWARDED_ALLOW_IPS``를 준다
@@ -20,6 +20,8 @@ uvicorn이 Caddy의 ``X-Forwarded-For``를 믿도록 ``FORWARDED_ALLOW_IPS``를 
 from __future__ import annotations
 
 import hashlib
+import hmac
+import logging
 import uuid
 from datetime import datetime, timedelta
 from math import ceil
@@ -33,6 +35,9 @@ from ..domain.pricing import KST
 from ..infra.models import CarDevice, CarDeviceRateLimit
 from ..infra.security import hash_token, new_session_token
 from ..settings import get_settings
+
+logger = logging.getLogger(__name__)
+_warned_without_secret = False
 
 # 토큰은 new_session_token()이 만드는 43자다. 그보다 훨씬 긴 값은 해시하지 않고 버린다.
 MAX_TOKEN_LENGTH = 256
@@ -84,6 +89,25 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client is not None else "unknown"
 
 
+def ip_key(ip: str) -> str:
+    """기기 발급 한도의 키. IP 원문 대신 저장하는 가명 처리 값이다.
+
+    ``CAR_IP_HASH_SECRET``이 있으면 HMAC-SHA256이라 비밀값 없이는 IP를 되찾을 수 없다.
+    없으면 sha256인데, IPv4는 대입으로 되찾을 수 있으므로 경고를 한 번 남긴다.
+    """
+    global _warned_without_secret
+    secret = get_settings().car_ip_hash_secret
+    if secret:
+        return hmac.new(secret.encode(), ip.encode(), hashlib.sha256).hexdigest()
+    if not _warned_without_secret:
+        _warned_without_secret = True
+        logger.warning(
+            "CAR_IP_HASH_SECRET이 비어 있어 기기 발급 한도의 IP 키를 솔트 없는 sha256으로 "
+            "만듭니다. 운영에서는 비밀값을 설정하세요."
+        )
+    return hashlib.sha256(ip.encode()).hexdigest()
+
+
 def consume_device_quota(session: DbSession, ip: str, now: datetime) -> None:
     """이 IP의 이번 창 발급 횟수를 원자적으로 1 늘리고, 넘었으면 429.
 
@@ -94,7 +118,7 @@ def consume_device_quota(session: DbSession, ip: str, now: datetime) -> None:
     window = timedelta(minutes=settings.car_device_rate_limit_window_minutes)
     epoch = datetime(1970, 1, 1, tzinfo=KST)
     window_start = epoch + (now - epoch) // window * window
-    ip_hash = hashlib.sha256(ip.encode()).hexdigest()
+    ip_hash = ip_key(ip)
 
     increment = (
         pg_insert(CarDeviceRateLimit)

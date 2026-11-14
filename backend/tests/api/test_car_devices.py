@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import logging
 import uuid
 from datetime import datetime
 
@@ -9,10 +12,11 @@ import pytest
 from sqlalchemy import select
 from starlette.requests import Request
 
-from evcharge.api.car_devices import bearer_token
+from evcharge.api import car_devices
+from evcharge.api.car_devices import bearer_token, ip_key
 from evcharge.api.routes import car
 from evcharge.domain.pricing import KST
-from evcharge.infra.models import CarDevice
+from evcharge.infra.models import CarDevice, CarDeviceRateLimit
 from evcharge.infra.security import hash_token
 
 NOW = datetime(2026, 11, 17, 18, 0, tzinfo=KST)
@@ -86,3 +90,32 @@ def _request(headers: dict[str, str]) -> Request:
 )
 def test_bearer_token_parsing(headers, token):
     assert bearer_token(_request(headers)) == token
+
+
+def test_ip_key_is_hmac_with_the_server_secret(client, db_session, monkeypatch):
+    monkeypatch.setenv("CAR_IP_HASH_SECRET", "test-secret")
+    # TestClient는 uvicorn의 프록시 헤더 처리를 거치지 않아 접속 주소가 "testclient"다.
+    ip = "testclient"
+    expected = hmac.new(b"test-secret", ip.encode(), hashlib.sha256).hexdigest()
+
+    assert ip_key(ip) == expected
+    assert ip_key(ip) != hashlib.sha256(ip.encode()).hexdigest()
+
+    client.post("/api/car/devices")
+    keys = db_session.scalars(select(CarDeviceRateLimit.ip_hash)).all()
+    assert expected in keys
+    assert hashlib.sha256(ip.encode()).hexdigest() not in keys
+
+
+def test_ip_key_without_secret_is_sha256_and_warns_once(monkeypatch, caplog):
+    monkeypatch.setenv("CAR_IP_HASH_SECRET", "")
+    monkeypatch.setattr(car_devices, "_warned_without_secret", False)
+
+    with caplog.at_level(logging.WARNING, logger="evcharge.api.car_devices"):
+        first = ip_key("198.51.100.7")
+        ip_key("198.51.100.8")
+
+    assert first == hashlib.sha256(b"198.51.100.7").hexdigest()
+    warnings = [r for r in caplog.records if "CAR_IP_HASH_SECRET" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "198.51.100" not in caplog.text

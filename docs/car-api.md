@@ -249,6 +249,9 @@ home에서는 `payment`·`charger_speed`를, public에서는 `depart_at`·`mode`
 IP마다 `CAR_DEVICE_RATE_LIMIT_WINDOW_MINUTES`(기본 60)분에 `CAR_DEVICE_RATE_LIMIT_COUNT`(기본
 10)번까지다. 넘으면 429와 `Retry-After`(초). 운영에서는 Caddy 뒤라 `FORWARDED_ALLOW_IPS`로
 Caddy의 `X-Forwarded-For`를 믿게 해야 실제 클라이언트 IP로 센다(`docker-compose.prod.yml`).
+IP는 원문 대신 가명 처리한 키로 센다: `CAR_IP_HASH_SECRET`으로 만든 HMAC-SHA256이고, 비밀값이
+비어 있으면 솔트 없는 sha256(서버가 경고 로그를 한 번 남긴다)이다. 창이 지난 카운터 행은 같은
+IP가 다시 발급할 때 재사용되어 따로 정리하지 않는다.
 
 ### `POST /api/car/savings/{saving_id}/confirm` 확정
 

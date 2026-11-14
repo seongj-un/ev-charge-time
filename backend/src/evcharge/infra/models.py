@@ -312,7 +312,9 @@ class CarDeviceRateLimit(Base):
     """기기 발급(``POST /api/car/devices``)의 IP별 고정 창 카운터.
 
     ``ChatRateLimit``과 같은 방식이다: IP당 한 행, UPSERT 한 문장으로 창이 같으면
-    +1, 넘어갔으면 1. IP 원문은 저장하지 않고 sha256만 둔다.
+    +1, 넘어갔으면 1. IP 원문은 저장하지 않고 가명 처리한 키만 둔다
+    (``CAR_IP_HASH_SECRET``으로 만든 HMAC-SHA256, 비밀값이 없으면 sha256 —
+    ``api/car_devices.ip_key``).
     """
 
     __tablename__ = "car_device_rate_limits"

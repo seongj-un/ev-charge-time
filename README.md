@@ -57,7 +57,8 @@ uv run uvicorn evcharge.main:app --reload
 저장)을 쓴다. 기기 토큰과 함께 부른 `car/plan`·`car/leak-check`가 대기 기록을 남기고, 앱이
 확정한 기록만 KST 달·해·전체로 더한다. 금액은 추천을 따랐을 때 아낀 서버 계산값이다. 기기
 발급은 IP별로 제한한다(`CAR_DEVICE_RATE_LIMIT_COUNT`/`_WINDOW_MINUTES`). 운영에서는 Caddy 뒤라
-`docker-compose.prod.yml`의 `FORWARDED_ALLOW_IPS`로 실제 클라이언트 IP를 받는다.
+`docker-compose.prod.yml`의 `FORWARDED_ALLOW_IPS`로 실제 클라이언트 IP를 받는다. IP는
+`CAR_IP_HASH_SECRET`(HMAC) 키로 가명 처리해 센다.
 
 세 엔드포인트는 외부 자격증명이 있어야 동작하고, 없으면 각자 501을 낸다.
 키 없이도 나머지 기능은 전부 돈다 — 기동 시점에 막지 않는다.

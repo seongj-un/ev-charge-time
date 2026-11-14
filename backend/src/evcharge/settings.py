@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     car_savings_confirm_window_hours: int = Field(default=72, ge=1)
     car_savings_daily_confirm_max: int = Field(default=3, ge=1)
 
+    # 기기 발급 한도의 IP 키를 만드는 서버 비밀값(HMAC-SHA256). 솔트 없는 sha256은
+    # IPv4 전체(약 43억 개)를 대입하면 원래 IP를 되찾을 수 있다. 이 값을 두면 비밀값
+    # 없이는 되찾을 수 없다. 비어 있으면 sha256으로 동작하고 기동 후 처음 쓸 때 경고를
+    # 한 번 남긴다. 바꾸면 그 시점의 창 카운터만 새로 시작한다.
+    car_ip_hash_secret: str = ""
+
     # 인증 (infra/security.py, api/auth_deps.py)
     cookie_secure: bool = False
     session_days: int = 14
