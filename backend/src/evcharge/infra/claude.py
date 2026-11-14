@@ -89,6 +89,8 @@ class AnthropicClaudeClient:
 
     api_key: str
     model: str
+    # 워크스페이스에 묶이지 않은 키는 요청마다 워크스페이스를 밝혀야 한다. 비면 보내지 않는다.
+    workspace_id: str = ""
 
     _client: Any = field(default=None, init=False, repr=False)
 
@@ -101,8 +103,9 @@ class AnthropicClaudeClient:
         max_tokens: int,
         timeout_s: float,
     ) -> ClaudeReply:
-        client = self._ensure_client()
         try:
+            # 클라이언트 생성도 try 안이다. 여기서 난 예외도 ClaudeError(→ 200)가 된다.
+            client = self._ensure_client()
             message = client.messages.create(
                 model=self.model,
                 max_tokens=max_tokens,
@@ -111,6 +114,8 @@ class AnthropicClaudeClient:
                 tools=tools,
                 timeout=timeout_s,
             )
+        except ClaudeError:
+            raise
         except Exception as exc:  # noqa: BLE001 - ClaudeError로 되던진다(from None은 키 때문)
             # 타임아웃, 연결, 4xx/5xx, 응답 검증이 서로 다른 예외로 온다. 운전자에게는
             # 모두 "지금은 대답하기 어렵다"는 같은 뜻이다. 원본을 매달면 traceback에
@@ -132,7 +137,10 @@ class AnthropicClaudeClient:
                 raise ClaudeError("ANTHROPIC_API_KEY가 설정되지 않았다")
             # max_retries=0: 운전 중 대화라 전체 시간 예산(8초)이 정해져 있고, 보낸
             # 요청이 시간 초과로 끝났을 때 다시 보내면 같은 일을 두 번 할 수 있다.
-            self._client = Anthropic(api_key=self.api_key, max_retries=0)
+            headers = {"anthropic-workspace-id": self.workspace_id} if self.workspace_id else None
+            self._client = Anthropic(
+                api_key=self.api_key, max_retries=0, default_headers=headers
+            )
         return self._client
 
     def _to_reply(self, message: Any) -> ClaudeReply:

@@ -747,3 +747,50 @@ def test_arrival_more_than_a_day_ahead_is_422(client, fake):
     assert response.json()["detail"][0]["loc"] == ["body", "context", "arrival_at"]
     assert briefing.status_code == 422
     assert fake.calls == []
+
+
+# ── 200 보장의 빈틈 ─────────────────────────────────────────────────────
+
+
+def test_db_error_inside_a_tool_is_a_tool_error_not_500(client, fake, monkeypatch, caplog):
+    from sqlalchemy.exc import OperationalError
+
+    def broken(*args, **kwargs):
+        raise OperationalError("SELECT", {}, Exception("db down"))
+
+    monkeypatch.setattr(voice, "summarize", broken)
+    fake.replies = [use("savings_summary"), say("지금은 확인할 수 없어요.")]
+
+    with caplog.at_level(logging.WARNING):
+        response = ask(client, register(client), "얼마 아꼈어")
+
+    assert response.status_code == 200
+    result = tool_results(fake, 1)[0]
+    assert result["is_error"] is True
+    assert result["content"] == {"error": "지금은 확인할 수 없습니다."}
+    assert "DB 오류: OperationalError" in caplog.text
+    assert "db down" not in caplog.text
+
+
+def test_claude_4xx_is_logged_as_a_warning_with_the_status_only(client, fake, caplog):
+    fake.replies = [
+        ClaudeError("invalid x-api-key 운전자 말", kind="AuthenticationError", status=401)
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        response = ask(client, register(client))
+
+    assert response.status_code == 200
+    assert response.json()["fallback"] is True
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("HTTP 401 (AuthenticationError)" in r.getMessage() for r in warnings)
+    assert "운전자 말" not in caplog.text
+
+
+def test_claude_5xx_is_not_a_warning(client, fake, caplog):
+    fake.replies = [ClaudeError("overloaded", kind="InternalServerError", status=529)]
+
+    with caplog.at_level(logging.WARNING):
+        ask(client, register(client))
+
+    assert not [r for r in caplog.records if "Claude가 요청을 거절" in r.getMessage()]

@@ -133,7 +133,11 @@ def anthropic_api_key() -> str:
 def claude_client() -> ClaudeClient:
     """실제 호출기. 테스트는 여기에 가짜를 꽂는다. SDK 클라이언트는 첫 호출에서 만든다."""
     settings = get_settings()
-    return AnthropicClaudeClient(api_key=settings.anthropic_api_key, model=settings.claude_model)
+    return AnthropicClaudeClient(
+        api_key=settings.anthropic_api_key,
+        model=settings.claude_model,
+        workspace_id=settings.claude_workspace_id,
+    )
 
 
 def _spoken_error(status_code: int, speech: str, headers: dict[str, str] | None = None):

@@ -82,3 +82,29 @@ def test_real_sdk_client_is_built_with_the_explicit_key_and_no_retries():
 def test_missing_key_is_claude_error():
     with pytest.raises(ClaudeError):
         AnthropicClaudeClient(api_key="", model="m")._ensure_client()
+
+
+def test_errors_while_building_the_sdk_client_are_claude_errors(monkeypatch):
+    client = AnthropicClaudeClient(api_key=KEY, model="m")
+
+    def broken():
+        raise RuntimeError("cannot build")
+
+    monkeypatch.setattr(client, "_ensure_client", broken)
+
+    with pytest.raises(ClaudeError) as caught:
+        _call(client)
+    assert caught.value.kind == "RuntimeError"
+
+
+def test_missing_key_inside_create_is_claude_error():
+    with pytest.raises(ClaudeError):
+        _call(AnthropicClaudeClient(api_key="", model="m"))
+
+
+def test_workspace_id_is_sent_as_a_default_header_only_when_set():
+    with_id = AnthropicClaudeClient(api_key=KEY, model="m", workspace_id="wrkspc_1")
+    without = AnthropicClaudeClient(api_key=KEY, model="m")
+
+    assert with_id._ensure_client().default_headers["anthropic-workspace-id"] == "wrkspc_1"
+    assert "anthropic-workspace-id" not in without._ensure_client().default_headers

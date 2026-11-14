@@ -284,6 +284,12 @@ class VoiceTools:
             # 요금 설정 오류 문구에는 서버 경로가 들어갈 수 있어 종류만 알린다.
             logger.warning("음성 대화 도구 %s 계산 실패: %s", name, type(exc).__name__)
             return ToolOutcome({"error": "지금은 계산할 수 없습니다."}, is_error=True)
+        except SQLAlchemyError as exc:
+            # 운전 중에는 오류 화면 대신 대화를 이어 간다(200). 세션을 되돌려 다음 도구가
+            # 깨진 트랜잭션 위에서 돌지 않게 한다.
+            self.session.rollback()
+            logger.warning("음성 대화 도구 %s DB 오류: %s", name, type(exc).__name__)
+            return ToolOutcome({"error": "지금은 확인할 수 없습니다."}, is_error=True)
 
     # -- 도구 ---------------------------------------------------------------
 
@@ -873,6 +879,10 @@ def converse(
             reason = "loop_limit"
     except ClaudeError as exc:
         reason = f"claude_error:{exc.kind}" + (f":{exc.status}" if exc.status else "")
+        if exc.status is not None and 400 <= exc.status < 500:
+            # 키·워크스페이스·모델 이름 같은 설정 문제일 가능성이 높다. 운전자는 서버 문장을
+            # 듣고 끝나므로 운영자가 알 수 있게 경고로 남긴다(상태 코드와 종류만).
+            logger.warning("Claude가 요청을 거절했습니다: HTTP %s (%s)", exc.status, exc.kind)
 
     response = _respond(final_text, reason, payload, outcomes)
     logger.info(

@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     # 지연이 짧은 모델. docs.claude.com 모델 목록에서 확인한 표기다.
     claude_model: str = "claude-haiku-5-5"
+    # 선택. 워크스페이스에 묶이지 않은 키를 쓸 때만 필요하다(anthropic-workspace-id 헤더).
+    claude_workspace_id: str = ""
     # 기기별·서비스 전체 하루(KST) 호출 한도. Claude를 부르는 요청만 센다.
     car_voice_daily_max: int = Field(default=60, ge=1)
     # 0이면 걸지 않는다(개발·테스트용, chat_service_limit_count와 같은 규칙).
