@@ -64,8 +64,8 @@ uv run uvicorn evcharge.main:app --reload
 음성 대화(`POST /api/car/voice`)는 `ANTHROPIC_API_KEY`가 있어야 하고(없으면 501, 귀가길
 브리핑 첫 질문만 200), 모델은 `CLAUDE_MODEL`(기본 `claude-haiku-5-5`)이다. Claude는 도구 4개
 (충전 계획, 빈 충전기, 돈이 새요, 절약 리포트)를 서버 함수로 부르고, 답의 숫자가 도구 결과에
-없으면 서버 문장으로 바꾼다. 기기별·서비스 전체 하루 한도는 `CAR_VOICE_DAILY_MAX`,
-`CAR_VOICE_SERVICE_DAILY_MAX`다. 계약은 `docs/car-api.md`.
+없으면 서버 문장으로 바꾼다(금액·잔량·시각을 단위별로 비교). 기기별·IP별·서비스 전체 하루
+한도는 `CAR_VOICE_DAILY_MAX`, `CAR_VOICE_IP_DAILY_MAX`, `CAR_VOICE_SERVICE_DAILY_MAX`다. 계약은 `docs/car-api.md`.
 
 세 엔드포인트는 외부 자격증명이 있어야 동작하고, 없으면 각자 501을 낸다.
 키 없이도 나머지 기능은 전부 돈다 — 기동 시점에 막지 않는다.
