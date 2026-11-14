@@ -184,7 +184,7 @@ def spoken_range(start: datetime, end: datetime, now: datetime) -> str:
     end_parts = []
     if end_day != start_day:
         end_parts.append(end_day)
-    if end_day != start_day or end_period != start_period:
+    if end_period and (end_day != start_day or end_period != start_period):
         end_parts.append(end_period)
     end_parts.append(_clock_only(end))
 
@@ -193,15 +193,20 @@ def spoken_range(start: datetime, end: datetime, now: datetime) -> str:
 
 
 def spoken_clock(moment: datetime) -> str:
-    """\"새벽 1시\", \"오후 3시 15분\", \"밤 12시\". 날짜는 붙이지 않는다."""
-    return f"{_period(moment)} {_clock_only(moment)}"
+    """\"새벽 1시\", \"오후 3시 15분\", \"밤 12시\", \"0시 29분\". 날짜는 붙이지 않는다."""
+    return " ".join(part for part in (_period(moment), _clock_only(moment)) if part)
 
 
 def _period(moment: datetime) -> str:
-    """하루를 귀로 듣기 쉬운 때로 나눈다. 00:00은 전날 \"밤 12시\"로 읽는다."""
+    """하루를 귀로 듣기 쉬운 때로 나눈다. 00:00은 전날 \"밤 12시\"로 읽는다.
+
+    00:01~00:59는 때 없이 \"0시 N분\"으로 읽는다 (``_clock_only``). \"새벽 12시 29분\"은
+    귀로 들으면 낮 12시로 헷갈리고, \"밤 12시 29분\"은 날짜를 전날로 당겨야 해서
+    지금 시각도 0시대일 때 날이 어긋난다.
+    """
     hour = moment.hour
-    if moment.hour == 0 and moment.minute == 0:
-        return "밤"
+    if hour == 0:
+        return "밤" if moment.minute == 0 else ""
     if hour < 6:
         return "새벽"
     if hour < 12:
@@ -216,6 +221,8 @@ def _period(moment: datetime) -> str:
 
 
 def _clock_only(moment: datetime) -> str:
+    if moment.hour == 0 and moment.minute:
+        return f"0시 {moment.minute}분"
     hour12 = moment.hour % 12 or 12
     return f"{hour12}시 {moment.minute}분" if moment.minute else f"{hour12}시"
 

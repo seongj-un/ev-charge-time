@@ -247,6 +247,31 @@ def test_spoken_range_reads_midnight_as_the_previous_night():
     )
 
 
+def test_spoken_range_reads_the_zero_hour_without_a_period():
+    assert spoken_range(kst(2026, 10, 7, 22), kst(2026, 10, 8, 0, 29), NOW) == (
+        "오늘 밤 10시부터 내일 0시 29분까지"
+    )
+    assert spoken_range(kst(2026, 10, 8, 0, 1), kst(2026, 10, 8, 3), NOW) == (
+        "내일 0시 1분부터 새벽 3시까지"
+    )
+    assert spoken_range(kst(2026, 10, 8, 0, 1), kst(2026, 10, 8, 0, 29), NOW) == (
+        "내일 0시 1분부터 0시 29분까지"
+    )
+
+
+def test_plan_speech_reads_a_zero_hour_end_in_the_reservation_sentence():
+    speech = compose_plan_speech(
+        window=(kst(2026, 10, 7, 22), kst(2026, 10, 8, 0, 29)),
+        savings_won=0,
+        reservable=True,
+        arriving=False,
+        now=NOW,
+    )
+
+    assert speech.endswith("차량 예약 충전을 밤 10시 시작, 0시 29분 종료로 설정해 주세요.")
+    assert "12시 29분" not in speech
+
+
 def test_spoken_range_uses_the_date_beyond_the_day_after_tomorrow():
     assert spoken_range(kst(2026, 10, 10, 11), kst(2026, 10, 10, 14), NOW) == (
         "10월 10일 오전 11시부터 오후 2시까지"
@@ -256,7 +281,9 @@ def test_spoken_range_uses_the_date_beyond_the_day_after_tomorrow():
 @pytest.mark.parametrize(
     ("moment", "spoken"),
     [
-        (kst(2026, 10, 8, 0, 30), "새벽 12시 30분"),
+        (kst(2026, 10, 8, 0, 1), "0시 1분"),
+        (kst(2026, 10, 8, 0, 29), "0시 29분"),
+        (kst(2026, 10, 8, 1), "새벽 1시"),
         (kst(2026, 10, 8, 5, 59), "새벽 5시 59분"),
         (kst(2026, 10, 8, 6), "오전 6시"),
         (kst(2026, 10, 8, 12), "낮 12시"),
