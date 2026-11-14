@@ -126,6 +126,72 @@ Reservation:
 로그인 없이 부를 수 있는 이 엔드포인트에서 14일 구간은 요청 하나에 약 3초가 걸리기
 때문이다. 도착부터 다음 출발까지는 주말을 넘겨도 72시간 안에 든다.
 
+## `POST /api/car/leak-check` "돈이 새고 있어요" 알림
+
+차가 충전 중일 때 앱이 부른다. 지금 충전 방식으로 새는 돈을 계산해, 기준 이상이면 할 일을
+알려 주는 문장을 돌려준다. 서버는 충전을 켜거나 끄지 않는다.
+
+돈이 새는 원인은 두 가지다.
+
+- `place="home"` (집·회사 완속): **시간대**. 지금 바로 충전했을 때와 출발 전 가장 싼 구간의
+  차이. 계산과 시각 검사는 `POST /api/car/plan`과 같다 (꽂는 시각 = 서버 현재 시각).
+- `place="public"` (공공 충전기): **결제 방식**. 로밍가·비회원가와 회원가의 차이.
+  한국소비자원 2025-12-17 발표 20개 사업자 평균 단가(`backend/config/public_charging_prices.yaml`)로
+  추정한다. 시간대 계산은 하지 않는다 (공공 급속 기준단가 미확인).
+
+### 요청 (JSON)
+
+| 필드 | 타입 | 필수 | 기본 | 규칙 |
+| --- | --- | --- | --- | --- |
+| `place` | string | | `home` | `home`, `public` |
+| `soc_now` | number | 예 | | 0 이상 100 미만 (%) |
+| `battery_capacity_wh` | number | 예 | | 1,000 이상 1,000,000 이하 (Wh) |
+| `soc_target` | number | | 80 | 0 초과 100 이하 (%) |
+| `charger_kw` | number | | 7.0 | 0 초과 1000 이하 (kW). home에서만 쓴다 |
+| `depart_at` | datetime | | 다음 오전 8시 | home에서만 쓴다. 없으면 지금 다음에 처음 오는 오전 8시(KST)로 가정하고 `assumptions`에 적는다. 있으면 car/plan과 같은 검사(현재 시각 이후, 72시간 이내) |
+| `mode` | string | | `self_low` | home에서만 쓴다 |
+| `payment` | string | public이면 예 | | `member`, `roaming`, `nonmember` |
+| `charger_speed` | string | public이면 예 | | `slow`, `fast` |
+
+home에서는 `payment`·`charger_speed`를, public에서는 `depart_at`·`mode`·`charger_kw`를 보지 않는다.
+
+### 응답 200
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `leaking` | bool | `leak_won > 0`이고 `leak_won >= CAR_LEAK_MIN_WON`(기본 500)이면 true |
+| `leak_won` | int | 새는 금액(원, 반올림). home은 car/plan의 `savings_won`, public은 `energy_kwh × (unit_price_now - unit_price_member)` |
+| `cause` | string \| null | `time`(home) 또는 `payment`(public). `leaking=false`면 null |
+| `energy_kwh` | number | 채울 전력량. 충전이 필요 없으면 0 |
+| `plan` | ChargePlanOut \| null | home이고 `leaking=true`일 때만. car/plan의 `plan`과 같음 |
+| `reservation` | Reservation \| null | home이고 `leaking=true`일 때만. car/plan의 `reservation`과 같음 (24시간 이상이면 null) |
+| `unit_price_now` | number \| null | public일 때만. 지금 결제 방식의 사업자 평균 단가(원/kWh) |
+| `unit_price_member` | number \| null | public일 때만. 회원가 사업자 평균 단가(원/kWh) |
+| `speech` | string | TTS가 그대로 읽을 문장 |
+| `assumptions` | string[] | 계산 전제. public은 "사업자 평균 기준 추정"을 늘 포함하고, 급속이면 원문 대조 전이라는 줄이 붙는다 |
+
+`speech`:
+
+- home, 새는 경우: "지금은 요금이 비싼 시간이라 돈이 새고 있어요. 오늘 밤 10시부터 충전하면
+  약 1,994원 아낄 수 있어요. 차량 예약 충전을 밤 10시 시작, 새벽 4시 39분 종료로 설정해
+  주세요." (시각 읽기는 car/plan과 같다)
+- public, 새는 경우: "비회원가로 충전하고 있어서 돈이 새고 있어요. 이번 충전(약 35kWh)은
+  회원가보다 약 5,344원 더 나와요. 이 충전소 사업자 회원으로 결제하면 아낄 수 있어요. 사업자
+  평균 기준 추정이에요." (전력량은 10kWh 이상이면 정수, 그 밑은 소수 첫째 자리)
+- 새지 않거나 기준 미만: "지금 충전해도 괜찮아요."
+- 이미 목표 잔량: "이미 목표 잔량 80%에 닿아서 더 충전하지 않아도 돼요."
+- home에서 지금 바로 충전해도 출발 전에 다 못 채움: "출발 전까지 목표만큼 채우려면 지금 바로
+  충전해야 해요." (car/plan은 이때 422지만, 여기서는 더 싼 선택지가 없다는 뜻이라 200으로
+  답한다)
+
+### 오류
+
+| 상태 | 언제 | 본문 |
+| --- | --- | --- |
+| 422 | 필드 범위·타입 오류, home의 `depart_at` 시각 오류 | FastAPI 검증 오류 `{"detail": [...]}`. 시각 오류의 `loc`은 `["body", "depart_at"]` |
+| 422 | public인데 `payment`나 `charger_speed`가 없음 | 같은 모양. `loc`은 `["body", "payment"]` 또는 `["body", "charger_speed"]`, `msg`는 "place가 public이면 payment가 필요합니다." |
+| 500 | 단가 설정 파일이 잘못됨 | 서버 설정 오류 |
+
 ## `GET /api/chargers` 빈 충전기만 찾기 ("충전 실패 피하기")
 
 차량 앱은 주변 충전소에 웹과 같은 `GET /api/chargers`를 쓴다. 공공 API를 부르지 않고
