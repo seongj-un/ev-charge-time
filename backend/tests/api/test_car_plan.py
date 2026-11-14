@@ -178,6 +178,12 @@ def test_target_at_or_below_now_needs_no_charging(client, soc_target):
     assert body["speech"] == f"잔량 30%가 목표 {soc_target}% 이상이라 충전하지 않아도 됩니다."
 
 
+def test_span_of_exactly_72_hours_is_accepted(client):
+    response = post(client, depart_at="2026-10-10T18:00")
+
+    assert response.status_code == 200
+
+
 def test_insufficient_time_is_the_existing_422(client):
     response = post(client, depart_at="2026-10-07T20:00")
 
@@ -190,7 +196,8 @@ def test_insufficient_time_is_the_existing_422(client):
     [
         ({"depart_at": "2026-10-07T18:00"}, "depart_at은 plug_in_at보다 뒤여야 합니다."),
         ({"plug_in_at": None, "depart_at": "2026-10-07T16:00"}, "depart_at은 현재 시각보다"),
-        ({"depart_at": "2026-10-22T18:00"}, "14일을 넘을 수 없습니다."),
+        ({"depart_at": "2026-10-10T18:01"}, "plug_in_at과 depart_at 사이는 72시간을"),
+        ({"plug_in_at": None, "depart_at": "2026-10-10T17:01"}, "현재 시각과 depart_at 사이"),
         # 충전이 필요 없어도 시각 검사는 한다.
         ({"soc_target": 20, "depart_at": "2026-10-07T17:30"}, "depart_at은 plug_in_at보다"),
         # 이미 지난 출발 시각은 꽂는 시각이 더 이르더라도 422다.

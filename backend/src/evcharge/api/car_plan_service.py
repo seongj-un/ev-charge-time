@@ -21,12 +21,17 @@ from ..domain.reservation import build_reservation, round_window
 from .deps import get_tariff
 from .recommend_service import compute_recommendation
 from .schemas import (
-    MAX_REQUEST_SPAN,
     CarPlanRequest,
     CarPlanResponse,
     RecommendRequest,
     ReservationOut,
 )
+
+# 도착부터 다음 출발까지만 보면 되므로 /api/recommend의 14일보다 훨씬 짧게 잡는다.
+# 계산량이 구간 길이의 제곱으로 늘어(후보 시작 수 × 후보마다 15분 조각 수), 로그인
+# 없이 부를 수 있는 이 엔드포인트에서 14일 구간은 요청 하나에 약 3초, 72시간은 약
+# 0.13초다 (vCPU 2개 기준). 금요일 저녁 도착, 월요일 아침 출발까지 담긴다.
+MAX_CAR_PLAN_SPAN = timedelta(hours=72)
 
 
 def compute_car_plan(payload: CarPlanRequest, now: datetime) -> CarPlanResponse:
@@ -104,11 +109,12 @@ def _check_window(payload: CarPlanRequest, plug_in_at: datetime, now: datetime) 
     from_now = plug_in_at == now
     if payload.depart_at <= plug_in_at:
         _reject("depart_at", "depart_at은 plug_in_at보다 뒤여야 합니다.", payload.depart_at)
-    if payload.depart_at - plug_in_at > MAX_REQUEST_SPAN:
+    if payload.depart_at - plug_in_at > MAX_CAR_PLAN_SPAN:
         start = "현재 시각" if from_now else "plug_in_at"
+        hours = int(MAX_CAR_PLAN_SPAN.total_seconds() // 3600)
         _reject(
             "depart_at",
-            f"{start}과 depart_at 사이는 {MAX_REQUEST_SPAN.days}일을 넘을 수 없습니다.",
+            f"{start}과 depart_at 사이는 {hours}시간을 넘을 수 없습니다.",
             payload.depart_at,
         )
 
