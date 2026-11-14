@@ -54,6 +54,16 @@ class Settings(BaseSettings):
     # 한 번 남긴다. 바꾸면 그 시점의 창 카운터만 새로 시작한다.
     car_ip_hash_secret: str = ""
 
+    # 와트잇 음성 대화 (BE-3, Claude). 키가 없으면 POST /api/car/voice만 501이고
+    # (귀가길 브리핑의 첫 질문은 서버 문장이라 키 없이도 200), 기동은 막지 않는다.
+    anthropic_api_key: str = ""
+    # 지연이 짧은 모델. docs.claude.com 모델 목록에서 확인한 표기다.
+    claude_model: str = "claude-haiku-5-5"
+    # 기기별·서비스 전체 하루(KST) 호출 한도. Claude를 부르는 요청만 센다.
+    car_voice_daily_max: int = Field(default=60, ge=1)
+    # 0이면 걸지 않는다(개발·테스트용, chat_service_limit_count와 같은 규칙).
+    car_voice_service_daily_max: int = Field(default=2000, ge=0)
+
     # 인증 (infra/security.py, api/auth_deps.py)
     cookie_secure: bool = False
     session_days: int = 14

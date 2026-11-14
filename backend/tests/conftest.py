@@ -111,6 +111,8 @@ def _never_call_the_real_llm() -> None:
     (``tests/api/test_chargers.py``의 ``_api_key_configured``와 같은 방식).
     """
     os.environ["GEMINI_API_KEY"] = ""
+    # 같은 이유로 Claude 키도 비운다 (BE-3 음성 대화).
+    os.environ["ANTHROPIC_API_KEY"] = ""
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -125,6 +127,8 @@ def _service_quota_off_by_default() -> None:
     서비스 한도 자체는 ``test_chat_service_quota.py``가 켜서 검증한다.
     """
     os.environ["CHAT_SERVICE_LIMIT_COUNT"] = "0"
+    # 음성 대화의 서비스 전체 한도도 같은 이유로 끈다 (BE-3). 켜는 테스트는 따로 있다.
+    os.environ["CAR_VOICE_SERVICE_DAILY_MAX"] = "0"
 
 
 @pytest.fixture(scope="session")
