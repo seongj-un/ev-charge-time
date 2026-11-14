@@ -358,7 +358,9 @@ def test_summary_speech_labels_other_months_and_years(client, db_session, monkey
     )
 
 
-@pytest.mark.parametrize("month", ["2026-13", "26-11", "2026-1", "november"])
+@pytest.mark.parametrize(
+    "month", ["2026-13", "26-11", "2026-1", "november", "0000-01", "9999-01", "9999-12"]
+)
 def test_summary_month_must_be_yyyy_mm(client, month):
     response = summary(client, register(client), month=month)
 

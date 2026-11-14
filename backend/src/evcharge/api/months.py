@@ -13,6 +13,9 @@ from fastapi import HTTPException
 from ..domain.pricing import KST
 
 MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
+# 다음 달·다음 해 경계(``year + 1``)를 만들 수 있는 마지막 해. 9999년이면 datetime이
+# 10000년을 만들지 못해 500이 났다.
+MAX_YEAR = 9998
 _MONTH_ERROR = "month는 YYYY-MM 형식이어야 합니다."
 
 
@@ -29,7 +32,7 @@ def month_bounds(month: str) -> tuple[datetime, datetime]:
     try:
         year_str, month_str = month.split("-")
         year, month_num = int(year_str), int(month_str)
-        if not 1 <= month_num <= 12:
+        if not 1 <= year <= MAX_YEAR or not 1 <= month_num <= 12:
             raise ValueError(month)
         start = datetime(year, month_num, 1, tzinfo=KST)
     except ValueError as exc:
