@@ -376,7 +376,7 @@ MIN_BATTERY_CAPACITY_WH = 1000
 class CarPlanRequest(BaseModel):
     """``POST /api/car/plan`` 요청. 차량이 아는 값으로 충전 계획을 묻는다.
 
-    ``soc_target <= soc_now``는 오류가 아니다 — \"충전 필요 없음\" 응답으로
+    ``soc_target <= soc_now``는 오류가 아니다 — "충전 필요 없음" 응답으로
     답하므로 ``RecommendRequest``와 달리 여기서 막지 않는다. 시각의 앞뒤 검사는
     ``plug_in_at``이 빠졌을 때 서버 현재 시각이 들어가야 해서 계산 서비스
     (``car_plan_service``)에서 한다.
