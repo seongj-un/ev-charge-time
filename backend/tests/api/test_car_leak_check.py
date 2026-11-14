@@ -106,19 +106,77 @@ def test_default_depart_is_the_first_8am_after_now(now, expected):
     assert default_depart_at(now) == expected
 
 
-def test_assumed_departure_too_close_is_moved_to_the_next_day(client, monkeypatch):
-    # 07:00에 출발 시각 없이 부르면 08:00(1시간 뒤)로는 못 채운다. 그건 운전자가 정한
-    # 시각이 아니므로 다음 날 08:00으로 다시 본다.
-    monkeypatch.setattr(car, "now_kst", lambda: kst(2026, 11, 16, 7))
-    assumed = post(client, HOME).json()
-    explicit = post(client, {**HOME, "depart_at": "2026-11-17T08:00"}).json()
+# 2026-11-17(화). 32%→80%, 77.4kWh, 7kW = 약 5시간 18분 (리뷰 재현 조건)
+TUESDAY_32 = {"soc_now": 32, "battery_capacity_wh": 77400}
+KEEP_CHARGING_ASSUMED = (
+    "오늘 오전 8시에 출발하신다면 지금 바로 충전을 계속해야 해요. "
+    "출발 시각을 알려 주시면 다시 계산해 드릴게요."
+)
 
-    assert assumed["leak_won"] == explicit["leak_won"]
-    assert assumed["leaking"] is explicit["leaking"] is True
-    assert assumed["reservation"] == explicit["reservation"]
-    assert "출발 시각 미입력: 11월 17일 오전 8시(KST) 출발로 가정" in assumed["assumptions"]
-    assert not any("11월 16일" in item for item in assumed["assumptions"])
-    assert "지금 바로 충전해야 해요" not in assumed["speech"]
+
+@pytest.mark.parametrize("hour_minute", [(4, 0), (5, 0), (7, 55)])
+def test_assumed_morning_departure_too_close_keeps_charging(client, monkeypatch, hour_minute):
+    # 가정한 08:00까지 못 채운다. 가정을 늦춰 "멈추라"고 하면 그날 아침 나가는
+    # 운전자가 충전이 안 된 차로 출발한다. 가정을 밝히고 계속 충전하라고 한다.
+    monkeypatch.setattr(car, "now_kst", lambda: kst(2026, 11, 17, *hour_minute))
+    body = post(client, TUESDAY_32).json()
+
+    assert body["leaking"] is False
+    assert body["leak_won"] == 0
+    assert body["plan"] is None and body["reservation"] is None
+    assert body["speech"] == KEEP_CHARGING_ASSUMED
+    assert "멈추고" not in body["speech"]
+    assert body["assumptions"] == ["출발 시각 미입력: 11월 17일 오전 8시(KST) 출발로 가정"]
+
+
+def test_assumed_departure_that_cannot_be_met_at_all(client, monkeypatch):
+    monkeypatch.setattr(car, "now_kst", lambda: kst(2026, 11, 17, 4))
+    # 300kWh 0→100%: 7kW로 약 43시간. 가정한 08:00으로는 어차피 모자란다.
+    body = post(
+        client, {"soc_now": 0, "soc_target": 100, "battery_capacity_wh": 300_000}
+    ).json()
+
+    assert body["leaking"] is False
+    assert body["speech"] == KEEP_CHARGING_ASSUMED
+
+
+def test_assumed_departure_leak_names_the_assumption(client, monkeypatch):
+    monkeypatch.setattr(car, "now_kst", lambda: kst(2026, 11, 17, 18))
+    body = post(client, TUESDAY_32).json()
+
+    assert body["leaking"] is True
+    assert body["speech"].startswith(
+        "내일 오전 8시 출발 기준으로, 지금은 요금이 비싼 시간이라 돈이 새고 있어요. "
+    )
+    assert "지금 충전을 멈추고 차량 예약 충전을" in body["speech"]
+
+
+def test_assumed_departure_today_that_fits_is_fine(client, monkeypatch):
+    # 01:00, 08:00까지 7시간이면 5시간 18분은 채운다. 가정은 오늘 08:00이고,
+    # 22~08시는 전부 경부하라 바로 충전해도 새지 않는다.
+    monkeypatch.setattr(car, "now_kst", lambda: kst(2026, 11, 17, 1))
+    body = post(client, TUESDAY_32).json()
+
+    assert body["assumptions"][-1] == "출발 시각 미입력: 11월 17일 오전 8시(KST) 출발로 가정"
+    assert body["leaking"] is False
+    assert body["speech"] == "지금 충전해도 괜찮아요."
+
+
+@pytest.mark.parametrize("depart", ["2026-11-17T08:00", "2026-11-17T09:30"])
+def test_given_departure_keeps_the_old_wording(client, monkeypatch, depart):
+    monkeypatch.setattr(car, "now_kst", lambda: kst(2026, 11, 17, 4))
+    body = post(client, {**TUESDAY_32, "depart_at": depart}).json()
+
+    assert "출발 기준으로" not in body["speech"]
+    assert "출발하신다면" not in body["speech"]
+    assert not any("미입력" in item for item in body["assumptions"])
+    if depart.endswith("08:00"):
+        # 4시간으로는 5시간 18분을 못 채운다: 직접 받은 시각이니 단정해도 된다.
+        assert body["speech"] == "출발 전까지 목표만큼 채우려면 지금 바로 충전해야 해요."
+    else:
+        # 5시간 30분 안에 채우고, 경부하(~08시)에 대부분 들어가 새지 않는다.
+        assert body["leaking"] is False
+        assert body["speech"] == "지금 충전해도 괜찮아요."
 
 
 def test_given_departure_too_close_still_says_keep_charging(client, monkeypatch):
@@ -127,15 +185,6 @@ def test_given_departure_too_close_still_says_keep_charging(client, monkeypatch)
 
     assert body["leaking"] is False
     assert body["speech"] == "출발 전까지 목표만큼 채우려면 지금 바로 충전해야 해요."
-
-
-def test_assumed_departure_too_close_even_a_day_later(client):
-    # 1,000kWh × 60% / 7kW ≈ 86시간: 다음 날 08:00(38시간 뒤)으로도 모자란다.
-    body = post(client, {**HOME, "battery_capacity_wh": 1_000_000}).json()
-
-    assert body["leaking"] is False
-    assert body["speech"] == "출발 전까지 목표만큼 채우려면 지금 바로 충전해야 해요."
-    assert body["assumptions"] == ["출발 시각 미입력: 11월 18일 오전 8시(KST) 출발로 가정"]
 
 
 def test_home_insufficient_time_says_keep_charging(client):

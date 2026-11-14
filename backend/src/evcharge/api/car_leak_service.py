@@ -89,31 +89,32 @@ def is_leaking(leak_won: int, min_won: int) -> bool:
 def _home(payload: CarLeakCheckRequest, now: datetime, *, min_won: int) -> CarLeakCheckResponse:
     energy_kwh = _energy_kwh(payload)
     assumptions: list[str] = []
+    # 출발 시각을 받지 않았으면 가정한다. 이 가정은 운전자가 말한 것이 아니므로,
+    # 가정에서 나온 문장은 전부 가정을 앞에 밝힌다. 가정한 출발을 늦춰 다시 계산하지
+    # 않는다: 늦춘 출발로 "지금 충전을 멈추라"고 하면, 그날 아침 나가는 운전자는 충전이
+    # 안 된 차로 출발한다. 편의(충전 실패 막기)가 돈보다 먼저다.
+    assumed = payload.depart_at is None
+    depart_at = payload.depart_at if payload.depart_at is not None else default_depart_at(now)
+    if assumed:
+        assumptions.append(_assumed_depart(depart_at))
     try:
-        if payload.depart_at is not None:
-            # 시각 검증(지난 출발 시각, 72시간 상한)도 여기서 같은 422로 난다.
-            result = _plan(payload, payload.depart_at, now)
-        else:
-            depart_at = default_depart_at(now)
-            try:
-                result = _plan(payload, depart_at, now)
-            except InsufficientTimeError:
-                # 가정한 출발(예: 07:00에 부르면 08:00)까지 모자란 것은 운전자가 정한
-                # 시각이 아니다. 그걸로 "지금 바로 충전해야 해요"라고 단정하지 않고,
-                # 다음 날 같은 시각으로 한 번 더 본다 (48시간 이내라 72시간 상한 안).
-                depart_at += timedelta(days=1)
-                assumptions.append(_assumed_depart(depart_at))
-                result = _plan(payload, depart_at, now)
-            else:
-                assumptions.append(_assumed_depart(depart_at))
+        # 시각 검증(지난 출발 시각, 72시간 상한)도 여기서 같은 422로 난다.
+        result = _plan(payload, depart_at, now)
     except InsufficientTimeError:
         # 지금 바로 충전해도 출발 전에 다 못 채운다. 더 싼 선택지가 없으니 새는
         # 돈도 없다 — 422로 막는 대신 할 일(지금 계속 충전)을 말한다.
+        if assumed:
+            speech = (
+                f"{spoken_moment(depart_at, now)}에 출발하신다면 지금 바로 충전을 계속해야 해요. "
+                "출발 시각을 알려 주시면 다시 계산해 드릴게요."
+            )
+        else:
+            speech = "출발 전까지 목표만큼 채우려면 지금 바로 충전해야 해요."
         return CarLeakCheckResponse(
             leaking=False,
             leak_won=0,
             energy_kwh=energy_kwh,
-            speech="출발 전까지 목표만큼 채우려면 지금 바로 충전해야 해요.",
+            speech=speech,
             assumptions=assumptions,
         )
 
@@ -135,8 +136,11 @@ def _home(payload: CarLeakCheckRequest, now: datetime, *, min_won: int) -> CarLe
 
     reservation = result.reservation
     start = reservation.start_at if reservation is not None else plan.start
+    cause = _time_leak_cause(now, payload)
+    if assumed:
+        cause = f"{spoken_moment(depart_at, now)} 출발 기준으로, {cause}"
     sentences = [
-        _time_leak_cause(now, payload),
+        cause,
         f"{spoken_moment(start.astimezone(KST), now)}부터 충전하면 "
         f"약 {leak_won:,}원 아낄 수 있어요.",
     ]
