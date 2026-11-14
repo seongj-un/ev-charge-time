@@ -392,21 +392,104 @@ def test_numbers_from_the_tool_text_and_context_are_allowed(client, fake):
     assert plan["reservation"]["start_hhmm"] == "22:00"
 
 
+PLAN_CONTENT = {
+    "needs_charging": True,
+    "soc_start": 32,
+    "soc_target": 80,
+    "depart_at": "2026-11-17 08:00",
+    "speech": "오늘 밤 10시부터 내일 새벽 3시 19분까지 충전하면 가장 쌉니다. "
+    "지금 바로 충전하는 것보다 약 1,416원 아낍니다.",
+    "reservation": {"start": "22:00", "end": "03:19"},
+    "savings_won": 1416,
+    "energy_kwh": 37.2,
+}
+
+
+def plan_sources(driver_texts=()):
+    ctx = voice.CarVoiceContext.model_validate(CONTEXT)
+    return voice.number_sources([voice.ToolOutcome(PLAN_CONTENT)], ctx, list(driver_texts))
+
+
 @pytest.mark.parametrize(
-    ("speech", "sources", "bad"),
+    "speech",
     [
-        ("약 1,416원", ['{"savings_won": 1416}'], set()),
-        ("새벽 3시 19분", ['{"end": "03:19"}'], set()),
-        ("오후 6시", ['"18:00"'], set()),
-        ("32.5%", ["32.46"], set()),
-        ("32%", ["32.46"], set()),
-        ("9시", ['"2026-11-17 08:00"'], {"9"}),
-        ("1.2킬로미터", ['{"distance_km": 1.2}'], set()),
-        ("2,000원", ['{"leak_won": 1995}'], {"2000"}),
+        "밤 10시부터 새벽 3시 19분까지 충전하면 약 1,416원 아껴요.",
+        "22:00부터 03:19까지 예약해 주세요.",
+        "지금 32%라서 8시 전에 80%까지 채워요.",
+        "오전 8시 출발 기준이에요.",
+        "37.2kWh를 충전해요.",
+        "77.4kWh 배터리예요.",
     ],
 )
-def test_unsupported_numbers(speech, sources, bad):
-    assert voice.unsupported_numbers(speech, sources) == bad
+def test_unit_checked_numbers_that_pass(speech):
+    assert voice.unsupported_numbers(speech, plan_sources()) == []
+
+
+@pytest.mark.parametrize(
+    ("speech", "bad"),
+    [
+        # 충전 요금(5,082원)을 아낀 돈으로: 요금은 근거에 넣지 않는다.
+        ("약 5,082원 아낄 수 있어요.", ["5,082원"]),
+        # 출발 날짜의 17을 금액으로
+        ("약 17원 아껴요.", ["17원"]),
+        # 시작과 종료가 뒤바뀜
+        ("새벽 3시 19분부터 밤 10시까지 충전하세요.", ["새벽 3시 19분부터 밤 10시까지"]),
+        ("03:19부터 22:00까지 예약하세요.", ["03:19부터 22:00까지"]),
+        # 반올림한 금액, 근거 없는 시각, 잔량이 아닌 %
+        ("약 2천 원 아껴요.", ["2천 원"]),
+        ("오후 3시에 충전하세요.", ["오후 3시"]),
+        ("1416%예요.", ["1416%"]),
+        # 날짜 숫자는 근거가 아니다
+        ("11월 17일 출발이죠.", ["11", "17"]),
+        # 운전자가 말하지 않은 "7시 반"
+        ("7시 반에 출발하시면 돼요.", ["7시 반"]),
+    ],
+)
+def test_unit_checked_numbers_that_fail(speech, bad):
+    assert voice.unsupported_numbers(speech, plan_sources()) == bad
+
+
+def test_driver_words_including_history_are_sources_but_wattit_turns_are_not():
+    sources = plan_sources(["내일 7시 반에 나가", "예산은 3천 원이야"])
+
+    assert voice.unsupported_numbers("7시 반 출발로 3천 원 안에서 맞출게요.", sources) == []
+
+
+def test_numbers_from_earlier_driver_turns_are_allowed(client, fake):
+    fake.replies = [say("네, 7시 반 출발 기준으로 다시 볼게요.")]
+    history = [
+        {"role": "driver", "text": "내일 7시 반에 나가"},
+        {"role": "wattit", "text": "알겠어요. 9시 15분으로 할까요?"},
+    ]
+
+    body = ask(client, register(client), "다시 계산해 줘", history=history).json()
+    fake.replies = [say("9시 15분으로 할게요.")]
+    wattit_only = ask(client, register(client), "그걸로 해", history=history).json()
+
+    assert body["fallback"] is False
+    assert wattit_only["fallback"] is True
+
+
+def test_charge_cost_is_not_sent_to_the_model(client, fake):
+    fake.replies = [use("plan_charge", {"depart_time": "08:00"}), say("예약했어요.")]
+
+    ask(client, register(client))
+
+    assert "cost_won" not in tool_results(fake, 1)[0]["content"]
+
+
+def test_swapped_reservation_times_fall_back(client, fake):
+    plan = expected_plan(client)
+    start, end = plan["reservation"]["start_hhmm"], plan["reservation"]["end_hhmm"]
+    fake.replies = [
+        use("plan_charge", {"depart_time": "08:00"}),
+        say(f"{end}부터 {start}까지 충전하세요."),
+    ]
+
+    body = ask(client, register(client)).json()
+
+    assert body["fallback"] is True
+    assert body["speech"] == plan["speech"]
 
 
 # ── 실패해도 200 ────────────────────────────────────────────────────────

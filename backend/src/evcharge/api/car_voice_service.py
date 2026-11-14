@@ -327,7 +327,7 @@ class VoiceTools:
         if result.savings_won is not None:
             content["savings_won"] = result.savings_won
         if result.plan is not None:
-            content["cost_won"] = result.plan.cost_won
+            # 충전 요금(cost_won)은 넘기지 않는다: "아낀 돈"으로 잘못 말할 근거가 된다.
             content["energy_kwh"] = result.plan.energy_kwh
             if result.savings_won:
                 saving_id = self._record("time", result.savings_won, result.plan.energy_kwh, "plan")
@@ -465,12 +465,46 @@ def spoken_distance(meters: float) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 숫자 검증
+# 숫자 검증 (단위별)
 # ---------------------------------------------------------------------------
+#
+# Claude 답의 숫자를 단위에 따라 다른 근거와 비교한다.
+#
+# - "N원": 절감·새는 금액 필드(``*_won``, 충전 요금 제외)와 서버 문장의 "N원"
+# - "N%": 잔량 값(``soc*``, context의 잔량)과 서버 문장의 "N%"
+# - "H시 M분"(12시간제, "반" 포함), "HH:MM": 예약·출발·도착 시각
+# - "A부터 B까지": 예약 구간이 있으면 A가 시작, B가 종료여야 한다
+# - 그 밖의 숫자: 도구 결과·context에 나온 숫자 전체. 날짜 문자열의 숫자는 뺀다
+#
+# 운전자 말(이번 text와 history의 driver 턴)의 숫자는 같은 규칙으로 근거에 더한다.
+# 와트잇 턴은 클라이언트가 보낸 값이라 근거로 쓰지 않는다.
 
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 # 시각 HH:MM. 앞에 +, -가 붙은 것(시간대 오프셋)은 시각이 아니다.
 _CLOCK = re.compile(r"(?<![+\-\d])([01]?\d|2[0-3]):([0-5]\d)(?!\d)")
+_DATE = re.compile(r"\d{4}-\d{2}(?:-\d{2})?")
+_PERIOD = r"(?:(오전|오후|새벽|아침|낮|저녁|밤)\s*)?"
+_KOREAN_TIME = _PERIOD + r"(\d{1,2})\s*시(?!간)(?:\s*(\d{1,2})\s*분|\s*(반))?"
+_TIME_RE = re.compile(_KOREAN_TIME)
+_RANGE_RE = re.compile(_KOREAN_TIME + r"\s*부터[^.?!]*?" + _KOREAN_TIME + r"\s*까지")
+_CLOCK_RANGE_RE = re.compile(
+    r"(?<![+\-\d])([01]?\d|2[0-3]):([0-5]\d)\s*부터[^.?!]*?([01]?\d|2[0-3]):([0-5]\d)\s*까지"
+)
+_MONEY_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(만|천)?\s*원")
+_PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|퍼센트)")
+_PERIOD_HOURS = {
+    "새벽": set(range(7)),
+    "오전": set(range(12)),
+    "아침": set(range(4, 12)),
+    "낮": set(range(11, 17)),
+    "오후": set(range(12, 24)),
+    "저녁": set(range(16, 24)),
+    "밤": set(range(18, 24)) | {0, 1, 2},
+}
+# 근거로 쓰지 않는 금액 필드. 충전 요금을 "아낀 돈"으로 말하는 혼동을 막는다.
+_MONEY_EXCLUDED_KEYS = {"cost_won"}
+
+Clock = tuple[int, int]
 
 
 def _normalize(token: str) -> str | None:
@@ -494,37 +528,173 @@ def numbers_in(text: str) -> set[str]:
     return found
 
 
-def allowed_numbers(sources: list[str]) -> set[str]:
-    """말해도 되는 숫자. 원래 값에 더해, 사람이 말하는 모양도 넣는다.
+def _spoken_forms(number: str) -> set[str]:
+    """소수는 사람이 말하는 모양(정수, 소수 첫째 자리 반올림)도 허용한다."""
+    forms = {number}
+    if "." in number:
+        value = Decimal(number)
+        forms.add(str(int(value.quantize(Decimal(1), rounding="ROUND_HALF_UP"))))
+        tenth = value.quantize(Decimal("0.1"), rounding="ROUND_HALF_UP")
+        forms.add(_normalize(str(tenth)) or number)
+    return forms
 
-    - 소수는 정수 반올림과 소수 첫째 자리 반올림 (32.46% → "32%", "32.5%")
-    - ``HH:MM``의 시는 12시간제 (18:00 → "6시", 00:30 → "12시")
+
+def _clock_candidates(
+    period: str | None, hour: str, minute: str | None, half: str | None
+) -> set[Clock]:
+    """말한 시각이 가리킬 수 있는 (시, 분).
+
+    "밤 10시" → {(22, 0)}, "3시 19분" → {(3, 19), (15, 19)}, "7시 반" → {(7, 30), (19, 30)}.
     """
-    allowed: set[str] = set()
-    for text in sources:
-        for number in numbers_in(text):
-            allowed.add(number)
-            if "." in number:
-                value = Decimal(number)
-                allowed.add(str(int(value.quantize(Decimal(1), rounding="ROUND_HALF_UP"))))
-                allowed.add(
-                    _normalize(str(value.quantize(Decimal("0.1"), rounding="ROUND_HALF_UP")))
-                    or number
-                )
-        for hour, _minute in _CLOCK.findall(text):
-            allowed.add(str(int(hour) % 12 or 12))
-    return allowed
+    h = int(hour)
+    m = 30 if half else int(minute) if minute else 0
+    if h > 24 or m > 59:
+        return set()
+    hours = {h} if h > 12 else {0} if h in (0, 24) else {h % 12, h % 12 + 12}
+    if period:
+        hours &= _PERIOD_HOURS[period]
+    return {(value, m) for value in hours}
 
 
-def unsupported_numbers(speech: str, sources: list[str]) -> set[str]:
-    return numbers_in(speech) - allowed_numbers(sources)
+def _mask(text: str, start: int, end: int) -> str:
+    return text[:start] + " " * (end - start) + text[end:]
 
 
-def _context_sources(ctx: CarVoiceContext) -> list[str]:
-    values = [ctx.soc_now, ctx.battery_capacity_wh, ctx.battery_capacity_wh / 1000, ctx.charger_kw]
+@dataclass
+class NumberSources:
+    """말해도 되는 숫자의 근거. 단위마다 따로 모은다."""
+
+    money: set[int] = field(default_factory=set)
+    percent: set[str] = field(default_factory=set)
+    times: set[Clock] = field(default_factory=set)
+    intervals: list[tuple[Clock, Clock]] = field(default_factory=list)
+    plain: set[str] = field(default_factory=set)
+
+    def add_number(self, value: float | int) -> None:
+        normalized = _normalize(repr(value) if isinstance(value, float) else str(value))
+        if normalized is not None:
+            self.plain |= _spoken_forms(normalized)
+
+    def add_percent(self, value: float | int) -> None:
+        normalized = _normalize(repr(value) if isinstance(value, float) else str(value))
+        if normalized is not None:
+            self.percent |= _spoken_forms(normalized)
+            self.plain |= _spoken_forms(normalized)
+
+    def add_clock_text(self, text: str) -> None:
+        """구조화된 시각 문자열("22:00", "2026-11-17 08:00"). 날짜 숫자는 넣지 않는다."""
+        for hour, minute in _CLOCK.findall(text):
+            self.times.add((int(hour), int(minute)))
+
+    def add_spoken(self, text: str, *, times: bool) -> None:
+        """서버 문장이나 운전자 말. "N원"·"N%"는 그 단위로, 나머지는 숫자로.
+
+        ``times``: 말 속 시각을 시각 근거로 쓸지. 운전자 말만 true다. 서버 문장의 시각은
+        구조화된 예약·출발·도착 값에서 이미 들어온다.
+        """
+        if times:
+            for match in _TIME_RE.finditer(text):
+                self.times |= _clock_candidates(*match.groups())
+        for match in _MONEY_RE.finditer(text):
+            won = _won_value(match)
+            if won is not None:
+                self.money.add(won)
+        for match in _PERCENT_RE.finditer(text):
+            normalized = _normalize(match.group(1))
+            if normalized is not None:
+                self.percent |= _spoken_forms(normalized)
+        for number in numbers_in(_DATE.sub(" ", text)):
+            self.plain |= _spoken_forms(number)
+
+    def add_tool_content(self, value: Any, key: str = "") -> None:
+        if isinstance(value, dict):
+            start = _CLOCK.search(value["start"]) if isinstance(value.get("start"), str) else None
+            end = _CLOCK.search(value["end"]) if isinstance(value.get("end"), str) else None
+            if start and end:
+                self.intervals.append(((int(start[1]), int(start[2])), (int(end[1]), int(end[2]))))
+            for child_key, child in value.items():
+                self.add_tool_content(child, child_key)
+        elif isinstance(value, list):
+            for child in value:
+                self.add_tool_content(child, key)
+        elif isinstance(value, bool) or value is None:
+            return
+        elif isinstance(value, int | float):
+            self.add_number(value)
+            if key.endswith("_won") and key not in _MONEY_EXCLUDED_KEYS:
+                self.money.add(int(value))
+            if key.startswith("soc"):
+                self.add_percent(value)
+        elif isinstance(value, str):
+            if key in ("speech", "error"):
+                self.add_spoken(value, times=False)
+            else:
+                self.add_clock_text(value)
+                without_clock = _CLOCK.sub(" ", _DATE.sub(" ", value))
+                for number in numbers_in(without_clock):
+                    self.plain.add(number)
+
+
+def _won_value(match: re.Match[str]) -> int | None:
+    normalized = _normalize(match.group(1))
+    if normalized is None:
+        return None
+    value = Decimal(normalized) * {"만": 10_000, "천": 1_000}.get(match.group(2) or "", 1)
+    return int(value) if value == value.to_integral_value() else None
+
+
+def number_sources(
+    outcomes: list[ToolOutcome], ctx: CarVoiceContext, driver_texts: list[str]
+) -> NumberSources:
+    sources = NumberSources()
+    for outcome in outcomes:
+        sources.add_tool_content(outcome.content)
+    sources.add_percent(ctx.soc_now)
     if ctx.arrival_soc is not None:
-        values.append(ctx.arrival_soc)
-    return [repr(value) for value in values]
+        sources.add_percent(ctx.arrival_soc)
+    sources.add_number(ctx.battery_capacity_wh)
+    sources.add_number(ctx.battery_capacity_wh / 1000)
+    sources.add_number(ctx.charger_kw)
+    for text in driver_texts:
+        sources.add_spoken(text, times=True)
+    return sources
+
+
+def unsupported_numbers(speech: str, sources: NumberSources) -> list[str]:
+    """근거가 없는 숫자 표현들. 비어 있으면 통과."""
+    problems: list[str] = []
+    rest = speech
+
+    if sources.intervals:
+        for match in _RANGE_RE.finditer(speech):
+            first = _clock_candidates(*match.groups()[:4])
+            second = _clock_candidates(*match.groups()[4:])
+            if not any(start in first and end in second for start, end in sources.intervals):
+                problems.append(match.group(0))
+        for match in _CLOCK_RANGE_RE.finditer(speech):
+            first = (int(match[1]), int(match[2]))
+            second = (int(match[3]), int(match[4]))
+            if (first, second) not in sources.intervals:
+                problems.append(match.group(0))
+
+    for match in _TIME_RE.finditer(speech):
+        if not _clock_candidates(*match.groups()) & sources.times:
+            problems.append(match.group(0))
+        rest = _mask(rest, *match.span())
+    for match in _CLOCK.finditer(rest):
+        if (int(match[1]), int(match[2])) not in sources.times:
+            problems.append(match.group(0))
+        rest = _mask(rest, *match.span())
+    for match in _MONEY_RE.finditer(rest):
+        if _won_value(match) not in sources.money:
+            problems.append(match.group(0))
+        rest = _mask(rest, *match.span())
+    for match in _PERCENT_RE.finditer(rest):
+        if _normalize(match.group(1)) not in sources.percent:
+            problems.append(match.group(0))
+        rest = _mask(rest, *match.span())
+    problems += sorted(numbers_in(rest) - sources.plain)
+    return problems
 
 
 # ---------------------------------------------------------------------------
@@ -714,9 +884,10 @@ def _respond(
     speech = final_text.strip()
     if not speech or len(speech) > MAX_SPEECH_CHARS:
         return fallback(ERROR_SPEECH)
-    sources = [json.dumps(outcome.content, ensure_ascii=False) for outcome in outcomes]
-    sources += _context_sources(payload.context)
-    sources.append(payload.text or "")
+    driver_texts = [payload.text or ""] + [
+        turn.text for turn in payload.history if turn.role == "driver"
+    ]
+    sources = number_sources(outcomes, payload.context, driver_texts)
     if unsupported_numbers(speech, sources):
         return fallback(NUMBER_SPEECH)
     if speech.endswith("?"):
