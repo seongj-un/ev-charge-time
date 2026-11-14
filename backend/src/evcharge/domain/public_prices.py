@@ -40,12 +40,14 @@ class PublicPrices:
 
     @classmethod
     def load(cls, path: Path) -> PublicPrices:
-        tariff = Tariff.load(path)
+        tariff = Tariff.load(path, source="public_prices")
         by_speed: dict[str, SpeedPrices] = {}
         for speed in SPEEDS:
             item = tariff.items.get(speed)
             if item is None or not isinstance(item.value, dict):
-                raise TariffConfigError(f"공공 충전 단가 설정에 '{speed}' 값이 없습니다.")
+                raise TariffConfigError(
+                    f"공공 충전 단가 설정에 '{speed}' 값이 없습니다.", source="public_prices"
+                )
             prices: dict[str, float] = {}
             for payment in PAYMENTS:
                 value = item.value.get(payment)
@@ -56,7 +58,8 @@ class PublicPrices:
                     or value <= 0
                 ):
                     raise TariffConfigError(
-                        f"공공 충전 단가 '{speed}.{payment}'가 양수가 아닙니다: {value!r}"
+                        f"공공 충전 단가 '{speed}.{payment}'가 양수가 아닙니다: {value!r}",
+                        source="public_prices",
                     )
                 prices[payment] = float(value)
             by_speed[speed] = SpeedPrices(prices=prices, verified=item.status == "verified")

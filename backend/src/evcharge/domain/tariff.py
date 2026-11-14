@@ -27,21 +27,29 @@ class Tariff:
     items: dict[str, TariffValue]
 
     @classmethod
-    def load(cls, path: Path) -> Tariff:
+    def load(cls, path: Path, *, source: str = "tariff") -> Tariff:
+        """``source``는 오류의 출처 표시다(공공 충전 단가 파일도 이 형식이라 같이 쓴다)."""
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
-            raise TariffConfigError(f"요금 설정 파일이 없습니다: {path}") from exc
+            raise TariffConfigError(f"요금 설정 파일이 없습니다: {path}", source=source) from exc
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            # 깨진 YAML·읽기 권한 문제도 설정 오류다. 잡지 않으면 형식 없는 500이 된다.
+            raise TariffConfigError(
+                f"요금 설정 파일을 읽지 못했습니다: {path} ({type(exc).__name__})", source=source
+            ) from exc
 
         if not isinstance(raw, dict):
-            raise TariffConfigError(f"요금 설정 파일의 최상위가 매핑이 아닙니다: {path}")
+            raise TariffConfigError(
+                f"요금 설정 파일의 최상위가 매핑이 아닙니다: {path}", source=source
+            )
 
         version = raw.get("version")
         if not isinstance(version, str):
-            raise TariffConfigError("요금 설정에 문자열 'version'이 필요합니다.")
+            raise TariffConfigError("요금 설정에 문자열 'version'이 필요합니다.", source=source)
 
         items: dict[str, TariffValue] = {}
-        _collect(raw, prefix="", items=items)
+        _collect(raw, prefix="", items=items, source=source)
         return cls(version=version, items=items)
 
     def unverified_items(self) -> list[str]:
@@ -65,7 +73,7 @@ class Tariff:
         return None if item is None else item.value
 
 
-def _collect(node: Any, prefix: str, items: dict[str, TariffValue]) -> None:
+def _collect(node: Any, prefix: str, items: dict[str, TariffValue], source: str) -> None:
     """'status' 키를 가진 매핑을 요금 항목으로, 나머지 매핑은 컨테이너로 본다."""
     if not isinstance(node, dict):
         return
@@ -75,7 +83,8 @@ def _collect(node: Any, prefix: str, items: dict[str, TariffValue]) -> None:
         if status not in VALID_STATUSES:
             raise TariffConfigError(
                 f"'{prefix}'의 status가 올바르지 않습니다: {status!r} "
-                f"(허용: {', '.join(sorted(VALID_STATUSES))})"
+                f"(허용: {', '.join(sorted(VALID_STATUSES))})",
+                source=source,
             )
         items[prefix] = TariffValue(
             value=node.get("value"),
@@ -87,4 +96,4 @@ def _collect(node: Any, prefix: str, items: dict[str, TariffValue]) -> None:
     for key, child in node.items():
         if key == "version":
             continue
-        _collect(child, f"{prefix}.{key}" if prefix else str(key), items)
+        _collect(child, f"{prefix}.{key}" if prefix else str(key), items, source)
