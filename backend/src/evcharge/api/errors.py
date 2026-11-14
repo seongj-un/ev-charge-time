@@ -28,7 +28,8 @@ def register_error_handlers(app: FastAPI) -> None:
     def _tariff_config_error(request: Request, exc: TariffConfigError) -> JSONResponse:
         # 설정 파일이 잘못된 것은 서버 잘못이지 요청 잘못이 아니다. 예외 문구에는 서버
         # 경로가 들어 있어 운영자만 보도록 로그에 남기고, 응답에는 일반 문구를 쓴다.
-        logger.error("설정 파일 오류 (%s): %s", exc.source, exc)
+        # exc_info로 원인 예외(PyYAML의 줄·열 위치 등)까지 로그에 남긴다.
+        logger.error("설정 파일 오류 (%s): %s", exc.source, exc, exc_info=exc)
         detail = CONFIG_ERROR_DETAILS.get(exc.source, CONFIG_ERROR_FALLBACK)
         return JSONResponse(status_code=500, content={"detail": detail})
 
