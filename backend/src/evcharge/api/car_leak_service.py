@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, time, timedelta
 
 from ..domain.errors import InsufficientTimeError
@@ -61,10 +62,15 @@ def default_depart_at(now: datetime) -> datetime:
 
 
 def compute_leak_check(
-    payload: CarLeakCheckRequest, now: datetime, *, min_won: int, prices: PublicPrices
+    payload: CarLeakCheckRequest,
+    now: datetime,
+    *,
+    min_won: int,
+    load_prices: Callable[[], PublicPrices],
 ) -> CarLeakCheckResponse:
+    """``load_prices``는 public일 때만 부른다. 단가 파일이 깨져도 home은 동작한다."""
     if payload.place == "public":
-        return _public(payload, min_won=min_won, prices=prices)
+        return _public(payload, min_won=min_won, prices=load_prices())
     return _home(payload, now.astimezone(KST), min_won=min_won)
 
 

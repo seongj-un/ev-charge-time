@@ -35,5 +35,5 @@ def car_leak_check(payload: CarLeakCheckRequest) -> CarLeakCheckResponse:
         payload,
         now_kst(),
         min_won=get_settings().car_leak_min_won,
-        prices=get_public_prices(),
+        load_prices=get_public_prices,
     )

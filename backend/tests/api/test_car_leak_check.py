@@ -288,10 +288,12 @@ def test_zero_leak_never_counts_even_with_a_zero_threshold():
 
 def test_compute_leak_check_takes_injected_threshold():
     payload = CarLeakCheckRequest(**PUBLIC, payment="roaming", charger_speed="slow")
-    prices = get_public_prices()
-
-    leaky = compute_leak_check(payload, MONDAY_EVENING, min_won=3661, prices=prices)
-    quiet = compute_leak_check(payload, MONDAY_EVENING, min_won=3662, prices=prices)
+    leaky = compute_leak_check(
+        payload, MONDAY_EVENING, min_won=3661, load_prices=get_public_prices
+    )
+    quiet = compute_leak_check(
+        payload, MONDAY_EVENING, min_won=3662, load_prices=get_public_prices
+    )
 
     # 35kWh × (397.9 - 293.3) = 3,661원
     assert leaky.leak_won == quiet.leak_won == 3661
@@ -306,3 +308,23 @@ def test_speeches_have_no_markdown_or_symbols(client):
     for speech in speeches:
         assert not set(speech) & set("*#`_[]<>|~")
 
+
+@pytest.fixture
+def broken_price_file(monkeypatch, tmp_path):
+    get_public_prices.cache_clear()
+    monkeypatch.setenv("PUBLIC_PRICES_PATH", str(tmp_path / "missing.yaml"))
+    yield
+    get_public_prices.cache_clear()
+
+
+def test_home_does_not_read_the_public_price_file(client, broken_price_file):
+    response = post(client, {**HOME, "depart_at": "2026-11-17T08:00"})
+
+    assert response.status_code == 200
+    assert response.json()["leaking"] is True
+
+
+def test_public_fails_on_a_broken_price_file(client, broken_price_file):
+    response = post(client, {**PUBLIC, "payment": "roaming", "charger_speed": "slow"})
+
+    assert response.status_code == 500
