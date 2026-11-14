@@ -364,3 +364,65 @@ class ChatResponse(BaseModel):
     answer: str
     recommendation: RecommendResponse | None = None
     missing_fields: list[str] = []
+
+
+# ── 차량 앱 (Pleos Connect) ─────────────────────────────────────────────
+# 계약: docs/car-api.md. 차량 앱은 로그인 없이(게스트) 쓴다.
+
+
+MIN_BATTERY_CAPACITY_WH = 1000
+
+
+class CarPlanRequest(BaseModel):
+    """``POST /api/car/plan`` 요청. 차량이 아는 값으로 충전 계획을 묻는다.
+
+    ``soc_target <= soc_now``는 오류가 아니다 — \"충전 필요 없음\" 응답으로
+    답하므로 ``RecommendRequest``와 달리 여기서 막지 않는다. 시각의 앞뒤 검사는
+    ``plug_in_at``이 빠졌을 때 서버 현재 시각이 들어가야 해서 계산 서비스
+    (``car_plan_service``)에서 한다.
+    """
+
+    soc_now: float = Field(ge=0, lt=100, allow_inf_nan=False)
+    # Pleos Vehicle SDK getEvBatteryCapacity가 Wh로 준다. 서버가 kWh로 바꾼다.
+    # 하한 1,000Wh(1kWh): 그보다 작은 값은 실제 차에서 오지 않고, 5e-324처럼 아주
+    # 작은 값은 충전 시간이 0이 되어 500이 나거나 "22:00 시작, 22:00 종료" 같은
+    # 예약을 만든다.
+    battery_capacity_wh: float = Field(
+        ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
+    )
+    soc_target: float = Field(default=80, gt=0, le=100, allow_inf_nan=False)
+    charger_kw: float = Field(default=7.0, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
+    plug_in_at: datetime | None = None
+    depart_at: datetime
+    mode: Mode = "self_low"
+
+    @field_validator("plug_in_at", "depart_at")
+    @classmethod
+    def _normalize_to_kst(cls, value: datetime | None) -> datetime | None:
+        """``RecommendRequest``와 같은 규칙: 오프셋이 없으면 KST로 읽는다."""
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=KST)
+        return value.astimezone(KST)
+
+
+class ReservationOut(BaseModel):
+    """차량 기본 예약 충전에 넣을 값. 시작은 꽂는 시각 이후, 종료는 분 단위 올림."""
+
+    start_at: KstDatetime
+    end_at: KstDatetime
+    start_hhmm: str
+    end_hhmm: str
+
+
+class CarPlanResponse(BaseModel):
+    needs_charging: bool
+    plan: ChargePlanOut | None = None
+    baseline_now: ChargePlanOut | None = None
+    savings_won: int | None = None
+    reservation: ReservationOut | None = None
+    # TTS가 그대로 읽는 문장. 숫자는 전부 위 계산값이나 요청 값에서 온다.
+    speech: str
+    assumptions: list[str]
+    unverified_tariff_items: list[str]
