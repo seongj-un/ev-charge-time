@@ -176,3 +176,201 @@ def test_only_the_latest_20_pending_savings_are_kept(db_session):
     assert db_session.get(CarSaving, other_id) is not None
     total = db_session.scalar(select(func.count()).select_from(CarSaving))
     assert total == MAX_PENDING_PER_DEVICE + 2
+
+
+# ── 확정과 합산 ────────────────────────────────────────────────────────
+
+NONE_SPEECH = "아직 아낀 기록이 없어요. 와트잇 추천대로 충전하면 여기에 쌓여요."
+NOTE = "추천을 따랐을 때 아낀 금액(서버 계산값)이며 실제 청구 요금과 다를 수 있습니다."
+
+
+def kst(*args: int) -> datetime:
+    return datetime(*args, tzinfo=KST)
+
+
+def summary(client, headers, **params):
+    return client.get("/api/car/savings/summary", headers=headers, params=params)
+
+
+def device_of(db_session, headers) -> CarDevice:
+    from evcharge.infra.security import hash_token
+
+    token = headers["Authorization"].removeprefix("Bearer ")
+    return db_session.scalar(select(CarDevice).where(CarDevice.token_hash == hash_token(token)))
+
+
+def confirmed(db_session, device, won, at, cause="time") -> None:
+    db_session.add(
+        CarSaving(
+            id=str(uuid.uuid4()),
+            device_id=device.id,
+            cause=cause,
+            savings_won=won,
+            energy_kwh=10.0,
+            source="plan",
+            confirmed_at=at,
+        )
+    )
+    db_session.commit()
+
+
+def test_pending_then_confirmed_then_summed(client):
+    headers = register(client)
+    plan = client.post("/api/car/plan", json=PLAN, headers=headers).json()
+
+    before = summary(client, headers).json()
+    assert before["month_count"] == 0  # 대기 기록은 합산에 들어가지 않는다
+
+    response = client.post(f"/api/car/savings/{plan['saving_id']}/confirm", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["saving_id"] == plan["saving_id"]
+    assert body["savings_won"] == plan["savings_won"]
+    assert body["cause"] == "time" and body["source"] == "plan"
+    assert body["confirmed_at"] == "2026-11-16T18:00:00+09:00"
+
+    after = summary(client, headers).json()
+    won = plan["savings_won"]
+    assert after == {
+        "month": "2026-11",
+        "month_won": won,
+        "month_count": 1,
+        "year": 2026,
+        "year_won": won,
+        "year_count": 1,
+        "total_won": won,
+        "by_cause": {"time_won": won, "payment_won": 0},
+        "speech": f"이번 달 와트잇으로 약 {won:,}원, 올해 약 {won:,}원 아꼈어요.",
+        "note": NOTE,
+    }
+
+
+def test_confirm_is_idempotent(client, monkeypatch):
+    headers = register(client)
+    saving_id = client.post("/api/car/plan", json=PLAN, headers=headers).json()["saving_id"]
+
+    first = client.post(f"/api/car/savings/{saving_id}/confirm", headers=headers).json()
+    monkeypatch.setattr(car, "now_kst", lambda: kst(2026, 11, 16, 23))
+    second = client.post(f"/api/car/savings/{saving_id}/confirm", headers=headers)
+
+    assert second.status_code == 200
+    assert second.json() == first  # 확정 시각도 처음 그대로
+    assert summary(client, headers).json()["month_count"] == 1
+
+
+def test_confirm_another_devices_saving_is_404(client, db_session):
+    mine = register(client)
+    theirs = register(client)
+    saving_id = client.post("/api/car/plan", json=PLAN, headers=mine).json()["saving_id"]
+
+    response = client.post(f"/api/car/savings/{saving_id}/confirm", headers=theirs)
+
+    assert response.status_code == 404
+    assert db_session.get(CarSaving, saving_id).confirmed_at is None
+
+
+@pytest.mark.parametrize("saving_id", [str(uuid.uuid4()), "not-a-uuid", "1' OR '1'='1"])
+def test_confirm_unknown_saving_is_404(client, saving_id):
+    response = client.post(f"/api/car/savings/{saving_id}/confirm", headers=register(client))
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "절감 기록을 찾을 수 없습니다."}
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [{}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic abc"}],
+)
+def test_savings_endpoints_need_a_valid_device_token(client, headers):
+    saving_id = str(uuid.uuid4())
+    for response in (
+        client.post(f"/api/car/savings/{saving_id}/confirm", headers=headers),
+        summary(client, headers),
+    ):
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == "Bearer"
+        assert isinstance(response.json()["detail"], str)
+
+
+def test_summary_without_records_says_so(client):
+    body = summary(client, register(client)).json()
+
+    assert body["month"] == "2026-11"
+    assert body["month_won"] == body["year_won"] == body["total_won"] == 0
+    assert body["speech"] == NONE_SPEECH
+    assert body["note"] == NOTE
+
+
+def test_summary_counts_only_this_devices_confirmed_records(client, db_session):
+    mine = register(client)
+    theirs = register(client)
+    confirmed(db_session, device_of(db_session, theirs), 5000, kst(2026, 11, 10))
+    record_pending(
+        db_session, device_of(db_session, mine), cause="time", savings_won=7000,
+        energy_kwh=10.0, source="plan",
+    )
+
+    assert summary(client, mine).json()["total_won"] == 0
+
+
+def test_month_and_year_boundaries_are_kst(client, db_session):
+    headers = register(client)
+    device = device_of(db_session, headers)
+    # KST 2026-12-31 23:59:59 = UTC 14:59:59, KST 2027-01-01 00:00 = UTC 2026-12-31 15:00
+    confirmed(db_session, device, 1000, kst(2026, 12, 31, 23, 59, 59))
+    confirmed(db_session, device, 2000, kst(2027, 1, 1, 0, 0))
+    # KST 2026-12-01 00:00은 12월이다 (UTC로는 11월 30일 15:00).
+    confirmed(db_session, device, 400, kst(2026, 12, 1, 0, 0), cause="payment")
+    confirmed(db_session, device, 30, kst(2026, 11, 30, 23, 59))
+
+    december = summary(client, headers, month="2026-12").json()
+    january = summary(client, headers, month="2027-01").json()
+    november = summary(client, headers, month="2026-11").json()
+
+    assert (december["month_won"], december["month_count"]) == (1400, 2)
+    assert (december["year"], december["year_won"], december["year_count"]) == (2026, 1430, 3)
+    assert (january["month_won"], january["year"], january["year_won"]) == (2000, 2027, 2000)
+    assert (november["month_won"], november["month_count"]) == (30, 1)
+    assert december["total_won"] == january["total_won"] == 3430
+    assert december["by_cause"] == {"time_won": 3030, "payment_won": 400}
+
+
+def test_summary_speech_labels_other_months_and_years(client, db_session, monkeypatch):
+    monkeypatch.setattr(car, "now_kst", lambda: kst(2027, 1, 5, 8))
+    headers = register(client)
+    device = device_of(db_session, headers)
+    confirmed(db_session, device, 8400, kst(2026, 12, 20))
+    confirmed(db_session, device, 1200, kst(2027, 1, 3))
+
+    this_month = summary(client, headers).json()
+    last_month = summary(client, headers, month="2026-12").json()
+    empty_month = summary(client, headers, month="2027-02").json()
+
+    assert this_month["month"] == "2027-01"
+    assert this_month["speech"] == "이번 달 와트잇으로 약 1,200원, 올해 약 1,200원 아꼈어요."
+    assert last_month["speech"] == (
+        "2026년 12월 와트잇으로 약 8,400원, 2026년 한 해 약 8,400원 아꼈어요."
+    )
+    assert empty_month["speech"] == (
+        "2월에는 아낀 기록이 없어요. 지금까지 와트잇으로 약 9,600원 아꼈어요."
+    )
+
+
+@pytest.mark.parametrize("month", ["2026-13", "26-11", "2026-1", "november"])
+def test_summary_month_must_be_yyyy_mm(client, month):
+    response = summary(client, register(client), month=month)
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "month는 YYYY-MM 형식이어야 합니다."}
+
+
+def test_device_last_seen_moves_on_use(client, db_session):
+    headers = register(client)
+    device = device_of(db_session, headers)
+    device.last_seen_at = kst(2026, 1, 1)
+    db_session.commit()
+
+    summary(client, headers)
+
+    db_session.expire_all()
+    assert device_of(db_session, headers).last_seen_at > kst(2026, 1, 1)

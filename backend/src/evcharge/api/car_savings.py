@@ -18,13 +18,16 @@ import uuid
 from datetime import datetime
 
 from fastapi import Request
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 
+from ..domain.pricing import KST
 from ..infra.db import session_scope
 from ..infra.models import MAX_CAR_SAVING_WON, CarDevice, CarSaving
 from .car_devices import bearer_token, find_device
+from .months import month_bounds, month_of, year_bounds
+from .schemas import CarSavingOut, CarSavingsByCause, CarSavingsSummary
 
 logger = logging.getLogger(__name__)
 
@@ -127,3 +130,117 @@ def confirm(
         saving.confirmed_at = now
     session.commit()
     return saving
+
+
+def to_out(saving: CarSaving) -> CarSavingOut:
+    return CarSavingOut(
+        saving_id=saving.id,
+        cause=saving.cause,
+        savings_won=saving.savings_won,
+        energy_kwh=saving.energy_kwh,
+        source=saving.source,
+        created_at=saving.created_at,
+        confirmed_at=saving.confirmed_at,
+    )
+
+
+NONE_SPEECH = "아직 아낀 기록이 없어요. 와트잇 추천대로 충전하면 여기에 쌓여요."
+NOTE = "추천을 따랐을 때 아낀 금액(서버 계산값)이며 실제 청구 요금과 다를 수 있습니다."
+
+
+def summarize(
+    session: DbSession, device: CarDevice, month: str, now: datetime
+) -> CarSavingsSummary:
+    """그 달·그해·전체의 확정 기록 합계. 달·해는 KST, 확정 시각(``confirmed_at``) 기준이다.
+
+    ``month``는 ``YYYY-MM``이고, 형식이 틀리면 ``month_bounds``가 422를 낸다.
+    """
+    month_start, month_end = month_bounds(month)
+    year = month_start.year
+    year_start, year_end = year_bounds(year)
+    at = CarSaving.confirmed_at
+    in_month = and_(at >= month_start, at < month_end)
+    in_year = and_(at >= year_start, at < year_end)
+
+    def won(condition=None):
+        total = func.sum(CarSaving.savings_won)
+        if condition is not None:
+            total = total.filter(condition)
+        return func.coalesce(total, 0)
+
+    def count(condition):
+        return func.count().filter(condition)
+
+    row = session.execute(
+        select(
+            won(in_month),
+            count(in_month),
+            won(in_year),
+            count(in_year),
+            won(),
+            func.count(),
+            won(CarSaving.cause == "time"),
+            won(CarSaving.cause == "payment"),
+        ).where(CarSaving.device_id == device.id, at.is_not(None))
+    ).one()
+    month_won, month_count, year_won, year_count, total_won, total_count, time_won, pay_won = (
+        int(value) for value in row
+    )
+
+    return CarSavingsSummary(
+        month=month,
+        month_won=month_won,
+        month_count=month_count,
+        year=year,
+        year_won=year_won,
+        year_count=year_count,
+        total_won=total_won,
+        by_cause=CarSavingsByCause(time_won=time_won, payment_won=pay_won),
+        speech=summary_speech(
+            month=month,
+            month_won=month_won,
+            month_count=month_count,
+            year_won=year_won,
+            total_won=total_won,
+            total_count=total_count,
+            now=now,
+        ),
+        note=NOTE,
+    )
+
+
+def summary_speech(
+    *,
+    month: str,
+    month_won: int,
+    month_count: int,
+    year_won: int,
+    total_won: int,
+    total_count: int,
+    now: datetime,
+) -> str:
+    """시동을 켤 때 TTS로 읽을 한 줄. 숫자는 합계 그대로다.
+
+    지금 달·지금 해면 "이번 달"·"올해", 아니면 "11월"·"2025년 11월", "2025년 한 해".
+    """
+    if total_count == 0:
+        return NONE_SPEECH
+    year, month_num = (int(part) for part in month.split("-"))
+    this_year = now.astimezone(KST).year
+    if month == month_of(now):
+        month_label = "이번 달"
+    elif year == this_year:
+        month_label = f"{month_num}월"
+    else:
+        month_label = f"{year}년 {month_num}월"
+    year_label = "올해" if year == this_year else f"{year}년 한 해"
+
+    if month_count > 0:
+        return (
+            f"{month_label} 와트잇으로 약 {month_won:,}원, "
+            f"{year_label} 약 {year_won:,}원 아꼈어요."
+        )
+    return (
+        f"{month_label}에는 아낀 기록이 없어요. "
+        f"지금까지 와트잇으로 약 {total_won:,}원 아꼈어요."
+    )

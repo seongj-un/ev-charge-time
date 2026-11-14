@@ -6,23 +6,26 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session as DbSession
 
 from ...domain.pricing import KST
 from ...infra.db import get_session
 from ...settings import get_settings
-from ..car_devices import client_ip, consume_device_quota, issue_device
+from ..car_devices import client_ip, consume_device_quota, issue_device, require_device
 from ..car_leak_service import compute_leak_check
 from ..car_plan_service import compute_car_plan
-from ..car_savings import try_record
+from ..car_savings import confirm, summarize, to_out, try_record
 from ..deps import get_public_prices
+from ..months import month_of
 from ..schemas import (
     CarDeviceOut,
     CarLeakCheckRequest,
     CarLeakCheckResponse,
     CarPlanRequest,
     CarPlanResponse,
+    CarSavingOut,
+    CarSavingsSummary,
 )
 
 router = APIRouter(prefix="/api/car", tags=["car"])
@@ -85,3 +88,30 @@ def register_device(
     device_id, token = issue_device(session)
     response.headers["Cache-Control"] = "no-store"
     return CarDeviceOut(device_id=device_id, device_token=token)
+
+
+@router.post("/savings/{saving_id}/confirm", response_model=CarSavingOut)
+def confirm_saving(
+    saving_id: str, request: Request, session: DbSession = Depends(get_session)
+) -> CarSavingOut:
+    """앱이 추천을 실제로 따랐다고 확인한 기록을 확정한다. 다시 불러도 한 번만 센다."""
+    device = require_device(request, session)
+    saving = confirm(session, device, saving_id, now_kst())
+    if saving is None:
+        # 없는 기록, 다른 기기의 기록, 20개 상한으로 지워진 대기 기록을 구분하지 않는다.
+        raise HTTPException(status_code=404, detail="절감 기록을 찾을 수 없습니다.")
+    return to_out(saving)
+
+
+@router.get("/savings/summary", response_model=CarSavingsSummary)
+def savings_summary(
+    request: Request,
+    month: str | None = Query(None, description="YYYY-MM (KST). 생략하면 이번 달"),
+    session: DbSession = Depends(get_session),
+) -> CarSavingsSummary:
+    """확정된 절감 기록의 이번 달·올해·전체 합계와 시동 때 읽을 문장."""
+    device = require_device(request, session)
+    now = now_kst()
+    summary = summarize(session, device, month or month_of(now), now)
+    session.commit()  # last_seen_at
+    return summary
