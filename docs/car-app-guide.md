@@ -32,7 +32,7 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 | 장거리 주행, 경로가 있을 때 | `POST /api/car/chargers/along-route` | | 잔량이 모자라면 `speech`를 읽고 `add_waypoint`/`ask`를 처리 |
 | 주변 빈 충전기 | `GET /api/chargers?available_only=true` | | 결과가 비고 `X-Status-Note` 헤더가 있으면 그 문장을 읽는다(`decodeURIComponent`) |
 | "몇 %까지 채우나" | `POST /api/car/charge-target` | | `soc_target`을 차 설정이나 `car/plan`의 `soc_target`으로. 주행 중에는 `soc_now`를 보내지 않는다 |
-| 출발(기어 P 해제) | `POST /api/car/departures` | 필수 | 실제 출발 시각을 보낸다. 오프라인이면 쌓아 두었다가 나중에 보내도 된다(90일 안) |
+| 집 출발(그날 첫 P 해제) | `POST /api/car/departures` | 필수 | **하루(KST 날짜)의 첫 P 해제만** 보낸다(아래 "출발 기록 규칙"). 오프라인이면 쌓아 두었다가 나중에 보내도 된다(90일 안) |
 | 다음 시동 ON, 밤사이 충전된 것을 확인했을 때 | `POST /api/car/savings/{saving_id}/confirm` | 필수 | 같은 밤 충전은 `saving_id` 하나만 확정(아래) |
 | 절약 리포트 화면 | `GET /api/car/savings/summary?month=YYYY-MM` | 필수 | `speech`, `month_won`, `year_won`. `note`(서버 계산값이라는 안내)도 함께 보여 준다 |
 | 설정 > 출발 기록 지우기 | `DELETE /api/car/departures` | 필수 | 이 기기의 출발 기록 전부 삭제 |
@@ -48,6 +48,18 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
   잔량을 저장해 두고, 다음 시동 ON에 잔량이 그보다 올라 있으면(예약대로 충전됐다고 보고) 확정한다.
   예약 시각까지 시동이 켜져 있으면 `getEvChargeSwitchState`(충전 중 여부)로 바로 확인해도 된다.
   만든 지 72시간이 지난 기록은 확정할 수 없다(410).
+
+출발 기록 규칙
+
+- 서버가 받는 출발은 **집에서 나선 시각** 하나다. 서버는 같은 날 종류(평일, 주말·공휴일)의 28일
+  기록 전부로 중앙값을 내므로, 회사·마트에서 다시 출발한 시각까지 보내면 평소 출발이 그쪽으로
+  끌려간다. 평일 10일 동안 07:30·12:10·18:30을 모두 보내면 평소 출발이 12:10(신뢰도 low)이 되고,
+  귀가 질문이 "내일 낮 12시 10분쯤 출발하세요?"가 된다(`test_reporting_every_park_release_loses_the_usual_time`).
+- 앱은 마지막으로 보낸 날짜를 저장해 두고, **그날 이미 보냈으면 보내지 않는다.** 보내기에 실패하면
+  (오프라인, 5xx) 그날 첫 출발로 쌓아 두었다가 다시 보낸다.
+- 집 위치를 알면(예: 밤에 주차하는 곳) 그 근처(GPS 오차를 감안한 반경, 예 300 m)에서 P를 해제했을
+  때만 보낸다. 집 밖에서 자고 출발한 날은 보내지 않는 편이 학습에 낫다. 모르면 "그날 첫 P 해제"만으로
+  충분하다.
 
 브리핑과 음성 계획의 숫자가 다른 이유
 
@@ -83,7 +95,7 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 | 속성 (`VehiclePropertyIds`) | 타입·단위 | 변경 방식 | 권한 | 쓰는 곳 |
 | --- | --- | --- | --- | --- |
 | [`INFO_EV_BATTERY_CAPACITY`](https://developer.android.com/reference/android/car/VehiclePropertyIds#INFO_EV_BATTERY_CAPACITY) | Float, Wh(`VehicleUnit.WATT_HOUR`), 새 차 기준 공칭 사용 가능 용량 | STATIC(한 번 읽으면 됨) | [`android.car.permission.CAR_INFO`](https://developer.android.com/reference/android/car/Car#PERMISSION_CAR_INFO) (normal) | `getFloatProperty(INFO_EV_BATTERY_CAPACITY, 0)`를 반올림한 정수 → `battery_capacity_wh` |
-| [`GEAR_SELECTION`](https://developer.android.com/reference/android/car/VehiclePropertyIds#GEAR_SELECTION) | Integer, [`VehicleGear`](https://developer.android.com/reference/android/car/VehicleGear) 값(`GEAR_PARK` = 4) | ONCHANGE | [`android.car.permission.CAR_POWERTRAIN`](https://developer.android.com/reference/android/car/Car#PERMISSION_POWERTRAIN) (normal) | [`subscribePropertyEvents`](https://developer.android.com/reference/android/car/hardware/property/CarPropertyManager)로 구독. 직전 값이 `GEAR_PARK`이고 새 값이 다른 기어면 그 시각을 `departed_at`으로 `POST /api/car/departures` |
+| [`GEAR_SELECTION`](https://developer.android.com/reference/android/car/VehiclePropertyIds#GEAR_SELECTION) | Integer, [`VehicleGear`](https://developer.android.com/reference/android/car/VehicleGear) 값(`GEAR_PARK` = 4) | ONCHANGE | [`android.car.permission.CAR_POWERTRAIN`](https://developer.android.com/reference/android/car/Car#PERMISSION_POWERTRAIN) (normal) | [`subscribePropertyEvents`](https://developer.android.com/reference/android/car/hardware/property/CarPropertyManager)로 구독. 직전 값이 `GEAR_PARK`이고 새 값이 다른 기어이며 **그날 아직 보내지 않았을 때만** 그 시각을 `departed_at`으로 `POST /api/car/departures`(1절 "출발 기록 규칙") |
 
 - 단위·권한·상수 값은 위 링크의 Android 공식 문서에서 확인했다(2026-11-15).
 - `INFO_EV_BATTERY_CAPACITY`는 새 차 기준 공칭 용량이다(공식 문서). 노화와 온도를 반영한 실시간
@@ -160,7 +172,8 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 3. 화 18:20 귀가 중 첫 질문: "집에 도착하면 배터리가 25% 남아요. 내일 몇 시에 출발하세요?"
 4. 운전자 "7시 반에 나가" → 도착 예정 18:40·도착 잔량 25%로 다시 계산한 예약(`set_reservation`)과
    `saving_id`. 07:30은 "운전자가 말한 출발 시각"으로 남는다.
-5. 수 07:31 기어 P 해제 → 출발 기록(30분 안의 07:30을 실제 출발로 바꾼다).
+5. 수 07:31 그날 첫 P 해제 → 출발 기록(30분 안의 07:30을 실제 출발로 바꾼다). 12:10 회사에서 다시
+   P를 해제해도 그날 이미 보냈으므로 보내지 않는다.
 6. 수 08:00 예약 충전이 돈 것을 확인 → 4의 `saving_id` 확정 → 이번 달 합계가 그 금액.
 7. 지난주 평일 출발 4건이 더 쌓이면, 수 17:50 브리핑은 "평소 출발 07:30" 기준으로 계산하고, 18:20
    귀가 질문은 "내일도 오전 7시 30분에 출발하세요?"가 된다. "응"이라고 하면 07:30으로 계획한다.

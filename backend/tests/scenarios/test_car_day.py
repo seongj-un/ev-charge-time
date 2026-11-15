@@ -9,14 +9,16 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
+from sqlalchemy import select
 
 from evcharge.api.routes import car
 from evcharge.api.routes.car import anthropic_api_key, claude_client
 from evcharge.domain.pricing import KST
 from evcharge.infra.claude import ClaudeReply, TextPart, ToolCall
+from evcharge.infra.models import CarDeparture
 
 BATTERY_WH = 77_400
 TUE = 17  # 2026-11-17 화요일
@@ -61,6 +63,40 @@ def fake(client) -> FakeClaude:
     return instance
 
 
+class DepartureReporter:
+    """앱 쪽 규칙(docs/car-app-guide.md): 하루(KST 날짜)의 첫 P 해제만 출발로 보낸다.
+
+    회사·마트에서 다시 출발한 것까지 보내면 서버의 중앙값이 그 시각으로 끌려간다
+    (`test_reporting_every_park_release_loses_the_usual_time`).
+    """
+
+    def __init__(self, client, headers: dict[str, str]) -> None:
+        self.client = client
+        self.headers = headers
+        self.sent_days: set[date] = set()
+
+    def park_released(self, at: datetime):
+        if at.date() in self.sent_days:
+            return None  # 그날 이미 보냈다: 보내지 않는다
+        response = self.client.post(
+            "/api/car/departures",
+            json={"departed_at": at.isoformat()},
+            headers=self.headers,
+        )
+        if response.status_code in (200, 201):
+            self.sent_days.add(at.date())
+        return response
+
+
+def departures_of(db_session, source: str) -> list[datetime]:
+    rows = db_session.scalars(
+        select(CarDeparture.departed_at)
+        .where(CarDeparture.source == source)
+        .order_by(CarDeparture.departed_at)
+    )
+    return [row.astimezone(KST) for row in rows]
+
+
 def plan(client, **body) -> dict:
     """같은 입력의 공개 계산 API(토큰 없음). 각 단계의 숫자를 이것과 맞춰 본다."""
     response = client.post("/api/car/plan", json={"battery_capacity_wh": BATTERY_WH, **body})
@@ -68,7 +104,7 @@ def plan(client, **body) -> dict:
     return response.json()
 
 
-def test_a_day_with_the_car_app(client, clock, fake):
+def test_a_day_with_the_car_app(client, clock, fake, db_session):
     # ── 1. 설치: 기기 토큰 발급 (화 08:00) ─────────────────────────────────
     response = client.post("/api/car/devices")
     assert response.status_code == 201
@@ -156,14 +192,18 @@ def test_a_day_with_the_car_app(client, clock, fake):
     assert suggest["basis_count"] == 1
     assert suggest["confidence"] is None  # 1건으로는 제안하지 않는다
 
-    # ── 5. 다음 날 출발(기어 P 해제) 기록 (수 07:31) ─────────────────────────
+    # ── 5. 다음 날 집 출발(그날 첫 P 해제) 기록 (수 07:31) ────────────────────
+    reporter = DepartureReporter(client, headers)
     clock.now = kst(WED, 7, 31)
-    departed = client.post(
-        "/api/car/departures", json={"departed_at": "2026-11-18T07:31"}, headers=headers
-    )
+    departed = reporter.park_released(kst(WED, 7, 31))
     assert departed.status_code == 200  # 30분 안의 "말한 07:30"을 실제 출발로 바꾼다
     assert departed.json()["merged"] is True
     assert departed.json()["source"] == "observed"
+
+    # 같은 날 두 번째 P 해제(회사에서 점심 외출 12:10)는 보내지 않는다
+    clock.now = kst(WED, 12, 10)
+    assert reporter.park_released(kst(WED, 12, 10)) is None
+    assert departures_of(db_session, "observed") == [kst(WED, 7, 31)]
 
     # ── 6. 예약 충전이 돌았음을 확인하고 절감 확정 (수 08:00) ────────────────
     clock.now = kst(WED, 8, 0)
@@ -252,3 +292,36 @@ def test_a_day_with_the_car_app(client, clock, fake):
     suggest = client.get("/api/car/departures/suggest?date=2026-11-20", headers=headers).json()
     assert suggest["suggested_depart_at"] == "2026-11-20T07:30:00+09:00"
     assert (suggest["confidence"], suggest["basis_count"]) == ("high", 5)
+
+
+def test_reporting_every_park_release_loses_the_usual_time(client, clock):
+    """가이드가 "하루 첫 P 해제만"이라고 하는 이유: 모든 P 해제를 보내면 평소 출발이 틀어진다."""
+    first_only = DepartureReporter(client, register_device(client))
+    every_release = register_device(client)
+    weekdays = [d for d in range(2, 14) if date(2026, 11, d).weekday() < 5]  # 11/2~11/13 평일 10일
+    for day in weekdays:
+        clock.now = kst(day, 19, 0)  # 출발 기록 한도는 기록한 날 기준 하루 10건
+        for hour, minute in ((7, 30), (12, 10), (18, 30)):
+            first_only.park_released(kst(day, hour, minute))
+            response = client.post(
+                "/api/car/departures",
+                json={"departed_at": kst(day, hour, minute).isoformat()},
+                headers=every_release,
+            )
+            assert response.status_code == 201, response.text
+
+    clock.now = kst(13, 20, 0)
+    url = "/api/car/departures/suggest?date=2026-11-16"
+    good = client.get(url, headers=first_only.headers).json()
+    assert good["suggested_depart_at"] == "2026-11-16T07:30:00+09:00"
+    assert (good["confidence"], good["basis_count"]) == ("high", 10)
+
+    bad = client.get(url, headers=every_release).json()
+    assert bad["basis_count"] == 30
+    assert bad["suggested_depart_at"] != "2026-11-16T07:30:00+09:00"
+
+
+def register_device(client) -> dict[str, str]:
+    response = client.post("/api/car/devices")
+    assert response.status_code == 201
+    return {"Authorization": f"Bearer {response.json()['device_token']}"}
