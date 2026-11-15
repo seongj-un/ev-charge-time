@@ -148,17 +148,27 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 기기 토큰
 
 - `POST /api/car/devices`의 응답에서 한 번만 보인다. 서버는 해시만 저장하므로 다시 받을 수 없다.
-- 서버 쪽 만료는 없다. Android Keystore로 감싼 저장소(예: EncryptedSharedPreferences)에 둔다.
-  로그나 크래시 리포트에 남기지 않는다(아래 "로그 규칙").
-- 새로 발급하면 다른 기기로 본다. 절감 합계와 출발 기록이 새로 시작되므로, 저장한 토큰이 있는데
-  401이 날 때(저장소가 지워짐 등)만 다시 발급한다. IP당 시간 한도가 있다(기본 10회/시간, 429).
+- 서버 쪽 만료는 없다. 로그나 크래시 리포트에 남기지 않는다(아래 "로그 규칙").
+- 저장: Android Keystore에 앱 전용 AES 키(`KeyGenParameterSpec`, `AES/GCM/NoPadding`)를 만들고, 그 키로
+  토큰을 직접 암호화해 IV와 함께 파일에 쓴다. `EncryptedSharedPreferences`(`androidx.security:security-crypto`)는
+  쓰지 않는다. 1.1.0-alpha07부터 "Deprecated all APIs in favour of existing platform APIs and direct use of
+  Android Keystore"다([AndroidX Security 릴리스 노트](https://developer.android.com/jetpack/androidx/releases/security)).
+- 토큰 파일은 백업에서 뺀다. [`Context.getNoBackupFilesDir()`](https://developer.android.com/reference/android/content/Context#getNoBackupFilesDir())
+  아래에 두면 자동 백업에서 빠진다. 다른 곳에 두면 `android:dataExtractionRules`(Android 12 이상)와
+  `android:fullBackupContent`(11 이하) 규칙에서 그 파일을 `exclude`한다([Auto Backup](https://developer.android.com/identity/data/autobackup)).
+  백업으로 다른 기기에 복원된 암호문은 Keystore 키가 없어 풀리지 않는다.
+- 복호화에 실패하면(키 없음, 파일 손상) 앱을 멈추지 말고 "토큰 없음"으로 보고 파일을 지운 뒤 다시
+  발급한다.
+- 새로 발급하면 다른 기기로 본다. 절감 합계와 출발 기록이 새로 시작되므로, 저장한 토큰을 읽을 수
+  없을 때(파일 없음, 복호화 실패)와 저장한 토큰으로 401이 날 때만 다시 발급한다. IP당 시간 한도가 있다(기본 10회/시간, 429).
 - 헤더: `Authorization: Bearer <device_token>`.
 
 로그 규칙
 
 - 릴리스 빌드에서는 HTTP 로깅을 끈다(OkHttp `HttpLoggingInterceptor`는 `Level.NONE`). `BASIC`도 URL을
   남기므로 `GET /api/chargers?lat=…&lng=…`의 위치가 logcat에 그대로 찍힌다.
-- 디버그 빌드에서도 `redactHeader("Authorization")`로 토큰을 가린다. 요청 본문까지 찍는 `Level.BODY`는
+- 디버그 빌드에서도 `redactHeader("Authorization")`로 토큰을 가리고, 쓰는 OkHttp에
+  `redactQueryParams`가 있으면 `redactQueryParams("lat", "lng")`로 쿼리의 위치도 가린다. 요청 본문까지 찍는 `Level.BODY`는
   쓰지 않는다(위치와 음성 문장이 본문에 있다).
 - 다음 값은 어느 빌드에서든 로그(logcat)와 크래시 리포트, 분석 이벤트에 남기지 않는다.
   - 기기 토큰
