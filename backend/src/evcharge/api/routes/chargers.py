@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from ...domain.geo import bounding_box, haversine_m
 from ...domain.pricing import KST
+from ...domain.public_text import clean_public_text
 from ...infra.charger_sync import STATIONS_KIND, STATUS_KIND
 from ...infra.db import get_session
 from ...infra.models import ChargerCache, ChargerSyncState, FavoriteStation, User
@@ -492,13 +493,14 @@ def _to_station_out(
     data = row.data or {}
     return StationOut(
         station_id=row.station_id,
-        name=str(data.get("name") or ""),
-        address=str(data.get("address") or ""),
+        # 공공 API 글: 제어·서식 문자를 빼고 줄바꿈을 편다(BE-14). 자르지는 않는다.
+        name=clean_public_text(data.get("name")),
+        address=clean_public_text(data.get("address")),
         lat=row.lat,
         lng=row.lng,
         distance_m=round(distance_m),
-        operator=str(data.get("operator") or ""),
-        available_hours=str(data.get("available_hours") or ""),
+        operator=clean_public_text(data.get("operator")),
+        available_hours=clean_public_text(data.get("available_hours")),
         # 게스트는 null (명세 2-4). false로 내보내면 "즐겨찾기 안 함"이라는
         # 다른 뜻이 된다.
         is_favorite=(row.station_id in favorites) if favorites is not None else None,

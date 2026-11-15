@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session as DbSession
 from ..domain.departures import DepartureSuggestion
 from ..domain.errors import DomainError, InsufficientTimeError
 from ..domain.pricing import KST
+from ..domain.public_text import clean_public_text
 from ..infra.claude import ClaudeClient, ClaudeError, ClaudeReply, TextPart, ToolCall
 from ..infra.models import CarDevice
 from ..settings import get_settings
@@ -522,7 +523,7 @@ class VoiceTools:
         action = NavigateAction(
             # 앱 화면용이라 원래 이름을 준다. Claude에는 잘린 이름만 간다.
             station_id=row.station_id,
-            name=str((row.data or {}).get("name") or ""),
+            name=clean_public_text((row.data or {}).get("name")),
             lat=row.lat,
             lng=row.lng,
             # 주소는 동작에만 준다. Claude에 가는 stations에는 넣지 않는다(BE-13).
@@ -679,9 +680,9 @@ class VoiceTools:
 
 
 def external_text(value: object) -> str:
-    """공공 API에서 온 글을 Claude에 넘길 모양으로. 줄바꿈을 펴고 40자로 자른다."""
-    text = " ".join(str(value or "").split())
-    return text[:MAX_EXTERNAL_TEXT]
+    """공공 API에서 온 글을 Claude에 넘길 모양으로. 제어·서식 문자를 빼고 줄바꿈을 펴서 40자로
+    자른다."""
+    return clean_public_text(value)[:MAX_EXTERNAL_TEXT]
 
 
 # ---------------------------------------------------------------------------
