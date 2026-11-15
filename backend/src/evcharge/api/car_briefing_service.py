@@ -112,9 +112,7 @@ def load_personal(request: Request, now: datetime) -> Personal | None:
             if device is None:
                 return None
             try:
-                usual = suggestion_for(
-                    session, device, tonight_departure_day(now), get_holidays()
-                )
+                usual = suggestion_for(session, device, tonight_departure_day(now), get_holidays())
             except DomainError:
                 usual = None
             summary = summarize(session, device, month_of(now), now)
@@ -224,7 +222,7 @@ def _at(day: date, hour: int) -> datetime:
 
 
 def compose_price_sentence(price: BriefingPrice, now: datetime) -> str:
-    """"지금은 요금이 비싼 시간이고, 밤 10시부터 싸져요." 같은 한 문장."""
+    """ "지금은 요금이 비싼 시간이고, 밤 10시부터 싸져요." 같은 한 문장."""
     if price.discounted:
         kind = "공휴일" if get_holidays().is_holiday(now.date()) and now.weekday() < 5 else "주말"
         head = f"지금은 {kind} 할인 시간"
@@ -297,6 +295,15 @@ def _tonight(
     except InsufficientTimeError:
         # 새벽에 켰는데 출발까지 다 채울 시간이 없다. 안전이 먼저라 바로 충전하라고 한다.
         return tonight, [ask, "출발 전까지 채우려면 도착하자마자 충전해 주세요."], assumptions, None
+    except DomainError as exc:
+        # 내일 날짜의 공휴일 정보가 없는 연말 등: 오늘 밤 계획만 빼고 나머지는 200으로 답한다.
+        # 잔량이 낮다는 말은 계산 없이 할 수 있고 편의(충전 실패 막기)가 먼저라 남긴다.
+        return (
+            tonight.model_copy(update={"depart_at": None, "depart_basis": None}),
+            [ask],
+            [f"오늘 밤 충전 계획을 계산하지 못했어요: {exc}"],
+            None,
+        )
 
     assumptions = assumptions + result.assumptions
     if not result.needs_charging or result.plan is None:

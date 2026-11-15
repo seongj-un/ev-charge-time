@@ -451,3 +451,42 @@ def test_a_confirmed_briefing_record_is_kept(client, db_session):
         first: True,
         second: False,
     }
+
+
+@pytest.mark.parametrize(
+    ("soc", "tonight_sentence"),
+    [
+        (32, "배터리가 32%라 오늘 밤 충전하세요."),
+        (70, "배터리가 70%라 오늘 밤은 충전 안 해도 돼요."),
+    ],
+)
+def test_year_end_without_next_years_holidays_drops_only_the_plan(
+    client, db_session, monkeypatch, soc, tonight_sentence
+):
+    """2027-12-31 18:00: 내일(2028년) 공휴일 정보가 없다. 요금·절약 문장은 그대로 200."""
+    headers = register(client)
+    monkeypatch.setattr(car, "now_kst", at(datetime(2027, 12, 31, 18, 0, tzinfo=KST)))
+    confirm_saving(client, headers, db_session, 4200)
+    db_session.execute(
+        text("UPDATE car_savings SET confirmed_at = :at"),
+        {"at": datetime(2027, 12, 20, 9, 0, tzinfo=KST)},
+    )
+
+    response = brief(client, headers, soc_now=soc)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["price"]["band_label"] == "최대부하"
+    assert body["actions"] == []
+    assert body["saving_id"] is None
+    assert body["tonight"]["reservation"] is None
+    assert sentences(body["speech"]) == [
+        "지금은 요금이 비싼 시간이고, 저녁 7시부터 싸져요.",
+        tonight_sentence,
+        "이번 달 와트잇으로 약 4,200원, 올해 약 4,200원 아꼈어요.",
+    ]
+    if soc < 50:
+        assert body["assumptions"] == [
+            "오늘 밤 충전 계획을 계산하지 못했어요: 2028년 공휴일 정보가 아직 없어서 요금을 "
+            "계산할 수 없어요. 지금은 2026년, 2027년 날짜만 계산할 수 있어요."
+        ]
