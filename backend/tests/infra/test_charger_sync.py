@@ -415,3 +415,46 @@ def test_without_a_limit_a_gap_is_left_alone(db_session):
     result = sync_states(db_session, api, ["12"], period=10)
 
     assert (result.recovered, api.info_calls) == (None, [])
+
+
+# ---------------------------------------------------------------------------
+# 상태 반영 지연 로그 (BE-10 리뷰)
+# ---------------------------------------------------------------------------
+
+
+def test_status_lag_is_received_minus_the_operator_time():
+    from datetime import datetime
+
+    from evcharge.domain.pricing import KST
+    from evcharge.infra.charger_sync import status_lag_minutes
+
+    received = datetime(2026, 9, 21, 22, 20, 0, tzinfo=KST)
+    rows = [
+        status_row(statUpdDt="20260921221500"),
+        status_row(statUpdDt="20260921220530"),
+        status_row(statUpdDt="20260921222100"),  # 운영기관 시계가 1분 빠름
+        status_row(statUpdDt="garbage"),
+    ]
+
+    assert status_lag_minutes(rows, received_at=received) == [5.0, 14.5, -1.0]
+
+
+def test_status_sync_logs_one_lag_line_without_station_ids(db_session, caplog, monkeypatch):
+    from datetime import datetime
+
+    from evcharge.domain.pricing import KST
+    from evcharge.infra import charger_sync
+
+    monkeypatch.setattr(charger_sync, "_now", lambda: datetime(2026, 9, 21, 22, 20, 0, tzinfo=KST))
+    rows = [
+        status_row(chgerId="01", statUpdDt="20260921221500"),
+        status_row(chgerId="02", statUpdDt="20260921221000"),
+        status_row(chgerId="03", statUpdDt="20260921215000"),
+    ]
+
+    with caplog.at_level("INFO", logger="evcharge.infra.charger_sync"):
+        sync_states(db_session, FakeChargerApi(status_rows=rows), ["12"], period=10)
+
+    lines = [r.getMessage() for r in caplog.records if "반영 지연" in r.getMessage()]
+    assert lines == ["상태 반영 지연: 3행, 중앙값 10.0분, 최대 30.0분"]
+    assert "ME174085" not in caplog.text

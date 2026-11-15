@@ -14,6 +14,7 @@ API를 부르면 즉시 넘친다. 여기서 캐시를 채우고 ``GET /api/char
 from __future__ import annotations
 
 import logging
+import statistics
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -183,10 +184,13 @@ def sync_states(
     """
     started = _clock(session)
     rows: list[dict] = []
+    lags: list[float] = []
     for zcode in zcodes:
         fetched = api.fetch_status_rows(zcode, period)
+        lags.extend(status_lag_minutes(fetched, received_at=_now()))
         logger.info("zcode=%s 상태 %d행", zcode, len(fetched))
         rows.extend(fetched)
+    _log_lag(lags)
 
     by_station: dict[str, list[dict]] = {}
     for row in rows:
@@ -264,6 +268,38 @@ def _mark(session: DbSession, kind: str, at: datetime) -> None:
         session.add(ChargerSyncState(kind=kind, confirmed_at=at))
     else:
         state.confirmed_at = at
+
+
+def _now() -> datetime:
+    """받은 시각. 테스트가 바꿔 고정한다."""
+    return datetime.now(KST)
+
+
+def status_lag_minutes(rows: Iterable[dict], *, received_at: datetime) -> list[float]:
+    """행마다 (받은 시각 - 운영기관이 적은 상태 변경 시각 ``statUpdDt``), 분.
+
+    운영기관이 상태를 늦게 올리면 수집 창(최근 N분)에 잡히지 않는 변경이 생긴다. 그 지연을
+    운영 로그로 재 보려는 값이다. 읽을 수 없는 시각은 뺀다. 음수(운영기관 시계가 빠름)도
+    그대로 둔다.
+    """
+    lags = []
+    for row in rows:
+        stamp = _status_time(row.get("statUpdDt"))
+        if stamp is not None:
+            lags.append((received_at - datetime.fromisoformat(stamp)).total_seconds() / 60)
+    return lags
+
+
+def _log_lag(lags: list[float]) -> None:
+    """한 회차의 반영 지연을 INFO 한 줄로. 값만 남긴다(충전소 ID 없음)."""
+    if not lags:
+        return
+    logger.info(
+        "상태 반영 지연: %d행, 중앙값 %.1f분, 최대 %.1f분",
+        len(lags),
+        statistics.median(lags),
+        max(lags),
+    )
 
 
 def record_full_sync_run(session: DbSession, *, recovery: bool) -> None:
