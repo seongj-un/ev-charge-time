@@ -37,6 +37,7 @@ from ..domain.pricing import KST
 from ..infra.db import session_scope
 from ..infra.models import CarDeparture, CarDevice
 from .car_devices import bearer_token, find_device
+from .car_leak_service import default_depart_at
 from .car_plan_service import spoken_clock
 from .deps import get_holidays
 from .schemas import CarDepartureSuggestion
@@ -215,25 +216,26 @@ def suggestion_for(
 def next_usual_departure(
     session: DbSession, device: CarDevice, now: datetime, holidays: HolidayProvider
 ) -> DepartureSuggestion | None:
-    """다음 출발의 제안. 정오 전이면 오늘, 아니면 내일. 오늘 제안 시각이 지났으면 내일.
+    """다음 출발의 제안. 오늘 제안이 아직 오지 않았으면 오늘, 아니면 기본 가정(다음 오전 8시)의 날.
+
+    기본 가정의 날보다 뒤로 넘어가지 않는다. 월요일 06:00에 월요일 제안이 없을 때 화요일
+    제안을 쓰면 가정한 출발이 하루 늦어지고, leak-check가 "지금 충전을 멈추라"고 해 그날
+    아침 나가는 운전자가 덜 찬 차로 출발한다(PR #15 규칙). 그때는 None이고 오전 8시 가정이다.
 
     제안이 없거나(기록 부족) 계산할 수 없으면(공휴일 정보 없음, DB 오류) None이다.
     부르는 쪽(leak-check, 음성)은 이때 지금처럼 동작한다.
     """
     local = now.astimezone(KST)
-    today = local.date()
-    target = today if local.hour < 12 else today + timedelta(days=1)
+    targets = dict.fromkeys([local.date(), default_depart_at(local).date()])
     try:
-        found = suggestion_for(session, device, target, holidays)
-        if found.depart_at is not None and found.depart_at <= local and target == today:
-            found = suggestion_for(session, device, today + timedelta(days=1), holidays)
+        for target in targets:
+            found = suggestion_for(session, device, target, holidays)
+            if found.depart_at is not None and found.depart_at > local:
+                return found
     except (DomainError, SQLAlchemyError):
         session.rollback()
         logger.warning("평소 출발 시각을 계산하지 못했습니다", exc_info=True)
-        return None
-    if found.depart_at is None or found.depart_at <= local:
-        return None
-    return found
+    return None
 
 
 def day_label(target: date, now: datetime) -> str:

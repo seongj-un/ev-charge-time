@@ -528,18 +528,40 @@ def test_a_failing_suggestion_falls_back_to_8am(client, monkeypatch, evening):
 
 
 @pytest.mark.parametrize(
-    "now",
+    ("now", "assumption"),
     [
-        kst(2026, 11, 20, 1, 0),  # 새벽: 오늘(20일) 아침
-        kst(2026, 11, 19, 10, 0),  # 오늘(19일) 출발은 지났다: 내일
-        kst(2026, 11, 19, 13, 0),  # 오후: 내일
+        # 새벽: 오늘(20일 금) 아침
+        (kst(2026, 11, 20, 1, 0), USUAL_ASSUMPTION),
+        # 오늘(19일 목) 평소 출발은 지났고 오전 8시 기본 가정도 내일: 내일
+        (kst(2026, 11, 19, 10, 0), USUAL_ASSUMPTION),
+        (kst(2026, 11, 19, 13, 0), USUAL_ASSUMPTION),
+        # 일요일 낮: 오늘(주말)은 제안이 없고 다음 날(월)의 평일 제안
+        (
+            kst(2026, 11, 22, 11, 0),
+            "출발 시각 미입력: 평소 출발 시각(5건 기준)으로 11월 23일 오전 7시 30분(KST) "
+            "출발로 가정",
+        ),
+        # 19일 07:40: 오늘 평소 출발(07:30)은 지났지만 기본 가정은 오늘 오전 8시다. 내일로
+        # 늦추지 않는다.
+        (kst(2026, 11, 19, 7, 40), "출발 시각 미입력: 11월 19일 오전 8시(KST) 출발로 가정"),
     ],
 )
-def test_next_usual_departure_picks_the_next_morning(client, monkeypatch, now):
+def test_next_usual_departure_never_skips_the_default_day(client, monkeypatch, now, assumption):
     headers = register(client)
     seed(client, headers, [28, 31, 33, 40, 22])
     monkeypatch.setattr(car, "now_kst", lambda: now)
 
     body = client.post("/api/car/leak-check", json=HOME, headers=headers).json()
 
-    assert USUAL_ASSUMPTION in body["assumptions"]
+    assert assumption in body["assumptions"]
+
+
+def test_no_suggestion_on_the_default_day_keeps_8am(client, monkeypatch):
+    """일요일 06:00, 주말 기록 없음: 월요일 평일 제안(high)이 있어도 하루 늦추지 않고 오늘 8시."""
+    headers = register(client)
+    seed(client, headers, [28, 31, 33, 40, 22])
+    monkeypatch.setattr(car, "now_kst", lambda: kst(2026, 11, 22, 6, 0))
+
+    body = client.post("/api/car/leak-check", json=HOME, headers=headers).json()
+
+    assert body["assumptions"][-1] == "출발 시각 미입력: 11월 22일 오전 8시(KST) 출발로 가정"
