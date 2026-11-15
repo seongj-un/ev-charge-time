@@ -34,11 +34,13 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 
+from ..domain.departures import DepartureSuggestion
 from ..domain.errors import DomainError, InsufficientTimeError
 from ..domain.pricing import KST
 from ..infra.claude import ClaudeClient, ClaudeError, ClaudeReply, TextPart, ToolCall
 from ..infra.models import CarDevice
 from ..settings import get_settings
+from .car_departures import day_label, record_stated, suggestion_question
 from .car_leak_service import compute_leak_check
 from .car_plan_service import (
     compose_no_charge_speech,
@@ -300,6 +302,9 @@ class VoiceTools:
     context: CarVoiceContext
     now: datetime
     used: list[str] = field(default_factory=list)
+    # 운전자가 말한 출발 시각 후보 (시, 분). plan_charge의 출발 시각이 여기 있을 때만
+    # stated로 기록한다. Claude가 고른 시각(평소 시각, 지어낸 시각)은 계산에만 쓴다.
+    stated_times: set[Clock] = field(default_factory=set)
 
     def run(self, name: str, raw: dict[str, Any]) -> ToolOutcome:
         self.used.append(name)
@@ -351,6 +356,9 @@ class VoiceTools:
         plug_in_at = self._plug_in_at()
         # 출발은 꽂은 뒤 처음 오는 그 시각이다(도착 23:00, "7시 반" → 다음 날 07:30).
         depart_at = resolve_clock_time(args.depart_time, plug_in_at)
+        # 운전자가 말한(또는 평소 시각 제안에 "응"이라고 한) 출발 시각만 출발 학습에 남긴다.
+        if (depart_at.hour, depart_at.minute) in self.stated_times:
+            self._record_stated(depart_at)
         soc = self._plan_soc()
         if soc >= args.soc_target:
             # CarPlanRequest는 soc_now < 100만 받는다. 충전이 필요 없는 답은 같은 문장이다.
@@ -537,6 +545,14 @@ class VoiceTools:
         content = summary.model_dump(mode="json")
         return ToolOutcome(content, speech=summary.speech)
 
+    def _record_stated(self, depart_at: datetime) -> None:
+        """실패해도 대화는 계속한다(계산 엔드포인트와 같은 규칙)."""
+        try:
+            record_stated(self.session, self.device, depart_at, self.now)
+        except SQLAlchemyError:
+            self.session.rollback()
+            logger.warning("음성 대화에서 출발 기록을 남기지 못했습니다")
+
     def _record(self, cause: str, won: int, energy_kwh: float, source: str) -> str | None:
         """대기 절감 기록. 실패해도 대화는 계속한다(계산 엔드포인트와 같은 규칙)."""
         try:
@@ -670,6 +686,47 @@ def _mask(text: str, start: int, end: int) -> str:
     return text[:start] + " " * (end - start) + text[end:]
 
 
+# 평소 시각 질문에 대한 동의. 답 전체가 동의 표현일 때만 인정한다("응 근데 8시에 나가",
+# "어 근데 좀 늦게"는 동의가 아니다). "어"(망설임)와 "그럼"("그러면")은 넣지 않는다.
+_AFFIRM_RE = re.compile(
+    r"\s*(?:응+|웅+|네+|예|그래|맞아|좋아|ㅇㅇ|오케이|그렇지)요?"
+    r"(?:[\s,]*(?:맞아|좋아|그래)요?)?[\s.!~]*"
+)
+
+
+def driver_stated_times(
+    payload: CarVoiceRequest, usual: DepartureSuggestion | None, now: datetime
+) -> set[Clock]:
+    """운전자가 출발 시각으로 말했다고 볼 수 있는 (시, 분).
+
+    - 이번 말과 앞선 운전자 턴에 나온 시각("7시 반" → 07:30, 19:30). 숫자 검증의 운전자
+      시각 근거와 같은 규칙이다.
+    - 직전 와트잇 턴이 서버가 만든 평소 시각 질문("내일도 오전 7시 30분에 출발하세요?")이고
+      운전자의 답 전체가 "응", "네 맞아요"처럼 동의 표현이면 그 평소 시각.
+
+    LLM 출력은 계산 인자로는 쓰되 사람의 진술로 저장하지 않는다. 시스템 컨텍스트의 평소
+    시각을 Claude가 스스로 넣은 경우까지 기록하면 제안이 자기 자신을 근거로 굳는다.
+    """
+    texts = [payload.text or ""] + [t.text for t in payload.history if t.role == "driver"]
+    times: set[Clock] = set()
+    for text in texts:
+        for match in _TIME_RE.finditer(text):
+            times |= _clock_candidates(*match.groups())
+    if usual is not None and usual.depart_at is not None and payload.history:
+        last = payload.history[-1]
+        answer = payload.text or ""
+        if (
+            last.role == "wattit"
+            and last.text.strip().endswith(suggestion_question(usual, now))
+            and _AFFIRM_RE.fullmatch(answer)
+            # 답에 운전자 자신의 시각이 있으면 그 시각만 후보다(위에서 이미 넣었다).
+            and not _TIME_RE.search(answer)
+        ):
+            at = usual.depart_at.astimezone(KST)
+            times.add((at.hour, at.minute))
+    return times
+
+
 @dataclass
 class NumberSources:
     """말해도 되는 숫자의 근거. 단위마다 따로 모은다."""
@@ -791,7 +848,10 @@ def _won_value(match: re.Match[str]) -> int | None:
 
 
 def number_sources(
-    outcomes: list[ToolOutcome], ctx: CarVoiceContext, driver_texts: list[str]
+    outcomes: list[ToolOutcome],
+    ctx: CarVoiceContext,
+    driver_texts: list[str],
+    usual_at: datetime | None = None,
 ) -> NumberSources:
     sources = NumberSources()
     for outcome in outcomes:
@@ -807,6 +867,10 @@ def number_sources(
     sources.add_power(ctx.charger_kw)
     for text in driver_texts:
         sources.add_spoken(text, times=True)
+    if usual_at is not None:
+        # 서버가 시스템 컨텍스트에 넣은 평소 출발 시각(BE-8)
+        local = usual_at.astimezone(KST)
+        sources.times.add((local.hour, local.minute))
     return sources
 
 
@@ -877,9 +941,20 @@ def check_arrival_at(ctx: CarVoiceContext, now: datetime) -> None:
         )
 
 
-def arrival_briefing(ctx: CarVoiceContext) -> CarVoiceResponse:
-    """귀가길 브리핑의 첫 질문. 서버 문장이라 Claude도 한도도 쓰지 않는다."""
-    question = "내일 몇 시에 출발하세요?"
+def arrival_briefing(
+    ctx: CarVoiceContext,
+    usual: DepartureSuggestion | None = None,
+    now: datetime | None = None,
+) -> CarVoiceResponse:
+    """귀가길 브리핑의 첫 질문. 서버 문장이라 Claude도 한도도 쓰지 않는다.
+
+    평소 출발 시각 제안(BE-8)이 있으면 그 시각을 묻는다: high "내일도 오전 7시 30분에
+    출발하세요?", low "내일 오전 7시 30분쯤 출발하세요?".
+    """
+    if usual is not None and usual.depart_at is not None and now is not None:
+        question = suggestion_question(usual, now)
+    else:
+        question = "내일 몇 시에 출발하세요?"
     if ctx.arrival_soc is not None:
         speech = f"집에 도착하면 배터리가 {spoken_percent(ctx.arrival_soc)} 남아요. {question}"
     else:
@@ -889,7 +964,9 @@ def arrival_briefing(ctx: CarVoiceContext) -> CarVoiceResponse:
     )
 
 
-def _system_prompt(payload: CarVoiceRequest, now: datetime) -> str:
+def _system_prompt(
+    payload: CarVoiceRequest, now: datetime, usual: DepartureSuggestion | None = None
+) -> str:
     ctx = payload.context
     local = now.astimezone(KST)
     weekday = "월화수목금토일"[local.weekday()]
@@ -913,6 +990,13 @@ def _system_prompt(payload: CarVoiceRequest, now: datetime) -> str:
         f"지금: {local:%Y-%m-%d %H:%M} ({weekday}요일, 한국 시간)",
         "차량 상태: " + ", ".join(state),
     ]
+    if usual is not None and usual.depart_at is not None:
+        at = usual.depart_at.astimezone(KST)
+        lines.append(
+            f"usual_departure: {day_label(usual.target, now)} {at:%H:%M} "
+            f"(confidence {usual.confidence}, 기록 {usual.basis_count}건). 운전자가 '응', "
+            f"'맞아'처럼 이 시각을 받아들이면 plan_charge(depart_time='{at:%H:%M}')를 부른다."
+        )
     if payload.trigger == "arrival_briefing":
         lines.append(
             "상황: 운전자는 집으로 가는 중이고, 와트잇이 내일 출발 시각을 물었다. "
@@ -962,11 +1046,18 @@ def converse(
     now: datetime,
     deadline_s: float = DEADLINE_S,
     monotonic: Callable[[], float] = clock.monotonic,
+    usual: DepartureSuggestion | None = None,
 ) -> CarVoiceResponse:
     """Claude와 도구 루프를 돌려 답을 만든다. 실패해도 200으로 돌려줄 응답을 만든다."""
     text = payload.text or ""  # 라우터가 text 없는 요청(귀가길 브리핑 첫 질문)을 먼저 처리한다
-    tools = VoiceTools(session=session, device=device, context=payload.context, now=now)
-    system = _system_prompt(payload, now)
+    tools = VoiceTools(
+        session=session,
+        device=device,
+        context=payload.context,
+        now=now,
+        stated_times=driver_stated_times(payload, usual, now),
+    )
+    system = _system_prompt(payload, now, usual)
     messages = build_messages(payload.history, text)
     outcomes: list[ToolOutcome] = []
     deadline = monotonic() + deadline_s
@@ -1022,7 +1113,8 @@ def converse(
             # 듣고 끝나므로 운영자가 알 수 있게 경고로 남긴다(상태 코드와 종류만).
             logger.warning("Claude가 요청을 거절했습니다: HTTP %s (%s)", exc.status, exc.kind)
 
-    response = _respond(final_text, reason, payload, outcomes)
+    usual_at = usual.depart_at if usual is not None else None
+    response = _respond(final_text, reason, payload, outcomes, usual_at)
     logger.info(
         "음성 대화: text %d자, history %d턴, 도구 %s, fallback=%s (%s)",
         len(text),
@@ -1039,6 +1131,7 @@ def _respond(
     reason: str,
     payload: CarVoiceRequest,
     outcomes: list[ToolOutcome],
+    usual_at: datetime | None = None,
 ) -> CarVoiceResponse:
     actions: dict[str, SetReservationAction | NavigateAction | AskAction | AddWaypointAction] = {}
     saving_id = None
@@ -1068,7 +1161,7 @@ def _respond(
     driver_texts = [payload.text or ""] + [
         turn.text for turn in payload.history if turn.role == "driver"
     ]
-    sources = number_sources(outcomes, payload.context, driver_texts)
+    sources = number_sources(outcomes, payload.context, driver_texts, usual_at)
     if unsupported_numbers(speech, sources):
         return fallback(NUMBER_SPEECH)
     if speech.endswith("?"):

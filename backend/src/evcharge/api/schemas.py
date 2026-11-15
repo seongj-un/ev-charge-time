@@ -755,3 +755,45 @@ class CarRouteChargersResponse(BaseModel):
     coverage_note: str | None = None
     # 경로 근사(꺾은선) 길이 (m)
     route_m: int
+
+
+# ---------------------------------------------------------------------------
+# 와트잇 출발 시각 학습 (BE-8) — 계약: docs/car-api.md
+# ---------------------------------------------------------------------------
+
+
+class CarDepartureIn(BaseModel):
+    """``POST /api/car/departures``. 앱이 기어가 P에서 벗어난 첫 시각(집 출발)을 보낸다."""
+
+    departed_at: datetime
+    # 이 API로는 관찰값만 받는다. 운전자가 말한 출발(stated)은 서버가 계산 요청에서 남긴다.
+    source: Literal["observed"] = "observed"
+
+    @field_validator("departed_at")
+    @classmethod
+    def _departed_in_kst(cls, value: datetime) -> datetime:
+        return to_kst(value)  # type: ignore[return-value]
+
+
+class CarDepartureOut(BaseModel):
+    departure_id: str
+    departed_at: KstDatetime
+    source: Literal["observed", "stated"]
+    # 같은 기기 30분 안의 기록과 합쳐졌으면 true(새 행을 만들지 않음, 상태 200)
+    merged: bool
+
+
+class CarDeparturesDeleted(BaseModel):
+    deleted: int
+
+
+class CarDepartureSuggestion(BaseModel):
+    """``GET /api/car/departures/suggest``. 제안이 없으면 시각·신뢰도가 null이다."""
+
+    date: date
+    suggested_depart_at: KstDatetime | None
+    confidence: Literal["high", "low"] | None
+    # 제안에 쓴 기록 수(제안이 없으면 같은 날 종류의 기록 수)
+    basis_count: int
+    day_type: Literal["weekday", "weekend_holiday"]
+    speech: str

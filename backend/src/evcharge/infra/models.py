@@ -398,3 +398,35 @@ class CarVoiceServiceQuota(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class CarDeparture(Base):
+    """집 출발 기록 한 건 (BE-8 출발 시각 학습). 개인정보 없이 시각과 출처만 둔다.
+
+    - ``observed``: 앱이 기어가 P에서 벗어난 첫 시각을 보낸 것
+    - ``stated``: 운전자가 직접 말한 출발 시각(계산 요청의 ``depart_at``)
+
+    같은 기기 30분 안의 기록은 하나로 합친다. 기기당 하루(KST, ``recorded_at``) 10건까지
+    만들고, 출발 시각이 90일 지난 기록은 지운다(``api/car_departures.py``).
+    ``recorded_at``은 앱 시계다: 하루 상한의 날 경계를 테스트가 고정한 시계로 가른다.
+    """
+
+    __tablename__ = "car_departures"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("car_devices.id", ondelete="CASCADE"), nullable=False
+    )
+    departed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source: Mapped[str] = mapped_column(String(10), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("source IN ('observed', 'stated')", name="ck_car_departures_source"),
+        # 제안(최근 28일)과 30분 중복 찾기는 기기별 출발 시각 구간으로 읽는다.
+        Index("ix_car_departures_device_departed", "device_id", "departed_at"),
+        # 하루 상한은 기기별 기록 시각으로 센다.
+        Index("ix_car_departures_device_recorded", "device_id", "recorded_at"),
+        # 90일 정리는 모든 기기를 출발 시각으로 지운다.
+        Index("ix_car_departures_departed", "departed_at"),
+    )

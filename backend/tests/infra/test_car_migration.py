@@ -34,6 +34,7 @@ CAR_TABLES = {
     "car_voice_rate_limits",
     "car_voice_service_quota",
     "car_voice_ip_limits",
+    "car_departures",
 }
 
 
@@ -111,6 +112,47 @@ def test_voice_quota_migration_goes_down_alone(migration_db):
 
     command.upgrade(config, "head")
     assert _tables(migration_db) >= CAR_TABLES
+
+
+def test_departures_migration_goes_down_alone(migration_db):
+    """BE-8 리비전만 되돌리면 출발 기록 테이블만 사라진다."""
+    config = _alembic()
+    command.upgrade(config, "head")
+
+    command.downgrade(config, "e5c8a3d9f1b2")
+    tables = _tables(migration_db)
+    assert "car_departures" not in tables
+    assert {"car_devices", "car_savings", "car_voice_ip_limits"} <= tables
+
+    command.upgrade(config, "head")
+    assert "car_departures" in _tables(migration_db)
+
+
+def test_departure_constraints_and_cascade(migration_db):
+    command.upgrade(_alembic(), "head")
+    engine = create_engine(migration_db)
+    device_id = str(uuid.uuid4())
+    insert = text(
+        "INSERT INTO car_departures (id, device_id, departed_at, source, recorded_at) "
+        "VALUES (:id, :device, now(), :source, now())"
+    )
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO car_devices (id, token_hash) VALUES (:id, :h)"),
+                {"id": device_id, "h": "b" * 64},
+            )
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(insert, {"id": str(uuid.uuid4()), "device": device_id, "source": "guess"})
+        with engine.begin() as conn:
+            for source in ("observed", "stated"):
+                conn.execute(
+                    insert, {"id": str(uuid.uuid4()), "device": device_id, "source": source}
+                )
+            conn.execute(text("DELETE FROM car_devices WHERE id = :id"), {"id": device_id})
+            assert conn.execute(text("SELECT count(*) FROM car_departures")).scalar_one() == 0
+    finally:
+        engine.dispose()
 
 
 def test_migrated_car_schema_matches_the_models(migration_db):

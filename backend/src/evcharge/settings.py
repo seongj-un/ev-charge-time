@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     car_savings_confirm_window_hours: int = Field(default=72, ge=1)
     car_savings_daily_confirm_max: int = Field(default=3, ge=1)
 
+    # 와트잇 BE-8 출발 기록: 기기당 KST 하루 새 기록 상한, 출처별. 실제 출발(observed)은
+    # 하루 한두 번이고, 운전자가 말한 시각(stated)은 계산 요청마다 생길 수 있어 더 낮게 둔다.
+    # 따로 세므로 말한 시각이 다 차도 실제 출발은 남는다.
+    car_departure_daily_observed_max: int = Field(default=10, ge=1)
+    car_departure_daily_stated_max: int = Field(default=5, ge=1)
+
     # 기기 발급 한도의 IP 키를 만드는 서버 비밀값(HMAC-SHA256). 솔트 없는 sha256은
     # IPv4 전체(약 43억 개)를 대입하면 원래 IP를 되찾을 수 있다. 이 값을 두면 비밀값
     # 없이는 되찾을 수 없다. 비어 있으면 sha256으로 동작하고 기동 후 처음 쓸 때 경고를

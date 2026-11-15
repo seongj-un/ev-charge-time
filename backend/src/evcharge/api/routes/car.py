@@ -4,16 +4,32 @@
 기기 토큰과 절감 기록은 ``car_devices``·``car_savings``(BE-5)에 있다.
 """
 
-from datetime import datetime
+import re
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session as DbSession
 
+from ...domain.departures import DepartureSuggestion
+from ...domain.errors import DomainError
 from ...domain.pricing import KST
 from ...infra.claude import AnthropicClaudeClient, ClaudeClient
 from ...infra.db import get_session
+from ...infra.models import CarDevice
 from ...settings import get_settings
+from ..car_departures import (
+    DepartureLimitError,
+    check_observed_time,
+    delete_departures,
+    next_usual_departure,
+    raise_limit,
+    record_departure,
+    suggestion_for,
+    to_suggestion_out,
+    try_record_stated,
+    usual_departure_for,
+)
 from ..car_devices import (
     client_ip,
     consume_device_quota,
@@ -27,9 +43,13 @@ from ..car_route_service import find_along_route
 from ..car_savings import confirm, summarize, to_out, try_record
 from ..car_voice_quota import VoiceQuotaExceededError, consume_voice_quota
 from ..car_voice_service import arrival_briefing, check_arrival_at, converse
-from ..deps import get_public_prices
+from ..deps import get_holidays, get_public_prices
 from ..months import month_of
 from ..schemas import (
+    CarDepartureIn,
+    CarDepartureOut,
+    CarDeparturesDeleted,
+    CarDepartureSuggestion,
     CarDeviceOut,
     CarLeakCheckRequest,
     CarLeakCheckResponse,
@@ -59,7 +79,10 @@ def car_plan(payload: CarPlanRequest, request: Request) -> CarPlanResponse:
 
     기기 토큰이 있고 아끼는 돈이 있으면 대기 절감 기록을 만들고 ``saving_id``를 붙인다.
     """
-    result = compute_car_plan(payload, now_kst())
+    now = now_kst()
+    result = compute_car_plan(payload, now)
+    # 운전자가 정한 출발 시각을 출발 학습에 남긴다(토큰이 있을 때만, 응답은 그대로).
+    try_record_stated(request, payload.depart_at, now)
     if result.plan is not None and result.savings_won:
         saving_id = try_record(
             request,
@@ -78,12 +101,23 @@ def car_leak_check(payload: CarLeakCheckRequest, request: Request) -> CarLeakChe
 
     기기 토큰이 있고 ``leaking=true``면 대기 절감 기록을 만들고 ``saving_id``를 붙인다.
     """
+    now = now_kst()
+    # 출발 시각이 없으면 평소 출발 시각(high)을 가정에 쓴다. 토큰이 없으면 DB를 열지 않는다.
+    usual = (
+        usual_departure_for(request, now)
+        if payload.place == "home" and payload.depart_at is None
+        else None
+    )
     result = compute_leak_check(
         payload,
-        now_kst(),
+        now,
         min_won=get_settings().car_leak_min_won,
         load_prices=get_public_prices,
+        usual=usual,
     )
+    if payload.place == "home" and payload.depart_at is not None:
+        # 받은 출발 시각만 남긴다. 서버가 가정한 시각은 남기지 않는다.
+        try_record_stated(request, payload.depart_at, now)
     if result.leaking and result.cause is not None:
         saving_id = try_record(
             request,
@@ -145,6 +179,78 @@ def savings_summary(
     return summary
 
 
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DATE_ERROR = "date는 YYYY-MM-DD 형식이어야 합니다."
+
+
+@router.post("/departures", response_model=CarDepartureOut, status_code=201)
+def record_observed_departure(
+    payload: CarDepartureIn,
+    request: Request,
+    response: Response,
+    session: DbSession = Depends(get_session),
+) -> CarDepartureOut:
+    """집 출발 기록(기어가 P에서 벗어난 첫 시각). 30분 안 중복은 합치고 200을 준다."""
+    device = require_device(request, session)
+    now = now_kst()
+    check_observed_time(payload.departed_at, now)
+    try:
+        departure, created = record_departure(
+            session, device, payload.departed_at, payload.source, now
+        )
+    except DepartureLimitError as exc:
+        raise_limit(exc)
+        raise  # raise_limit가 늘 던진다
+    if not created:
+        response.status_code = 200
+    return CarDepartureOut(
+        departure_id=departure.id,
+        departed_at=departure.departed_at,
+        source=departure.source,
+        merged=not created,
+    )
+
+
+@router.delete("/departures", response_model=CarDeparturesDeleted)
+def delete_all_departures(
+    request: Request, session: DbSession = Depends(get_session)
+) -> CarDeparturesDeleted:
+    """이 기기의 출발 기록(observed, stated)을 전부 지운다."""
+    device = require_device(request, session)
+    return CarDeparturesDeleted(deleted=delete_departures(session, device))
+
+
+@router.get("/departures/suggest", response_model=CarDepartureSuggestion)
+def suggest_departure(
+    request: Request,
+    date_param: str | None = Query(
+        None, alias="date", description="YYYY-MM-DD (KST). 생략하면 내일"
+    ),
+    session: DbSession = Depends(get_session),
+) -> CarDepartureSuggestion:
+    """그날의 평소 출발 시각 제안. 기록이 3건 미만이면 시각과 신뢰도가 null이다."""
+    device = require_device(request, session)
+    now = now_kst()
+    target = _parse_date(date_param) if date_param is not None else (
+        now.astimezone(KST).date() + timedelta(days=1)
+    )
+    found = suggestion_for(session, device, target, get_holidays())
+    session.commit()  # last_seen_at
+    return to_suggestion_out(found, now)
+
+
+def _parse_date(value: str) -> date:
+    if not _DATE_RE.match(value):
+        raise HTTPException(status_code=422, detail=_DATE_ERROR)
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=_DATE_ERROR) from exc
+    if not 1970 <= parsed.year <= 9998:
+        raise HTTPException(status_code=422, detail="date는 1970년부터 9998년 사이여야 합니다.")
+    return parsed
+
+
 def anthropic_api_key() -> str:
     """설정의 Claude 키. 테스트가 ``dependency_overrides``로 "키 있음/없음"을 정한다."""
     return get_settings().anthropic_api_key
@@ -193,8 +299,9 @@ def car_voice(
     session.commit()  # last_seen_at
     now = now_kst()
     check_arrival_at(payload.context, now)
+    usual = _usual_departure(session, device, now)
     if payload.text is None:
-        return arrival_briefing(payload.context)
+        return arrival_briefing(payload.context, usual, now)
     if not api_key:
         return _spoken_error(501, VOICE_NOT_READY)
     try:
@@ -205,4 +312,15 @@ def car_voice(
             exc.speech,
             {"Retry-After": str(exc.retry_after), "X-RateLimit-Scope": exc.scope},
         )
-    return converse(client, payload, session=session, device=device, now=now)
+    return converse(client, payload, session=session, device=device, now=now, usual=usual)
+
+
+def _usual_departure(
+    session: DbSession, device: CarDevice, now: datetime
+) -> DepartureSuggestion | None:
+    """평소 출발 시각 제안(high/low). 계산할 수 없으면 None이고 대화는 지금처럼 간다."""
+    try:
+        holidays = get_holidays()
+    except DomainError:
+        return None
+    return next_usual_departure(session, device, now, holidays)
