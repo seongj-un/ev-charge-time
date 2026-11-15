@@ -15,11 +15,16 @@ class Base(DeclarativeBase):
 _engine = None
 _SessionLocal = None
 
+# hide_parameters: SQLAlchemy는 기본으로 DB 오류 문구에 쿼리 값을 넣는다(기기 ID, 출발 시각,
+# 회원 이메일 등). 그 문구는 로그로 가므로 값을 빼고 "[SQL parameters hidden ...]"만 남긴다.
+# 테스트 engine도 같은 옵션을 쓴다.
+ENGINE_OPTIONS: dict[str, object] = {"pool_pre_ping": True, "hide_parameters": True}
+
 
 def get_engine():
     global _engine
     if _engine is None:
-        _engine = create_engine(get_settings().database_url, pool_pre_ping=True)
+        _engine = create_engine(get_settings().database_url, **ENGINE_OPTIONS)
     return _engine
 
 

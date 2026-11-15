@@ -31,7 +31,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 
-from evcharge.infra.db import Base, get_session
+from evcharge.infra.db import ENGINE_OPTIONS, Base, get_session
 from evcharge.main import create_app
 from evcharge.settings import get_settings
 
@@ -135,7 +135,7 @@ def _service_quota_off_by_default() -> None:
 def test_engine() -> Iterator[Engine]:
     """테스트 DB에 붙는 세션 스코프 engine. 스키마는 세션당 한 번만 만든다."""
     test_url = _test_database_url()
-    engine = create_engine(test_url, pool_pre_ping=True)
+    engine = create_engine(test_url, **ENGINE_OPTIONS)
     try:
         engine.connect().close()
     except SQLAlchemyError:
