@@ -1363,15 +1363,19 @@ def test_no_stale_sentence_when_fresh_or_status_does_not_matter(
     assert "분 전 정보" not in tool_results(fake, 1)[0]["content"]["speech"]
 
 
-def test_find_chargers_says_old_status_cannot_be_trusted(client, fake, db_session):
+def test_find_chargers_says_old_status_cannot_be_trusted(client, fake, db_session, recorded_sql):
     _aged_station(db_session, "S1", HERE[0] + 0.001, 61, name="빛가람 1 충전소")
     fake.replies = [use("find_chargers", {"available_only": True}), say("확인할 수 없어요.")]
+    headers = register(client)
 
-    ask(client, register(client), "근처 빈 충전기 있어?")
+    with recorded_sql() as statements:
+        ask(client, headers, "근처 빈 충전기 있어?")
 
     content = tool_results(fake, 1)[0]["content"]
     assert content["stations"] == []
     assert content["speech"] == "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요."
+    # 반경 검색은 한 번(빈 결과의 이유를 알려고 캐시를 다시 읽지 않는다)
+    assert len([s for s in statements if "charger_cache.lat BETWEEN" in s]) == 1
 
 
 def test_along_route_tool_carries_status_age_without_an_offset(client, fake, db_session):

@@ -162,7 +162,8 @@ def list_chargers(
         "available_only": available_only,
         "min_kw": min_kw,
     }
-    found = find_nearby(session, **query, now=now, limits=limits)
+    result = search_nearby(session, **query, now=now, limits=limits)
+    found = result.found
 
     if not found and cache_is_empty(session):
         # "주변에 충전소가 없다"와 "아직 수집하지 않았다"는 다른 말이다. 빈
@@ -177,11 +178,7 @@ def list_chargers(
 
     # 오래된 상태 때문에 비었으면 "주변에 빈 충전기가 없다"가 아니라 "확인할 수 없다"다.
     # 응답 본문은 목록이라 필드를 더할 수 없어 헤더로 알린다(UTF-8 퍼센트 인코딩).
-    if (
-        available_only
-        and not found
-        and find_nearby(session, **query, now=now, limits=limits, ignore_status_age=True)
-    ):
+    if result.empty_because_of_age:
         response.headers[STATUS_NOTE_HEADER] = quote(STATUS_UNKNOWN_NOTE)
 
     favorites = _favorite_ids(session, user, [row.station_id for _, row in found])
@@ -227,6 +224,19 @@ def charger_freshness(session: DbSession = Depends(get_session)) -> ChargerFresh
     )
 
 
+@dataclass(frozen=True)
+class NearbyResult:
+    # (거리 m, 캐시 행), 가까운 순
+    found: list[tuple[float, ChargerCache]]
+    # 상태가 오래돼서만 빠진 충전소가 있었다(상태가 새것이었다면 조건을 맞췄을 곳)
+    hidden_by_age: bool
+
+    @property
+    def empty_because_of_age(self) -> bool:
+        """비었고, 그 이유가 오래된 상태다: "없다"가 아니라 "확인할 수 없다"고 말할 때."""
+        return not self.found and self.hidden_by_age
+
+
 def find_nearby(
     session: DbSession,
     *,
@@ -238,12 +248,37 @@ def find_nearby(
     min_kw: float | None = None,
     now: datetime,
     limits: FreshnessLimits,
-    ignore_status_age: bool = False,
 ) -> list[tuple[float, ChargerCache]]:
+    """``search_nearby``의 목록만."""
+    return search_nearby(
+        session,
+        lat=lat,
+        lng=lng,
+        radius_m=radius_m,
+        charger_type=charger_type,
+        available_only=available_only,
+        min_kw=min_kw,
+        now=now,
+        limits=limits,
+    ).found
+
+
+def search_nearby(
+    session: DbSession,
+    *,
+    lat: float,
+    lng: float,
+    radius_m: int,
+    charger_type: str | None = None,
+    available_only: bool = False,
+    min_kw: float | None = None,
+    now: datetime,
+    limits: FreshnessLimits,
+) -> NearbyResult:
     """반경 안의 충전소를 가까운 순으로 (거리 m, 캐시 행). 필터 규칙은 위 쿼리 설명과 같다.
 
     ``available_only``는 상태 수집 뒤 ``limits.max_age_min``분 이하인 행만 센다.
-    ``ignore_status_age``는 "상태가 새것이었다면 남았을 충전소가 있는지" 알아볼 때만 쓴다.
+    오래된 상태 때문에만 빠진 충전소가 있었는지도 같은 루프에서 센다(캐시를 다시 읽지 않는다).
 
     음성 대화(BE-3)의 ``find_chargers`` 도구도 HTTP를 거치지 않고 이 함수를 부른다.
     """
@@ -262,17 +297,20 @@ def find_nearby(
         min_kw=min_kw,
     )
     found: list[tuple[float, ChargerCache]] = []
+    hidden_by_age = False
     for row in candidates:
         # 2차 필터: 박스는 원보다 크다(모서리). 정확한 거리로 한 번 더 거른다.
         distance = haversine_m(lat, lng, row.lat, row.lng)
         if distance > radius_m:
             continue
-        known = ignore_status_age or status_age(row, now, limits).known
+        known = status_age(row, now, limits).known
         if wanted.is_set() and not _has_matching_charger(row, wanted, status_known=known):
+            if not known and _has_matching_charger(row, wanted, status_known=True):
+                hidden_by_age = True
             continue
         found.append((distance, row))
     found.sort(key=lambda item: item[0])
-    return found
+    return NearbyResult(found, hidden_by_age)
 
 
 def charger_summary(row: ChargerCache) -> tuple[int, float | None]:

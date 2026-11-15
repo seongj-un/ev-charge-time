@@ -161,23 +161,24 @@ def test_freshness_of_an_empty_cache(client):
     }
 
 
-def test_freshness_is_one_query(client, db_session, monkeypatch):
-    from sqlalchemy import event
-
+def test_freshness_is_one_query(client, db_session, recorded_sql):
     station(db_session, "A", 3)
-    statements: list[str] = []
-    engine = db_session.get_bind()
 
-    def count(conn, cursor, statement, *args):
-        statements.append(statement)
-
-    event.listen(engine, "before_cursor_execute", count)
-    try:
+    with recorded_sql() as statements:
         client.get("/api/chargers/freshness")
-    finally:
-        event.remove(engine, "before_cursor_execute", count)
 
     assert len([s for s in statements if "charger_cache" in s]) == 1
+
+
+def test_empty_because_of_old_status_reads_the_cache_once(client, db_session, recorded_sql):
+    station(db_session, "OLD", 90)
+
+    with recorded_sql() as statements:
+        response = get(client, available_only="true")
+
+    assert "X-Status-Note" in response.headers
+    # 반경 검색(BETWEEN)은 한 번. 빈 결과의 이유를 알려고 다시 읽지 않는다.
+    assert len([s for s in statements if "charger_cache.lat BETWEEN" in s]) == 1
 
 
 # ── 상태 확인 시각 (charger_sync_state) ─────────────────────────────────────

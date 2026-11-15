@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import threading
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TypeVar
 from urllib.parse import urlsplit, urlunsplit
@@ -275,3 +276,24 @@ def concurrent(test_engine: Engine) -> ConcurrentRequests:
     """``get_session`` 오버라이드가 없는 진짜 앱 + 진짜 엔진으로 동시 요청을
     보낼 수 있게 해주는 픽스처. 사용법은 ``ConcurrentRequests`` 참고."""
     return ConcurrentRequests(app=create_app(), engine=test_engine)
+
+
+@pytest.fixture
+def recorded_sql(db_session: DbSession):
+    """``with recorded_sql() as statements:`` 블록에서 DB로 간 SQL 문장들을 모은다."""
+
+    @contextmanager
+    def record() -> Iterator[list[str]]:
+        statements: list[str] = []
+        bind = db_session.get_bind()
+
+        def on_execute(conn, cursor, statement, *args) -> None:
+            statements.append(statement)
+
+        event.listen(bind, "before_cursor_execute", on_execute)
+        try:
+            yield statements
+        finally:
+            event.remove(bind, "before_cursor_execute", on_execute)
+
+    return record

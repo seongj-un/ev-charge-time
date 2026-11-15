@@ -58,7 +58,7 @@ from .routes.chargers import (
     FreshnessLimits,
     cache_is_empty,
     charger_summary,
-    find_nearby,
+    search_nearby,
     status_age,
 )
 from .schemas import (
@@ -429,7 +429,8 @@ class VoiceTools:
             "now": self.now,
             "limits": limits,
         }
-        found = find_nearby(self.session, **query)[:MAX_STATIONS]
+        result = search_nearby(self.session, **query)
+        found = result.found[:MAX_STATIONS]
         if not found and cache_is_empty(self.session):
             return ToolOutcome({"error": "충전소 정보를 아직 수집하지 않았습니다."}, is_error=True)
 
@@ -460,7 +461,7 @@ class VoiceTools:
         }
         if not found:
             speech = f"{spoken_distance(args.radius_m)} 안에 조건에 맞는 충전소가 없어요."
-            if args.available_only and find_nearby(self.session, **query, ignore_status_age=True):
+            if result.empty_because_of_age:
                 # 오래된 상태 때문에 비었다: "없다"가 아니라 "확인할 수 없다"다.
                 speech = STATUS_UNKNOWN_NOTE
             content["speech"] = speech
