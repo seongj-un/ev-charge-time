@@ -114,6 +114,8 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 - `RouteInfo`·`RequestWaypointInfo`의 `poiId`, `address`, `poiSubId`는 소스에서 null을 받지 않는
   `String`이다. 응답에는 주소가 없으므로 `poiId`에 `station_id`, `address`는 `GET /api/chargers`에서
   받은 주소나 빈 문자열, `poiSubId`는 빈 문자열을 넣는다. 실제 내비가 빈 값을 받는지 확인이 필요하다.
+  이것은 임시 방법이다. **BE-13에서 `navigate`·`add_waypoint` 동작에 `address`를 추가할 예정**이며,
+  그때 이 항목을 고친다.
 - 음성 `history`: 최대 6턴. `wattit` 턴은 서버가 준 `speech`를 글자 그대로 넣는다. 평소 출발 시각
   질문에 "응"이라고 답한 것을 서버가 알아보려면 직전 `wattit` 턴이 그 질문으로 끝나야 한다.
 - 음성 응답의 `fallback: true`는 Claude 문장 대신 서버 문장을 읽는다는 뜻이다. 앱은 그대로 읽으면 된다.
@@ -170,4 +172,5 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 - `remainDestinationChargingInt`의 단위(%인지), `DestinationInfo.remainDistance`·`remainTime`이
   목적지까지 남은 값인지.
 - 밤사이 충전 확인: 주차 때 잔량과 다음 시동 때 잔량 비교로 충분한지.
-- `requestRoute`·`addWaypoint`에 `address`·`poiSubId`를 빈 문자열로 넣어도 되는지.
+- `requestRoute`·`addWaypoint`에 `address`·`poiSubId`를 빈 문자열로 넣어도 되는지(`address`는 BE-13에서
+  동작에 추가 예정, `poiSubId`는 남는다).
