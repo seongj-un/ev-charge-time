@@ -20,6 +20,7 @@ from ..domain.route import Route, clean_route, query_boxes
 from ..infra.models import ChargerCache
 from .car_plan_service import spoken_distance, spoken_percent
 from .routes.chargers import (
+    STATUS_UNKNOWN_NOTE,
     FreshnessLimits,
     cache_is_empty,
     charger_summary,
@@ -143,6 +144,11 @@ def find_along_route(
         )
         > 0
     ]
+    # 상태가 새것이었다면 남았을 충전소: 비었을 때 "없다"와 "확인할 수 없다"를 가른다.
+    hidden_by_age = not matching and any(
+        matching_count(row, available_only=True, min_kw=payload.min_kw, status_known=True) > 0
+        for _, _, row in near
+    )
     matching.sort(key=lambda item: (item[0], item[1]))
     matching = matching[:MAX_RESULTS]
 
@@ -174,6 +180,9 @@ def find_along_route(
                 est_soc=est_soc,
                 reachable=reachable,
                 runs_out=runs_out,
+                synced_at=ages[row.station_id].synced_at,
+                status_age_min=ages[row.station_id].age_min,
+                stale=ages[row.station_id].stale,
             )
         )
 
@@ -195,6 +204,8 @@ def find_along_route(
         assumptions.append(estimate.assumption)
     if not near:
         coverage_note = NO_COVERAGE
+    elif hidden_by_age:
+        coverage_note = STATUS_UNKNOWN_NOTE
     elif not matching:
         coverage_note = (
             f"경로 근처 충전소 {len(near)}곳 중 지금 비어 있는 {payload.min_kw:g}kW 이상 "
@@ -233,6 +244,10 @@ def find_along_route(
         coverage_note=coverage_note,
         route_m=round(route_m),
     )
+
+
+def stale_sentence(age_min: int) -> str:
+    return f"충전기 상태는 {age_min}분 전 정보예요."
 
 
 def _recommend(chargers: list[RouteChargerOut]) -> RouteChargerOut | None:
@@ -308,6 +323,9 @@ def _speech(
         f"{lead}{where} {recommended.name or '이름 없는 충전소'}에 "
         f"비어 있는 {kind}가 {recommended.available_count}대 있어요."
     )
+    if recommended.stale:
+        # "비어 있어요"가 몇 분 전 값인지 밝힌다(BE-10). 질문(경유지로 넣을까요?) 앞에 둔다.
+        sentence += f" {stale_sentence(recommended.status_age_min)}"
     if recommended.runs_out:
         return f"{sentence} 이 충전소까지 가기 전에 배터리가 바닥날 수 있어요. {RUNS_OUT_QUESTION}"
     if recommended.reachable is False and recommended.est_soc is not None:

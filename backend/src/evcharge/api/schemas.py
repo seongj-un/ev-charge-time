@@ -755,6 +755,10 @@ class RouteChargerOut(BaseModel):
     # 0으로 자르기 전 추정 잔량이 0 이하: 이 충전소까지 가기 전에 배터리가 바닥날 수 있다.
     # 추정하지 않았으면 null
     runs_out: bool | None = None
+    # 상태 신선도 (BE-10). GET /api/chargers와 같은 값. 60분 넘은 상태는 여기 오지 않는다.
+    synced_at: KstDatetime
+    status_age_min: int
+    stale: bool
 
 
 class CarRouteChargersResponse(BaseModel):
