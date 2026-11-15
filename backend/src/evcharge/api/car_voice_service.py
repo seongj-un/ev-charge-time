@@ -460,9 +460,7 @@ class VoiceTools:
         }
         if not found:
             speech = f"{spoken_distance(args.radius_m)} 안에 조건에 맞는 충전소가 없어요."
-            if args.available_only and find_nearby(
-                self.session, **query, ignore_status_age=True
-            ):
+            if args.available_only and find_nearby(self.session, **query, ignore_status_age=True):
                 # 오래된 상태 때문에 비었다: "없다"가 아니라 "확인할 수 없다"다.
                 speech = STATUS_UNKNOWN_NOTE
             content["speech"] = speech

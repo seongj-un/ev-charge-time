@@ -167,12 +167,9 @@ def test_migrated_car_schema_matches_the_models(migration_db):
 
     def touches_car_table(diff) -> bool:
         flat = diff if isinstance(diff, tuple) else diff[0]
-        return any(
-            getattr(item, "name", None) in CAR_TABLES
-            or (getattr(getattr(item, "table", None), "name", None) in CAR_TABLES)
-            or item in CAR_TABLES
-            for item in flat
-        )
+        return any(getattr(item, "name", None) in CAR_TABLES or (
+            getattr(getattr(item, "table", None), "name", None) in CAR_TABLES
+        ) or item in CAR_TABLES for item in flat)
 
     assert [d for d in diffs if touches_car_table(d)] == []
 
@@ -200,24 +197,14 @@ def test_migrated_constraints_reject_bad_rows(migration_db):
             with pytest.raises(IntegrityError), engine.begin() as conn:
                 conn.execute(
                     insert_saving,
-                    {
-                        "id": str(uuid.uuid4()),
-                        "device": device_id,
-                        "cause": cause,
-                        "won": won,
-                        "source": source,
-                    },
+                    {"id": str(uuid.uuid4()), "device": device_id, "cause": cause,
+                     "won": won, "source": source},
                 )
         with engine.begin() as conn:
             conn.execute(
                 insert_saving,
-                {
-                    "id": str(uuid.uuid4()),
-                    "device": device_id,
-                    "cause": "payment",
-                    "won": 100_000,
-                    "source": "leak_check",
-                },
+                {"id": str(uuid.uuid4()), "device": device_id, "cause": "payment",
+                 "won": 100_000, "source": "leak_check"},
             )
             # 기기를 지우면 기록도 함께 지워진다 (ON DELETE CASCADE).
             conn.execute(text("DELETE FROM car_devices WHERE id = :id"), {"id": device_id})
@@ -242,24 +229,21 @@ def test_briefing_source_migration_goes_down_alone(migration_db):
                 text("INSERT INTO car_devices (id, token_hash) VALUES (:id, :h)"),
                 {"id": device_id, "h": "c" * 64},
             )
-            conn.execute(
-                insert_saving, {"id": str(uuid.uuid4()), "device": device_id, "source": "briefing"}
-            )
+            conn.execute(insert_saving, {"id": str(uuid.uuid4()), "device": device_id,
+                                         "source": "briefing"})
 
         command.downgrade(config, "b8d4f2a6c913")
         with engine.connect() as conn:
             rows = conn.execute(text("SELECT source, savings_won FROM car_savings")).all()
         assert [tuple(row) for row in rows] == [("plan", 1200)]
         with pytest.raises(IntegrityError), engine.begin() as conn:
-            conn.execute(
-                insert_saving, {"id": str(uuid.uuid4()), "device": device_id, "source": "briefing"}
-            )
+            conn.execute(insert_saving, {"id": str(uuid.uuid4()), "device": device_id,
+                                         "source": "briefing"})
 
         command.upgrade(config, "head")
         with engine.begin() as conn:
-            conn.execute(
-                insert_saving, {"id": str(uuid.uuid4()), "device": device_id, "source": "briefing"}
-            )
+            conn.execute(insert_saving, {"id": str(uuid.uuid4()), "device": device_id,
+                                         "source": "briefing"})
             conn.execute(text("DELETE FROM car_devices WHERE id = :id"), {"id": device_id})
     finally:
         engine.dispose()
