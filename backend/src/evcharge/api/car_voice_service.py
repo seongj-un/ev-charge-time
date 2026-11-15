@@ -515,6 +515,8 @@ class VoiceTools:
             soc_now=ctx.soc_now,
             arrival_soc=ctx.arrival_soc,
             remain_distance_m=ctx.remain_distance_m,
+            efficiency_km_per_kwh=ctx.efficiency_km_per_kwh,
+            battery_capacity_wh=ctx.battery_capacity_wh,
             min_kw=args.min_kw,
             corridor_m=args.corridor_m,
         )
@@ -588,7 +590,8 @@ _CLOCK_RANGE_RE = re.compile(
 )
 _MONEY_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(만|천)?\s*원")
 _PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|퍼센트)")
-_DISTANCE_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(킬로미터|킬로|km|미터|m)(?![A-Za-z])")
+# "km/kWh"(전비), "km/h"(속도)는 거리가 아니다.
+_DISTANCE_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(킬로미터|킬로|km|미터|m)(?![A-Za-z/])")
 _PERIOD_HOURS = {
     "새벽": set(range(7)),
     "오전": set(range(12)),

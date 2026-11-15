@@ -384,3 +384,63 @@ def test_station_close_to_the_route_does_not_mention_the_offset(client, db_sessi
 
     assert "벗어난" not in body["speech"]
     assert body["speech"].startswith("약 22.6킬로미터 앞 ON 충전소에")
+
+
+EFFICIENCY = {"efficiency_km_per_kwh": 5.0, "battery_capacity_wh": 77_400}
+
+
+def test_estimates_from_efficiency_when_navigation_values_are_missing(client, stations):
+    body = post(client, **EFFICIENCY).json()
+
+    rate = 100 / (5.0 * 77_400)  # %/m
+    for item in body["chargers"]:
+        assert item["est_soc"] == pytest.approx(60 - rate * item["distance_m"], abs=0.1)
+        assert item["reachable"] is True
+    assert body["need_charge"] is None
+    assert body["assumptions"][-1] == (
+        "충전소 도착 잔량은 최근 전비와 배터리 용량으로 거리에 비례해 추정했어요."
+    )
+
+
+def test_navigation_estimate_wins_over_efficiency(client, stations):
+    both = post(client, **ESTIMATE, **EFFICIENCY).json()
+    navi = post(client, **ESTIMATE).json()
+
+    assert both["chargers"] == navi["chargers"]
+    assert both["assumptions"] == navi["assumptions"]
+
+
+def test_efficiency_with_remaining_distance_uses_the_road_scale(client, stations):
+    # arrival_soc 없이 남은 거리만: 전비로 추정하되 거리는 도로 비율로 늘린다
+    body = post(client, **EFFICIENCY, remain_distance_m=60_000).json()
+
+    item = body["chargers"][0]
+    scale = 60_000 / body["route_m"]
+    assert item["distance_m"] == pytest.approx(
+        item["along_m"] * scale + item["offset_m"], abs=1
+    )
+    assert item["est_soc"] == pytest.approx(
+        60 - 100 / (5.0 * 77_400) * item["distance_m"], abs=0.1
+    )
+
+
+@pytest.mark.parametrize(
+    "partial", [{"efficiency_km_per_kwh": 5.0}, {"battery_capacity_wh": 77_400}]
+)
+def test_efficiency_needs_capacity_too(client, stations, partial):
+    body = post(client, **partial).json()
+
+    assert all(c["est_soc"] is None for c in body["chargers"])
+    assert len(body["assumptions"]) == 2
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"efficiency_km_per_kwh": 0},
+        {"efficiency_km_per_kwh": 20.1},
+        {"battery_capacity_wh": 999},
+    ],
+)
+def test_efficiency_bounds(client, bad):
+    assert post(client, **bad).status_code == 422

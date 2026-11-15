@@ -592,6 +592,8 @@ class CarVoiceContext(BaseModel):
     remain_distance_m: float | None = Field(default=None, gt=0, le=3_000_000, allow_inf_nan=False)
     # 내비 경로 위 지점(순서대로). 경로 점 사이가 100km를 넘으면 그 도구는 오류 결과를 준다.
     route_points: list[LatLng] = Field(default_factory=list, max_length=ROUTE_POINTS_MAX)
+    # Vehicle SDK 충전 후 평균 전비(km/kWh). 경로 위 충전소 잔량 추정에 쓴다.
+    efficiency_km_per_kwh: float | None = Field(default=None, gt=0, le=20, allow_inf_nan=False)
 
     @field_validator("arrival_at")
     @classmethod
@@ -697,6 +699,12 @@ class CarRouteChargersRequest(BaseModel):
     min_kw: float = Field(default=50, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
     corridor_m: int = Field(default=3000, ge=500, le=10_000)
     reserve_soc: float = Field(default=15, ge=0, le=100, allow_inf_nan=False)
+    # Vehicle SDK의 충전 후 평균 전비(getSinceChargeEvEfficiency, km/kWh)와 배터리 용량(Wh).
+    # 도착 예상 잔량이나 남은 거리가 없을 때 이 둘로 잔량을 추정한다.
+    efficiency_km_per_kwh: float | None = Field(default=None, gt=0, le=20, allow_inf_nan=False)
+    battery_capacity_wh: float | None = Field(
+        default=None, ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
+    )
 
     def points(self) -> list[tuple[float, float]]:
         return [

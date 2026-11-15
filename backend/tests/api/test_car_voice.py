@@ -1005,3 +1005,23 @@ def test_along_route_tool_gives_no_waypoint_when_no_charge_is_needed(client, fak
 
     assert tool_results(fake, 1)[0]["content"]["need_charge"] is False
     assert body["actions"] == []
+
+
+def test_along_route_tool_uses_efficiency_from_context(client, fake, db_session):
+    _station(db_session, "R1", 35.09, name="빛가람 휴게소", kw=100.0)
+    context = {
+        k: v for k, v in ROUTE_CONTEXT.items() if k not in ("arrival_soc", "remain_distance_m")
+    }
+    fake.replies = [use("find_chargers_along_route"), say("확인했어요.")]
+
+    ask(client, register(client), "충전할 곳", context={**context, "efficiency_km_per_kwh": 5.0})
+
+    item = tool_results(fake, 1)[0]["content"]["chargers"][0]
+    rate = 100 / (5.0 * ROUTE_CONTEXT["battery_capacity_wh"])
+    assert item["est_soc"] == pytest.approx(60 - rate * item["distance_m"], abs=0.1)
+
+
+def test_efficiency_is_not_a_distance(client, fake, db_session):
+    _content, sources = _route_sources(client, fake, db_session)
+
+    assert voice.unsupported_numbers("전비 32km/kWh 기준이에요.", sources) == ["32"]

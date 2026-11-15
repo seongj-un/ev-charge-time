@@ -40,6 +40,7 @@ ASSUME_STATUS = "충전기 상태는 최근 수집 기준이에요(실시간이 
 ASSUME_ESTIMATE = (
     "충전소 도착 잔량은 내비의 남은 거리와 도착 예상 잔량으로 거리에 비례해 추정했어요."
 )
+ASSUME_EFFICIENCY = "충전소 도착 잔량은 최근 전비와 배터리 용량으로 거리에 비례해 추정했어요."
 NO_COVERAGE = "이 구간은 충전소 정보가 없을 수 있어요(수집 지역 밖)."
 TRUNCATED = "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요."
 NOT_COLLECTED = "충전소 정보를 아직 수집하지 않았습니다. 잠시 후 다시 시도해 주세요."
@@ -60,6 +61,7 @@ class _Estimate:
 
     soc_now: float
     rate_per_m: float
+    assumption: str
 
     def soc_at(self, road_m: float) -> float:
         return round(max(0.0, self.soc_now - self.rate_per_m * road_m), 1)
@@ -139,7 +141,7 @@ def find_along_route(
     recommended = next((c for c in chargers if c.reachable is not False), None) or (
         chargers[0] if chargers else None
     )
-    assumptions = [ASSUME_ROUTE, ASSUME_STATUS] + ([ASSUME_ESTIMATE] if estimate else [])
+    assumptions = [ASSUME_ROUTE, ASSUME_STATUS] + ([estimate.assumption] if estimate else [])
     if not near:
         coverage_note = NO_COVERAGE
     elif not matching:
@@ -176,15 +178,21 @@ def find_along_route(
 
 
 def _estimate(payload: CarRouteChargersRequest) -> _Estimate | None:
-    """세 값(soc_now, arrival_soc, remain_distance_m)이 다 있을 때만 추정한다.
+    """충전소 도착 잔량 추정. 근거가 없으면 None(추정하지 않음).
 
-    소모율 = (soc_now − arrival_soc) / remain_distance_m (%/m). 내리막·회생으로 도착
-    잔량이 더 높으면 0으로 본다.
+    1. 내비: ``arrival_soc``와 ``remain_distance_m``가 다 있으면 소모율 =
+       (soc_now − arrival_soc) / remain_distance_m (%/m). 내리막·회생으로 도착 잔량이 더
+       높으면 0으로 본다. 내비는 이번 경로의 고도·속도를 반영하므로 먼저 쓴다.
+    2. 전비: 없으면 ``efficiency_km_per_kwh``와 ``battery_capacity_wh``로
+       1m당 1 / (전비 × 1000) kWh, 잔량으로는 100 / (전비 × 용량 Wh) %/m.
     """
-    if payload.arrival_soc is None or payload.remain_distance_m is None:
-        return None
-    rate = max(0.0, (payload.soc_now - payload.arrival_soc) / payload.remain_distance_m)
-    return _Estimate(soc_now=payload.soc_now, rate_per_m=rate)
+    if payload.arrival_soc is not None and payload.remain_distance_m is not None:
+        rate = max(0.0, (payload.soc_now - payload.arrival_soc) / payload.remain_distance_m)
+        return _Estimate(soc_now=payload.soc_now, rate_per_m=rate, assumption=ASSUME_ESTIMATE)
+    if payload.efficiency_km_per_kwh is not None and payload.battery_capacity_wh is not None:
+        rate = 100 / (payload.efficiency_km_per_kwh * payload.battery_capacity_wh)
+        return _Estimate(soc_now=payload.soc_now, rate_per_m=rate, assumption=ASSUME_EFFICIENCY)
+    return None
 
 
 def _speech(
