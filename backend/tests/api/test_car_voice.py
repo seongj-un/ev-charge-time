@@ -1026,3 +1026,33 @@ def test_efficiency_is_not_a_distance(client, fake, db_session):
     _content, sources = _route_sources(client, fake, db_session)
 
     assert voice.unsupported_numbers("전비 32km/kWh 기준이에요.", sources) == ["32"]
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "빛가람 휴게소에 100킬로와트 급속충전기가 있어요.",
+        "100킬로와트급 충전기예요.",
+        "50킬로와트 이상만 찾았어요.",
+        "100kW 충전기예요.",
+        "배터리는 77.4킬로와트시예요.",
+    ],
+)
+def test_kilowatts_are_power_not_distance(client, fake, db_session, sentence):
+    _content, sources = _route_sources(client, fake, db_session)
+
+    assert voice.unsupported_numbers(sentence, sources) == []
+
+
+@pytest.mark.parametrize(
+    ("sentence", "problem"),
+    [
+        ("빛가람 휴게소까지 100킬로예요.", "100킬로"),
+        ("350킬로와트 초급속이에요.", "350킬로와트"),
+        ("60kW예요.", "60kW"),  # soc_now
+    ],
+)
+def test_wrong_power_or_kilo_as_distance_fails(client, fake, db_session, sentence, problem):
+    _content, sources = _route_sources(client, fake, db_session)
+
+    assert voice.unsupported_numbers(sentence, sources) == [problem]

@@ -431,6 +431,7 @@ class VoiceTools:
             "count": len(stations),
             "radius_m": args.radius_m,
             "available_only": args.available_only,
+            "min_kw": args.min_kw,
             "stations": stations,
         }
         if not found:
@@ -522,8 +523,9 @@ class VoiceTools:
         )
         result = find_along_route(self.session, request)
         content = result.model_dump(mode="json", exclude={"actions"})
-        # "기준 잔량 15% 아래예요"도 근거가 있게 기준을 함께 준다.
+        # "기준 잔량 15% 아래예요", "50킬로와트 이상"도 근거가 있게 기준을 함께 준다.
         content["reserve_soc"] = request.reserve_soc
+        content["min_kw"] = request.min_kw
         action = result.actions[0] if result.actions else None
         return ToolOutcome(content, speech=result.speech, action=action)
 
@@ -571,6 +573,8 @@ def external_text(value: object) -> str:
 # - "N킬로미터", "N미터"(km, m): 거리 필드(``*_m``, ``*_km``. 꺾은선 위치 ``along_m``은
 #   빼고, 경로 위 충전소는 문장과 같은 ``distance_m``)와 서버 문장의 거리. 반올림한
 #   모양(10m, 0.1km, 1km 단위)도 허용한다
+# - "N킬로와트", "N kW": 출력 필드(``*_kw``, context의 충전기 출력)와 서버 문장의 출력.
+#   "킬로와트"·"킬로와트시"는 거리("킬로")가 아니다
 # - 식별자(``*_id``)의 숫자는 어떤 근거에도 넣지 않는다
 # - 그 밖의 숫자: 도구 결과·context에 나온 숫자 전체. 날짜 문자열의 숫자는 뺀다
 #
@@ -590,8 +594,12 @@ _CLOCK_RANGE_RE = re.compile(
 )
 _MONEY_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(만|천)?\s*원")
 _PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|퍼센트)")
-# "km/kWh"(전비), "km/h"(속도)는 거리가 아니다.
-_DISTANCE_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(킬로미터|킬로|km|미터|m)(?![A-Za-z/])")
+# "km/kWh"(전비), "km/h"(속도), "킬로와트(시)"는 거리가 아니다.
+_DISTANCE_RE = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*(킬로미터|킬로(?!와트)|km|미터|m)(?![A-Za-z/])"
+)
+# 출력. "킬로와트시"·"kWh"(에너지)는 출력이 아니라 그 밖의 숫자로 본다.
+_POWER_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(?:킬로와트(?!시)|kW(?!h))")
 _PERIOD_HOURS = {
     "새벽": set(range(7)),
     "오전": set(range(12)),
@@ -672,6 +680,7 @@ class NumberSources:
     intervals: list[tuple[Clock, Clock]] = field(default_factory=list)
     # 미터. 반올림한 모양까지 넣어 둔다.
     distance: set[int] = field(default_factory=set)
+    power: set[str] = field(default_factory=set)
     plain: set[str] = field(default_factory=set)
 
     def add_distance(self, meters: float) -> None:
@@ -684,6 +693,11 @@ class NumberSources:
         normalized = _normalize(repr(value) if isinstance(value, float) else str(value))
         if normalized is not None:
             self.plain |= _spoken_forms(normalized)
+
+    def add_power(self, value: float | int) -> None:
+        normalized = _normalize(repr(value) if isinstance(value, float) else str(value))
+        if normalized is not None:
+            self.power |= _spoken_forms(normalized)
 
     def add_percent(self, value: float | int) -> None:
         normalized = _normalize(repr(value) if isinstance(value, float) else str(value))
@@ -717,6 +731,10 @@ class NumberSources:
             meters = _distance_value(match)
             if meters is not None:
                 self.add_distance(meters)
+        for match in _POWER_RE.finditer(text):
+            normalized = _normalize(match.group(1))
+            if normalized is not None:
+                self.power |= _spoken_forms(normalized)
         for number in numbers_in(_DATE.sub(" ", text)):
             self.plain |= _spoken_forms(number)
 
@@ -739,6 +757,8 @@ class NumberSources:
                 self.add_distance(value)
             elif key.endswith("_km"):
                 self.add_distance(value * 1000)
+            if key.endswith("_kw"):
+                self.add_power(value)
             if key.endswith("_won") and key not in _MONEY_EXCLUDED_KEYS:
                 self.money.add(int(value))
             # soc_now, soc_target, est_soc, arrival_soc, reserve_soc …
@@ -784,6 +804,7 @@ def number_sources(
     sources.add_number(ctx.battery_capacity_wh)
     sources.add_number(ctx.battery_capacity_wh / 1000)
     sources.add_number(ctx.charger_kw)
+    sources.add_power(ctx.charger_kw)
     for text in driver_texts:
         sources.add_spoken(text, times=True)
     return sources
@@ -820,6 +841,10 @@ def unsupported_numbers(speech: str, sources: NumberSources) -> list[str]:
         rest = _mask(rest, *match.span())
     for match in _PERCENT_RE.finditer(rest):
         if _normalize(match.group(1)) not in sources.percent:
+            problems.append(match.group(0))
+        rest = _mask(rest, *match.span())
+    for match in _POWER_RE.finditer(rest):
+        if _normalize(match.group(1)) not in sources.power:
             problems.append(match.group(0))
         rest = _mask(rest, *match.span())
     for match in _DISTANCE_RE.finditer(rest):
