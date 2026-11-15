@@ -263,3 +263,10 @@ def _day_label(moment: datetime, now: datetime) -> str:
 def spoken_percent(value: float) -> str:
     """85.0 → "85%", 32.46 → "32.5%". 요청 값을 소수 첫째 자리까지만 읽는다."""
     return f"{round(value, 1):g}%"
+
+
+def spoken_distance(meters: float) -> str:
+    """1,000m 미만은 10m 단위 "약 350미터", 이상은 "약 1.2킬로미터"."""
+    if meters < 1000:
+        return f"약 {max(10, round(meters / 10) * 10)}미터"
+    return f"약 {round(meters / 1000, 1):g}킬로미터"

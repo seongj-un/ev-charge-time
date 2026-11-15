@@ -23,6 +23,7 @@ from ..car_devices import (
 )
 from ..car_leak_service import compute_leak_check
 from ..car_plan_service import compute_car_plan
+from ..car_route_service import find_along_route
 from ..car_savings import confirm, summarize, to_out, try_record
 from ..car_voice_quota import VoiceQuotaExceededError, consume_voice_quota
 from ..car_voice_service import arrival_briefing, check_arrival_at, converse
@@ -34,6 +35,8 @@ from ..schemas import (
     CarLeakCheckResponse,
     CarPlanRequest,
     CarPlanResponse,
+    CarRouteChargersRequest,
+    CarRouteChargersResponse,
     CarSavingOut,
     CarSavingsSummary,
     CarVoiceRequest,
@@ -91,6 +94,17 @@ def car_leak_check(payload: CarLeakCheckRequest, request: Request) -> CarLeakChe
         )
         result = result.model_copy(update={"saving_id": saving_id})
     return result
+
+
+@router.post("/chargers/along-route", response_model=CarRouteChargersResponse)
+def chargers_along_route(
+    payload: CarRouteChargersRequest, session: DbSession = Depends(get_session)
+) -> CarRouteChargersResponse:
+    """경로 근처에서 지금 비어 있는 급속 충전기를 경로 순서대로 (BE-7). 공개 계산 API.
+
+    경로는 origin → route_points → destination 꺾은선 근사다(도로 경로가 아님).
+    """
+    return find_along_route(session, payload)
 
 
 @router.post("/devices", response_model=CarDeviceOut, status_code=201)

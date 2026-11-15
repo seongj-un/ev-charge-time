@@ -43,6 +43,7 @@ from .car_leak_service import compute_leak_check
 from .car_plan_service import (
     compose_no_charge_speech,
     compute_car_plan,
+    spoken_distance,
     spoken_percent,
 )
 from .car_savings import record_pending, summarize
@@ -492,13 +493,6 @@ def external_text(value: object) -> str:
     """공공 API에서 온 글을 Claude에 넘길 모양으로. 줄바꿈을 펴고 40자로 자른다."""
     text = " ".join(str(value or "").split())
     return text[:MAX_EXTERNAL_TEXT]
-
-
-def spoken_distance(meters: float) -> str:
-    """1,000m 미만은 10m 단위 "약 350미터", 이상은 "약 1.2킬로미터"."""
-    if meters < 1000:
-        return f"약 {max(10, round(meters / 10) * 10)}미터"
-    return f"약 {round(meters / 1000, 1):g}킬로미터"
 
 
 # ---------------------------------------------------------------------------

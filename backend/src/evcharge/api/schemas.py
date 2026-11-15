@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from itertools import pairwise
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -14,6 +15,7 @@ from pydantic import (
 )
 
 from ..domain.pricing import KST
+from ..domain.route import route_length_m
 
 Mode = Literal["self_low", "self_high", "public_fast"]
 Band = Literal["light", "middle", "peak"]
@@ -639,3 +641,90 @@ class CarVoiceResponse(BaseModel):
     fallback: bool
     # plan_charge·leak_check 도구가 대기 절감 기록을 만들었으면 (BE-5)
     saving_id: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# 와트잇 경로 위 충전소 찾기 (BE-7) — 계약: docs/car-api.md
+# ---------------------------------------------------------------------------
+
+ROUTE_POINTS_MAX = 50
+# 경로 근사(꺾은선)의 최대 길이. 국내 장거리(약 500km)를 넉넉히 덮으면서, 아주 긴
+# 경로로 DB 후보를 한꺼번에 끌어오는 계산을 막는다.
+MAX_ROUTE_M = 1_000_000
+
+
+class LatLng(BaseModel):
+    # 극 근처에서는 경도 1도의 길이가 0에 가까워 평면 근사가 무너진다. 국내 서비스라
+    # 위도 ±85도 밖은 받지 않는다.
+    lat: float = Field(ge=-85, le=85, allow_inf_nan=False)
+    lng: float = Field(ge=-180, le=180, allow_inf_nan=False)
+
+
+class CarRouteChargersRequest(BaseModel):
+    """``POST /api/car/chargers/along-route``. 경로는 origin → route_points → destination 꺾은선."""
+
+    origin: LatLng
+    destination: LatLng
+    route_points: list[LatLng] = Field(default_factory=list, max_length=ROUTE_POINTS_MAX)
+    soc_now: float = Field(ge=0, le=100, allow_inf_nan=False)
+    # 내비 도착 예상 잔량(%)과 남은 거리(m). 둘 다 있어야 충전소별 잔량을 추정한다.
+    arrival_soc: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    remain_distance_m: float | None = Field(
+        default=None, gt=0, le=MAX_ROUTE_M * 3, allow_inf_nan=False
+    )
+    min_kw: float = Field(default=50, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
+    corridor_m: int = Field(default=3000, ge=500, le=10_000)
+    reserve_soc: float = Field(default=15, ge=0, le=100, allow_inf_nan=False)
+
+    def points(self) -> list[tuple[float, float]]:
+        return [
+            (point.lat, point.lng)
+            for point in [self.origin, *self.route_points, self.destination]
+        ]
+
+    @model_validator(mode="after")
+    def _route_is_computable(self) -> CarRouteChargersRequest:
+        points = self.points()
+        for (_, lng_a), (_, lng_b) in pairwise(points):
+            if abs(lng_a - lng_b) > 180:
+                raise ValueError("경로가 날짜변경선을 지나면 계산할 수 없습니다.")
+        if route_length_m(points) > MAX_ROUTE_M:
+            raise ValueError(f"경로 길이는 {MAX_ROUTE_M // 1000:,}km를 넘을 수 없습니다.")
+        return self
+
+
+class RouteChargerOut(BaseModel):
+    station_id: str
+    # 공공 API 이름을 40자로 자른 것
+    name: str
+    lat: float
+    lng: float
+    # 출발(origin)부터 경로 근사를 따라간 거리, 경로에서 벗어난 거리 (m, 반올림)
+    along_m: int
+    offset_m: int
+    # 지금 충전대기이면서 min_kw 이상인 충전기 수
+    available_count: int
+    max_kw: float | None
+    # 잔량 추정 (soc_now, arrival_soc, remain_distance_m가 다 있을 때만)
+    est_soc: float | None = None
+    reachable: bool | None = None
+
+
+class AddWaypointAction(BaseModel):
+    type: Literal["add_waypoint"] = "add_waypoint"
+    station_id: str
+    name: str
+    lat: float
+    lng: float
+
+
+class CarRouteChargersResponse(BaseModel):
+    # arrival_soc < reserve_soc. arrival_soc가 없으면 null
+    need_charge: bool | None
+    chargers: list[RouteChargerOut]
+    speech: str
+    actions: list[AddWaypointAction]
+    assumptions: list[str]
+    coverage_note: str | None = None
+    # 경로 근사(꺾은선) 길이 (m)
+    route_m: int
