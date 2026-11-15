@@ -149,10 +149,23 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 
 - `POST /api/car/devices`의 응답에서 한 번만 보인다. 서버는 해시만 저장하므로 다시 받을 수 없다.
 - 서버 쪽 만료는 없다. Android Keystore로 감싼 저장소(예: EncryptedSharedPreferences)에 둔다.
-  로그나 크래시 리포트에 남기지 않는다.
+  로그나 크래시 리포트에 남기지 않는다(아래 "로그 규칙").
 - 새로 발급하면 다른 기기로 본다. 절감 합계와 출발 기록이 새로 시작되므로, 저장한 토큰이 있는데
   401이 날 때(저장소가 지워짐 등)만 다시 발급한다. IP당 시간 한도가 있다(기본 10회/시간, 429).
 - 헤더: `Authorization: Bearer <device_token>`.
+
+로그 규칙
+
+- 릴리스 빌드에서는 HTTP 로깅을 끈다(OkHttp `HttpLoggingInterceptor`는 `Level.NONE`). `BASIC`도 URL을
+  남기므로 `GET /api/chargers?lat=…&lng=…`의 위치가 logcat에 그대로 찍힌다.
+- 디버그 빌드에서도 `redactHeader("Authorization")`로 토큰을 가린다. 요청 본문까지 찍는 `Level.BODY`는
+  쓰지 않는다(위치와 음성 문장이 본문에 있다).
+- 다음 값은 어느 빌드에서든 로그(logcat)와 크래시 리포트, 분석 이벤트에 남기지 않는다.
+  - 기기 토큰
+  - 위치: `lat`·`lng`, `origin`, `destination`, `route_points`
+  - 출발 시각: `departed_at`, 출발 제안(평일 몇 시에 집이 비는지 드러난다)
+  - 음성: 운전자의 `text`, `history`, 응답 `speech`
+- 오류를 남길 때는 경로(쿼리 없이), 상태 코드, 오류 종류만 남긴다.
 
 오류 코드별 앱 동작
 
