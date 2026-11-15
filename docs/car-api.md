@@ -5,6 +5,7 @@
 기기 토큰 없이 부르면 DB를 쓰지 않는다. 절감 기록(아래 "절감 리포트" 절)과 음성 대화
 (`car/voice`)는 기기 토큰이 필요하다.
 주변 충전소는 기존 `GET /api/chargers`를 그대로 쓴다 (맨 아래 절).
+앱이 언제 무엇을 부르고 Pleos SDK의 어떤 값을 넣는지는 [`car-app-guide.md`](car-app-guide.md).
 
 핵심 원칙
 
