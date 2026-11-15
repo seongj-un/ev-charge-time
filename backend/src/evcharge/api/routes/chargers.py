@@ -40,8 +40,8 @@ from ..schemas import MAX_CHARGER_KW, ChargerFreshnessOut, ChargerOut, StationOu
 
 router = APIRouter(prefix="/api", tags=["chargers"])
 
-# 인증 없이 닿는 경로라 상한을 둔다(I-4와 같은 이유). 20km면 나주·광주 전역을
-# 덮고도 남는다. 상한이 없으면 반경 하나로 캐시 전체를 파이썬으로 끌어올 수 있다.
+# 인증 없이 닿는 경로라 상한을 둔다(I-4와 같은 이유). 20km면 기본 지역인 대전 시내
+# 전역을 덮고도 남는다. 상한이 없으면 반경 하나로 캐시 전체를 파이썬으로 끌어올 수 있다.
 MAX_RADIUS_M = 20_000
 DEFAULT_RADIUS_M = 2_000
 
@@ -188,7 +188,7 @@ def list_chargers(
 
     if not found and cache_is_empty(session):
         # "주변에 충전소가 없다"와 "아직 수집하지 않았다"는 다른 말이다. 빈
-        # 목록으로 답하면 화면이 나주에 충전소가 없다고 말하게 된다.
+        # 목록으로 답하면 화면이 그 지역에 충전소가 없다고 말하게 된다.
         raise HTTPException(
             status_code=503,
             detail=(

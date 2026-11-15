@@ -907,7 +907,7 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
 예: 현재 위치 반경 10km에서 50kW 이상 빈 충전기가 있는 충전소
 
 ```
-GET /api/chargers?lat=35.0175&lng=126.7905&radius_m=10000&available_only=true&min_kw=50
+GET /api/chargers?lat=36.3504&lng=127.3845&radius_m=10000&available_only=true&min_kw=50
 ```
 
 | 상태 | 언제 |

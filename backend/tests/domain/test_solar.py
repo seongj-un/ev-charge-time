@@ -212,3 +212,21 @@ def test_unknown_precipitation_code_is_treated_as_precipitating():
     unknown = ghi_wm2(NAJU_LAT, NAJU_LNG, noon, sky="4", pty="9")
 
     assert unknown == known
+
+
+def test_solar_noon_in_daejeon_is_about_half_past_twelve():
+    """대전(127.38°E)은 기준 자오선 135°E보다 약 30분 늦게 남중한다(domain/solar.py 설명)."""
+    from datetime import datetime, timedelta
+
+    from evcharge.domain.pricing import KST
+    from evcharge.domain.solar import solar_elevation_deg
+
+    start = datetime(2026, 9, 22, 11, 30, tzinfo=KST)
+    minutes = range(121)
+    peak = max(
+        minutes,
+        key=lambda m: solar_elevation_deg(36.3504, 127.3845, start + timedelta(minutes=m)),
+    )
+    noon = start + timedelta(minutes=peak)
+    # 9월 말 균시차 약 +7분: 12:30 − 7분 ≈ 12:23
+    assert (noon.hour, 15 <= noon.minute <= 35) == (12, True)
