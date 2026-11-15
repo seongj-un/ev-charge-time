@@ -210,3 +210,39 @@ def test_migrated_constraints_reject_bad_rows(migration_db):
             assert conn.execute(text("SELECT count(*) FROM car_savings")).scalar_one() == 0
     finally:
         engine.dispose()
+
+
+def test_briefing_source_migration_goes_down_alone(migration_db):
+    """BE-9 리비전은 출처 제약만 바꾼다. 되돌리면 briefing 기록은 plan이 되고 합계는 그대로다."""
+    config = _alembic()
+    command.upgrade(config, "head")
+    engine = create_engine(migration_db)
+    device_id = str(uuid.uuid4())
+    insert_saving = text(
+        "INSERT INTO car_savings (id, device_id, cause, savings_won, energy_kwh, source) "
+        "VALUES (:id, :device, 'time', 1200, 10, :source)"
+    )
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO car_devices (id, token_hash) VALUES (:id, :h)"),
+                {"id": device_id, "h": "c" * 64},
+            )
+            conn.execute(insert_saving, {"id": str(uuid.uuid4()), "device": device_id,
+                                         "source": "briefing"})
+
+        command.downgrade(config, "b8d4f2a6c913")
+        with engine.connect() as conn:
+            rows = conn.execute(text("SELECT source, savings_won FROM car_savings")).all()
+        assert [tuple(row) for row in rows] == [("plan", 1200)]
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(insert_saving, {"id": str(uuid.uuid4()), "device": device_id,
+                                         "source": "briefing"})
+
+        command.upgrade(config, "head")
+        with engine.begin() as conn:
+            conn.execute(insert_saving, {"id": str(uuid.uuid4()), "device": device_id,
+                                         "source": "briefing"})
+            conn.execute(text("DELETE FROM car_devices WHERE id = :id"), {"id": device_id})
+    finally:
+        engine.dispose()

@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     car_departure_daily_observed_max: int = Field(default=10, ge=1)
     car_departure_daily_stated_max: int = Field(default=5, ge=1)
 
+    # 와트잇 BE-9 시동 ON 브리핑: 잔량(%)이 이 값보다 낮으면 "오늘 밤 충전하세요"와 예약 구간을
+    # 알려 준다. 이상이면 "오늘 밤은 충전 안 해도 돼요".
+    car_briefing_low_soc: float = Field(default=50, gt=0, le=100)
+
     # 기기 발급 한도의 IP 키를 만드는 서버 비밀값(HMAC-SHA256). 솔트 없는 sha256은
     # IPv4 전체(약 43억 개)를 대입하면 원래 IP를 되찾을 수 있다. 이 값을 두면 비밀값
     # 없이는 되찾을 수 없다. 비어 있으면 sha256으로 동작하고 기동 후 처음 쓸 때 경고를

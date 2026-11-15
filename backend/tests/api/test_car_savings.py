@@ -500,3 +500,81 @@ def test_parallel_confirms_never_pass_the_daily_limit(concurrent, monkeypatch):
             cleanup.commit()
         finally:
             cleanup.close()
+
+
+# ── 대기 기록 재사용 (시동 ON 브리핑, BE-9) ─────────────────────────────────
+
+
+def _device(db_session) -> CarDevice:
+    device = CarDevice(id=str(uuid.uuid4()), token_hash=hash_token(f"reuse-{uuid.uuid4()}"))
+    db_session.add(device)
+    db_session.flush()
+    return device
+
+
+def _pending(db_session, device, won=1200, energy=30.0, source="briefing", reuse=True):
+    from datetime import timedelta
+
+    return record_pending(
+        db_session,
+        device,
+        cause="time",
+        savings_won=won,
+        energy_kwh=energy,
+        source=source,
+        reuse_within=timedelta(minutes=10) if reuse else None,
+    )
+
+
+def test_same_pending_record_is_reused_within_the_window(db_session):
+    device = _device(db_session)
+
+    first = _pending(db_session, device)
+    again = _pending(db_session, device)
+
+    assert again == first
+    assert len(savings(db_session)) == 1
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"won": 1300},
+        {"energy": 31.0},
+        {"source": "plan"},
+    ],
+)
+def test_a_different_plan_is_a_new_record(db_session, change):
+    device = _device(db_session)
+    first = _pending(db_session, device)
+
+    other = _pending(db_session, device, **change)
+
+    assert other != first
+    assert len(savings(db_session)) == 2
+
+
+def test_old_or_confirmed_records_are_not_reused(db_session):
+    device = _device(db_session)
+    old = _pending(db_session, device)
+    db_session.execute(
+        text("UPDATE car_savings SET created_at = clock_timestamp() - interval '11 minutes' "
+             "WHERE id = :id"),
+        {"id": old},
+    )
+    fresh = _pending(db_session, device)
+    db_session.execute(
+        text("UPDATE car_savings SET confirmed_at = now() WHERE id = :id"), {"id": fresh}
+    )
+
+    third = _pending(db_session, device)
+
+    assert len({old, fresh, third}) == 3
+
+
+def test_without_reuse_every_call_is_a_record(db_session):
+    device = _device(db_session)
+
+    ids = {_pending(db_session, device, reuse=False) for _ in range(2)}
+
+    assert len(ids) == 2

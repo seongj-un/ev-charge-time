@@ -44,17 +44,42 @@ def record_pending(
     savings_won: int,
     energy_kwh: float,
     source: str,
+    reuse_within: timedelta | None = None,
 ) -> str:
     """대기 기록 하나를 만들고, 그 기기의 대기 기록을 최근 20개로 줄인 뒤 커밋한다.
 
     ``created_at``은 ``clock_timestamp()``다. ``now()``는 트랜잭션 시작 시각이라 한
     트랜잭션 안에서 여러 건을 만들면 같은 값이 되어 "최근 20개"를 가를 수 없다.
+
+    ``reuse_within``: 같은 기기·출처·원인·금액·전력량의 대기 기록이 이 시간 안에 있으면
+    새로 만들지 않고 그 id를 돌려준다(시동 ON 브리핑처럼 짧은 간격으로 되풀이되는 호출).
+    기기 행을 먼저 잠가 동시 호출이 둘 다 "없음"을 읽지 않게 한다.
     """
+    savings_won = min(max(savings_won, 0), MAX_CAR_SAVING_WON)
+    if reuse_within is not None:
+        session.execute(select(CarDevice.id).where(CarDevice.id == device.id).with_for_update())
+        existing = session.scalar(
+            select(CarSaving.id)
+            .where(
+                CarSaving.device_id == device.id,
+                CarSaving.confirmed_at.is_(None),
+                CarSaving.source == source,
+                CarSaving.cause == cause,
+                CarSaving.savings_won == savings_won,
+                CarSaving.energy_kwh == energy_kwh,
+                CarSaving.created_at >= func.clock_timestamp() - reuse_within,
+            )
+            .order_by(CarSaving.created_at.desc())
+            .limit(1)
+        )
+        if existing is not None:
+            session.commit()
+            return existing
     saving = CarSaving(
         id=str(uuid.uuid4()),
         device_id=device.id,
         cause=cause,
-        savings_won=min(max(savings_won, 0), MAX_CAR_SAVING_WON),
+        savings_won=savings_won,
         energy_kwh=energy_kwh,
         source=source,
         created_at=func.clock_timestamp(),
@@ -80,7 +105,13 @@ def record_pending(
 
 
 def try_record(
-    request: Request, *, cause: str, savings_won: int, energy_kwh: float, source: str
+    request: Request,
+    *,
+    cause: str,
+    savings_won: int,
+    energy_kwh: float,
+    source: str,
+    reuse_within: timedelta | None = None,
 ) -> str | None:
     """계산 엔드포인트용. 토큰이 없거나 틀리거나 DB가 실패하면 None (계산은 그대로).
 
@@ -103,6 +134,7 @@ def try_record(
                     savings_won=savings_won,
                     energy_kwh=energy_kwh,
                     source=source,
+                    reuse_within=reuse_within,
                 )
             except SQLAlchemyError:
                 session.rollback()

@@ -296,7 +296,9 @@ class CarSaving(Base):
 
     __table_args__ = (
         CheckConstraint("cause IN ('time', 'payment')", name="ck_car_savings_cause"),
-        CheckConstraint("source IN ('plan', 'leak_check')", name="ck_car_savings_source"),
+        CheckConstraint(
+            "source IN ('plan', 'leak_check', 'briefing')", name="ck_car_savings_source"
+        ),
         CheckConstraint(
             f"savings_won >= 0 AND savings_won <= {MAX_CAR_SAVING_WON}",
             name="ck_car_savings_won_range",
