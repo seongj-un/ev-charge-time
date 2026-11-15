@@ -184,9 +184,13 @@ def test_empty_because_of_old_status_reads_the_cache_once(client, db_session, re
 # ── 상태 확인 시각 (charger_sync_state) ─────────────────────────────────────
 
 
-def confirm(db_session, minutes_ago):
-    db_session.add(
-        ChargerSyncState(kind="status", confirmed_at=NOW - timedelta(minutes=minutes_ago))
+def confirm(db_session, minutes_ago, *, full_sync_min=600):
+    """상태를 ``minutes_ago``분 전까지 확인했고, 마지막 전체 수집은 ``full_sync_min``분 전."""
+    db_session.add_all(
+        [
+            ChargerSyncState(kind="status", confirmed_at=NOW - timedelta(minutes=minutes_ago)),
+            ChargerSyncState(kind="stations", confirmed_at=NOW - timedelta(minutes=full_sync_min)),
+        ]
     )
     db_session.commit()
 
@@ -230,3 +234,29 @@ def test_freshness_summary_uses_the_confirmed_time(client, db_session):
     assert body["latest_synced_at"] == (NOW - timedelta(minutes=2)).isoformat()
     assert body["oldest_synced_at"] == (NOW - timedelta(minutes=25)).isoformat()
     assert (body["station_count"], body["stale_count"]) == (2, 1)
+
+
+def test_station_missing_from_the_last_full_sync_keeps_its_own_age(client, db_session):
+    # 마지막 전체 수집(600분 전)에 없던 충전소: 3일 전 상태가 마지막이다.
+    station(db_session, "IDLE", 600)
+    station(db_session, "GONE", 3 * 24 * 60, lat_offset=0.001)
+    confirm(db_session, 5)
+
+    every = {s["station_id"]: s for s in get(client).json()}
+    free = get(client, available_only="true")
+
+    assert (every["IDLE"]["status_age_min"], every["IDLE"]["stale"]) == (5, False)
+    assert (every["GONE"]["status_age_min"], every["GONE"]["stale"]) == (4320, True)
+    assert [s["station_id"] for s in free.json()] == ["IDLE"]
+    body = client.get("/api/chargers/freshness").json()
+    assert body["oldest_synced_at"] == (NOW - timedelta(days=3)).isoformat()
+    assert body["stale_count"] == 1
+
+
+def test_no_full_sync_mark_means_no_confirmation(client, db_session):
+    station(db_session, "IDLE", 600)
+    db_session.add(ChargerSyncState(kind="status", confirmed_at=NOW - timedelta(minutes=5)))
+    db_session.commit()
+
+    assert get(client).json()[0]["status_age_min"] == 600
+    assert client.get("/api/chargers/freshness").json()["stale_count"] == 1

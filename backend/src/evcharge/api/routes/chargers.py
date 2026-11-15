@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from ...domain.geo import bounding_box, haversine_m
 from ...domain.pricing import KST
-from ...infra.charger_sync import STATUS_KIND
+from ...infra.charger_sync import STATIONS_KIND, STATUS_KIND
 from ...infra.db import get_session
 from ...infra.models import ChargerCache, ChargerSyncState, FavoriteStation, User
 from ...settings import get_settings
@@ -65,16 +65,33 @@ class FreshnessLimits:
     max_age_min: int
     # 모든 충전소 상태를 여기까지 확인한 시각(``charger_sync_state``). 없으면 None
     confirmed_at: datetime | None = None
+    # 마지막 전체 수집의 시작 시각. 이보다 이른 행은 그 수집에 없던 충전소다. 없으면 None
+    stations_at: datetime | None = None
 
     @classmethod
     def current(cls, session: DbSession) -> FreshnessLimits:
         """요청마다 한 번 읽는다(설정은 캐시되지 않아 행마다 읽으면 느리다)."""
         settings = get_settings()
-        confirmed = session.scalar(
-            select(ChargerSyncState.confirmed_at).where(ChargerSyncState.kind == STATUS_KIND)
+        marks = dict(
+            session.execute(
+                select(ChargerSyncState.kind, ChargerSyncState.confirmed_at).where(
+                    ChargerSyncState.kind.in_((STATUS_KIND, STATIONS_KIND))
+                )
+            ).all()
         )
         return cls(
-            settings.charger_status_stale_min, settings.charger_status_max_age_min, confirmed
+            settings.charger_status_stale_min,
+            settings.charger_status_max_age_min,
+            marks.get(STATUS_KIND),
+            marks.get(STATIONS_KIND),
+        )
+
+    def confirms(self, updated_at: datetime) -> bool:
+        """확인 시각을 이 행에 적용할 수 있는지: 마지막 전체 수집이 받은 행일 때만."""
+        return (
+            self.confirmed_at is not None
+            and self.stations_at is not None
+            and updated_at >= self.stations_at
         )
 
 
@@ -90,9 +107,12 @@ class StatusAge:
 
 
 def status_age(row: ChargerCache, now: datetime, limits: FreshnessLimits) -> StatusAge:
-    """상태 시각은 ``max(행의 updated_at, 확인 시각)``이다(``ChargerSyncState`` 설명)."""
+    """상태 시각은 ``max(행의 updated_at, 확인 시각)``이다(``ChargerSyncState`` 설명).
+
+    마지막 전체 수집에 없던 행(``updated_at`` < 그 수집 시작)은 ``updated_at``만 쓴다.
+    """
     synced = row.updated_at
-    if limits.confirmed_at is not None:
+    if limits.confirms(synced):
         synced = max(synced, limits.confirmed_at)
     synced = synced.astimezone(KST)
     age = max(0, math.floor((now - synced).total_seconds() / 60))
@@ -201,13 +221,24 @@ def charger_freshness(session: DbSession = Depends(get_session)) -> ChargerFresh
     limits = FreshnessLimits.current(session)
     # stale은 지난 분(내림)이 stale_min을 넘는 것, 즉 stale_min + 1분 이상 지난 행이다.
     stale_before = now - timedelta(minutes=limits.stale_min + 1)
-    # 행별 상태 시각 = greatest(updated_at, 확인 시각). PostgreSQL greatest는 NULL을 무시한다.
-    confirmed = (
-        select(ChargerSyncState.confirmed_at)
-        .where(ChargerSyncState.kind == STATUS_KIND)
-        .scalar_subquery()
+    # 행별 상태 시각은 status_age와 같은 규칙이다. 마지막 전체 수집에 있던 행(updated_at >=
+    # 그 시작)만 greatest(updated_at, 확인 시각), 나머지는 updated_at. 표시가 없으면(NULL)
+    # 비교가 거짓이라 updated_at이다.
+    def mark(kind: str):
+        return (
+            select(ChargerSyncState.confirmed_at)
+            .where(ChargerSyncState.kind == kind)
+            .scalar_subquery()
+        )
+
+    confirmed = mark(STATUS_KIND)
+    synced = case(
+        (
+            and_(confirmed.is_not(None), ChargerCache.updated_at >= mark(STATIONS_KIND)),
+            func.greatest(ChargerCache.updated_at, confirmed),
+        ),
+        else_=ChargerCache.updated_at,
     )
-    synced = func.greatest(ChargerCache.updated_at, confirmed)
     latest, oldest, count, stale = session.execute(
         select(
             func.max(synced),

@@ -261,7 +261,11 @@ class ChargerSyncState(Base):
     상태가 그대로인 충전소는 ``charger_cache.updated_at``이 하루 한 번 전체 수집 시각에
     머물러, 그 값만 보면 한 시간 넘게 비어 있는 충전기가 "상태 미확인"이 된다. 수집 창이
     끊기지 않고 이어지는 동안은 바뀌지 않은 충전소도 그 수집 시각까지 확인된 것이다.
-    충전소별 상태 시각은 ``max(updated_at, confirmed_at)``이다. 행은 ``kind='status'`` 하나다.
+    충전소별 상태 시각은 ``max(updated_at, confirmed_at)``이다.
+
+    행은 둘이다. ``kind='status'``는 위의 확인 시각, ``kind='stations'``는 마지막으로 성공한
+    전체 수집의 시작 시각이다. ``updated_at``이 그보다 이른 행은 그 전체 수집 응답에 없던
+    충전소(폐쇄, ID 변경, 수집 지역 제외)라서 확인 시각을 적용하지 않고 ``updated_at``만 쓴다.
     """
 
     __tablename__ = "charger_sync_state"

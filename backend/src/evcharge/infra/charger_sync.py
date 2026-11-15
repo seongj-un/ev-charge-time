@@ -26,7 +26,9 @@ from sqlalchemy.orm import Session as DbSession
 from ..domain.pricing import KST
 from .models import ChargerCache, ChargerSyncState
 
+# charger_sync_state의 두 행: 상태를 여기까지 확인한 시각, 마지막 전체 수집이 시작한 시각
 STATUS_KIND = "status"
+STATIONS_KIND = "stations"
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +139,9 @@ def sync_stations(
 
     records = build_station_records(rows)
     _upsert(session, records)
+    # 이번 수집이 쓴 행은 updated_at == started다(같은 트랜잭션의 now()). 그보다 이른 행은
+    # 이번 응답에 없던 충전소(폐쇄, ID 변경, 지역 제외)라 확인 시각을 적용하지 않는다.
+    _mark(session, STATIONS_KIND, started)
     _confirm(session, started, window=None)
     session.commit()
 
@@ -225,8 +230,18 @@ def sync_states(
 
 
 def _clock(session: DbSession) -> datetime:
-    """공공 API를 부르기 직전의 DB 시각. 그 뒤의 변경은 이번 수집이 보증하지 않는다."""
-    return session.scalar(select(func.clock_timestamp()))
+    """이번 트랜잭션의 시작 시각(``now()``). 공공 API를 부르기 전이고, 이 트랜잭션이
+    캐시 행에 찍는 ``updated_at``(``func.now()``)과 같은 값이다.
+    """
+    return session.scalar(select(func.now()))
+
+
+def _mark(session: DbSession, kind: str, at: datetime) -> None:
+    state = session.get(ChargerSyncState, kind, with_for_update=True)
+    if state is None:
+        session.add(ChargerSyncState(kind=kind, confirmed_at=at))
+    else:
+        state.confirmed_at = at
 
 
 def _confirm(session: DbSession, started: datetime, *, window: timedelta | None) -> None:

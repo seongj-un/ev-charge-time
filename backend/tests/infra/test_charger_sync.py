@@ -293,3 +293,25 @@ def test_a_failed_status_sync_confirms_nothing(db_session):
         sync_states(db_session, Broken(), ["12"], period=10)
 
     assert _confirmed(db_session) == before
+
+
+def test_full_sync_marks_its_start_equal_to_the_rows_it_wrote(db_session):
+    from datetime import datetime, timedelta
+
+    from evcharge.domain.pricing import KST
+    from evcharge.infra.models import ChargerSyncState
+
+    gone_at = datetime.now(KST) - timedelta(days=3)
+    db_session.add(
+        ChargerCache(
+            station_id="GONE", data={"chargers": []}, lat=35.0, lng=126.8, updated_at=gone_at
+        )
+    )
+    db_session.commit()
+
+    sync_stations(db_session, FakeChargerApi(info_rows=[info_row()]), ["12"])
+
+    db_session.expire_all()
+    mark = db_session.get(ChargerSyncState, "stations").confirmed_at
+    assert db_session.get(ChargerCache, "ME174085").updated_at == mark
+    assert db_session.get(ChargerCache, "GONE").updated_at < mark
