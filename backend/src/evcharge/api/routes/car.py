@@ -42,6 +42,7 @@ from ..car_leak_service import compute_leak_check
 from ..car_plan_service import compute_car_plan
 from ..car_route_service import find_along_route
 from ..car_savings import confirm, summarize, to_out, try_record
+from ..car_target_service import compute_charge_target
 from ..car_voice_quota import VoiceQuotaExceededError, consume_voice_quota
 from ..car_voice_service import arrival_briefing, check_arrival_at, converse
 from ..deps import get_holidays, get_public_prices
@@ -49,6 +50,8 @@ from ..months import month_of
 from ..schemas import (
     CarBriefingRequest,
     CarBriefingResponse,
+    CarChargeTargetRequest,
+    CarChargeTargetResponse,
     CarDepartureIn,
     CarDepartureOut,
     CarDeparturesDeleted,
@@ -159,6 +162,12 @@ def car_leak_check(payload: CarLeakCheckRequest, request: Request) -> CarLeakChe
         )
         result = result.model_copy(update={"saving_id": saving_id})
     return result
+
+
+@router.post("/charge-target", response_model=CarChargeTargetResponse)
+def charge_target(payload: CarChargeTargetRequest) -> CarChargeTargetResponse:
+    """몇 %까지 채우면 되는지 (BE-11). 공개 계산 API: 기기 토큰도 DB도 쓰지 않는다."""
+    return compute_charge_target(payload)
 
 
 @router.post("/chargers/along-route", response_model=CarRouteChargersResponse)

@@ -819,6 +819,44 @@ class CarDepartureSuggestion(BaseModel):
 # ── 시동 ON 브리핑 (BE-9) ───────────────────────────────────────────────────
 
 
+# ── 목표 충전량 추천 (BE-11) ─────────────────────────────────────────────
+
+# 다음 이동 거리 상한(km). 경로 위 충전소 찾기의 전체 경로 상한(1,000km)의 세 배로, 남은 거리
+# 상한(remain_distance_m)과 같다. 그보다 먼 이동은 계산해도 "가는 길에 충전"으로 같다.
+MAX_NEXT_TRIP_KM = 3_000
+
+ChargeTargetReason = Literal["daily", "long_trip", "insufficient"]
+
+
+class CarChargeTargetRequest(BaseModel):
+    """몇 %까지 채우면 되는지. 공개 계산 API다(기기 토큰 없음, DB 없음)."""
+
+    battery_capacity_wh: float = Field(
+        ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
+    )
+    # Vehicle SDK getSinceChargeEvEfficiency(충전 후 평균 전비, km/kWh)
+    efficiency_km_per_kwh: float | None = Field(default=None, gt=0, le=20, allow_inf_nan=False)
+    # 다음 이동 거리(km): 내비 목적지 남은 거리나 운전자가 말한 거리
+    next_trip_km: float | None = Field(
+        default=None, gt=0, le=MAX_NEXT_TRIP_KM, allow_inf_nan=False
+    )
+    soc_now: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+
+
+class CarChargeTargetResponse(BaseModel):
+    # 차 설정의 충전 한도나 계획(BE-1)의 soc_target에 넣을 값. 평소 목표~100, 5% 단위
+    soc_target: int
+    # daily: 평소 목표로 충분하거나 거리·전비를 모름 / long_trip: 다음 이동 때문에 올림 /
+    # insufficient: 100%로도 필요 잔량 + 여유를 못 채움
+    reason: ChargeTargetReason
+    # 다음 이동에 드는 잔량(%, 소수 첫째 자리). 거리나 전비가 없으면 null. 100을 넘을 수 있다.
+    needed_soc: float | None
+    # 100%로도 모자라 가는 길에 충전해야 함(경로 위 충전소 찾기로 이어진다)
+    needs_charge_on_route: bool
+    speech: str
+    assumptions: list[str]
+
+
 class CarBriefingRequest(BaseModel):
     """``POST /api/car/briefing``. 시동 ON(또는 앱 시작) 때 한 번 부른다.
 
