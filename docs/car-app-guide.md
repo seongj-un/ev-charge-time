@@ -108,9 +108,14 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 - 기어 이벤트는 시동이 켜진 동안만 받는다. 시동 직후 첫 값이 이미 D라면(P 해제를 놓침) 그 시각을
   보내지 않는다. 한 번 놓친 출발은 운전자가 말한 시각으로 학습이 이어진다.
 
-내비 값 받는 법: `NaviHelper.addListener(NaviHelperEventListener)`로 리스너를 걸고 `getRouteStateInfo`,
-`getDestinationInfo`, `getCurrentLocationInfo`, `requestTrip`을 부르면 같은 이름의 `on...` 콜백으로
-온다(권한 `pleos.car.permission.NAVI_ROUTE`).
+내비 값 받는 법
+
+- `NaviHelper`는 인스턴스다. `val navi = NaviHelper(context)`로 만들고 `navi.initialize()`를 부른 뒤
+  `navi.addListener(listener: NaviHelperEventListener)`로 리스너를 건다.
+- `getRouteStateInfo()` → `onRouteStateInfo`, `getDestinationInfo()` → `onDestinationInfo`,
+  `getCurrentLocationInfo()` → `onCurrentLocationInfo`, `requestTrip(TripRequest)` → `onTripInfo`로 온다.
+- 읽기 권한은 `pleos.car.permission.NAVI_ROUTE`(normal)다. 경로 안내·경유지 추가(`requestRoute`,
+  `addWaypoint`)는 **`pleos.car.permission.NAVI_ROUTE_SEARCH`**가 따로 필요하다(3절).
 
 시각: 요청 시각은 오프셋이 있으면 그대로, 없으면 KST로 읽는다. 응답 시각은 항상 `+09:00`이다.
 
@@ -119,8 +124,8 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 | `type` | 오는 곳 | 필드 | 앱이 할 일 |
 | --- | --- | --- | --- |
 | `set_reservation` | 브리핑, `car/plan`의 `reservation`, 음성 `plan_charge`·집 `leak_check` | `start_hhmm`, `end_hhmm` | 차량 기본 예약 충전 화면으로 안내하고 두 시각을 보여 준다. 앱이 예약을 직접 넣지 않는다. 주행 중이면 말로만 알리고 정차 뒤 화면을 띄운다 |
-| `navigate` | 음성 `find_chargers` | `station_id`, `name`, `lat`, `lng` | 운전자가 "응"이라고 하면 `NaviHelper.requestRoute(RouteInfo(latitude, longitude, poiName, poiId, address, poiSubId))` |
-| `add_waypoint` | `car/chargers/along-route`, 음성 `find_chargers_along_route` | `station_id`, `name`, `lat`, `lng` | 운전자가 "응"이라고 하면 `NaviHelper.addWaypoint(RequestWaypointInfo(latitude, longitude, poiName, waypointIndex, poiId, address, poiSubId))`. `waypointIndex`는 `WaypointIndex.FIRST` |
+| `navigate` | 음성 `find_chargers` | `station_id`, `name`, `lat`, `lng` | 운전자가 "응"이라고 하면 `navi.requestRoute(RouteInfo(latitude = lat, longitude = lng, poiName = name, poiId = station_id, address = …, poiSubId = ""))`. 이름 붙은 인자로 쓴다(생성자에서 `longitude` 뒤에 `displayLatitude`·`displayLongitude: Double? = null`이 있어 위치 인자로는 컴파일되지 않는다). 권한 `NAVI_ROUTE_SEARCH` |
+| `add_waypoint` | `car/chargers/along-route`, 음성 `find_chargers_along_route` | `station_id`, `name`, `lat`, `lng` | 운전자가 "응"이라고 하면 `navi.addWaypoint(RequestWaypointInfo(latitude = lat, longitude = lng, poiName = name, waypointIndex = WaypointIndex.FIRST, poiId = station_id, address = …, poiSubId = ""))`. 권한 `NAVI_ROUTE_SEARCH` |
 | `ask` | 귀가 브리핑 첫 질문, `?`로 끝난 음성 답, 바닥날 수 있는 경유지 추천 | `question` | `speech`를 다 읽은 뒤 바로 마이크를 연다. 다음 요청의 `history`에 이 턴을 `{"role": "wattit", "text": <읽은 speech>}`로 넣는다 |
 
 - `RouteInfo`·`RequestWaypointInfo`의 `poiId`, `address`, `poiSubId`는 소스에서 null을 받지 않는
