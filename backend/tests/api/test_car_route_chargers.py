@@ -267,3 +267,36 @@ def test_far_east_and_west_longitudes_do_not_break(client, db_session):
     ).json()
 
     assert [c["station_id"] for c in body["chargers"]] == ["E"]
+
+
+# 뒤 충전소 판정: 앱이 지나온 경로 지점이나 현재 위치에 붙은 지점을 보내도 남은 경로만 쓴다.
+PASSED_POINTS = {
+    "same_as_origin": [ORIGIN],
+    "3m_beside": [{"lat": 35.0, "lng": 126.8 + 0.000033}],
+    "50m_behind": [{"lat": 35.0 - 0.00045, "lng": 126.8}],
+    # 출발할 때의 경로 시작점(11km 뒤)이 그대로 남아 있음
+    "trip_start_11km_behind": [{"lat": 34.9, "lng": 126.8}],
+}
+
+
+@pytest.mark.parametrize("points", PASSED_POINTS.values(), ids=PASSED_POINTS.keys())
+def test_passed_route_points_do_not_bring_back_stations_behind(client, stations, points):
+    baseline = post(client, **ESTIMATE).json()
+
+    body = post(client, **ESTIMATE, route_points=points).json()
+
+    assert "BEHIND" not in [c["station_id"] for c in body["chargers"]]
+    assert body == baseline
+    assert body["actions"][0]["station_id"] == "A"
+
+
+def test_passed_points_before_a_bend_are_dropped_but_the_bend_stays(client, db_session):
+    # 지나온 지점(뒤 5km) → 현재 위치 → 동쪽으로 꺾는 지점 → 목적지
+    station(db_session, "EAST", 35.25, 126.9)
+    bend = {"lat": 35.25, "lng": 126.9}
+
+    with_passed = post(client, route_points=[{"lat": 34.955, "lng": 126.8}, bend]).json()
+    without = post(client, route_points=[bend]).json()
+
+    assert with_passed == without
+    assert [c["station_id"] for c in with_passed["chargers"]] == ["EAST"]

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
 
-from ..domain.route import Point, corridor_boxes, project, route_length_m
+from ..domain.route import Route, clean_route, corridor_boxes
 from ..infra.models import ChargerCache
 from .car_plan_service import spoken_distance, spoken_percent
 from .routes.chargers import cache_is_empty, charger_summary, matching_count, rows_in_boxes
@@ -64,13 +64,20 @@ def find_along_route(
 
     캐시가 비어 있으면(수집 전) 503이다. ``GET /api/chargers``와 같은 규칙이다.
     """
-    points: list[Point] = payload.points()
-    route_m = route_length_m(points)
+    # 지나온 경로 지점과 현재 위치에 붙은 지점을 버린 남은 경로
+    route = Route.of(
+        clean_route(
+            (payload.origin.lat, payload.origin.lng),
+            [(point.lat, point.lng) for point in payload.route_points],
+            (payload.destination.lat, payload.destination.lng),
+        )
+    )
+    route_m = route.length_m
     corridor = payload.corridor_m
 
     near: list[tuple[float, float, ChargerCache]] = []  # (along, offset, row)
-    for row in rows_in_boxes(session, corridor_boxes(points, corridor)):
-        projection = project(points, (row.lat, row.lng))
+    for row in rows_in_boxes(session, corridor_boxes(route.points, corridor)):
+        projection = route.project((row.lat, row.lng))
         # 현재 위치보다 뒤에 있는 충전소는 되돌아가야 해서 뺀다.
         if projection.behind_start or projection.offset_m > corridor:
             continue

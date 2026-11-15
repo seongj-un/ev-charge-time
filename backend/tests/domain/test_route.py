@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from evcharge.domain.geo import haversine_m
-from evcharge.domain.route import corridor_boxes, project, route_length_m
+from evcharge.domain.route import Route, clean_route, corridor_boxes, project, route_length_m
 
 # 나주 빛가람동에서 북쪽으로 약 11km (위도 0.1도 ≈ 11.1km)
 START = (35.0, 126.8)
@@ -79,3 +79,49 @@ def test_route_length_and_boxes_per_segment():
     assert max_lng < 126.84
     assert min_lat < 35.0 < 35.1 < max_lat
     assert boxes[1][1] < 126.8 < 126.9 < boxes[1][3]
+
+
+ORIGIN = (35.0, 126.8)
+DEST = (35.5, 126.8)
+
+
+@pytest.mark.parametrize(
+    "route_points",
+    [
+        [ORIGIN],
+        [(35.0, 126.800033)],  # 3m 옆
+        [(35.0 - 0.00045, 126.8)],  # 50m 뒤
+        [(34.9, 126.8)],  # 지나온 출발 지점
+        [(34.9, 126.8), (34.95, 126.8), (35.0, 126.8)],  # 지나온 지점 여러 개
+    ],
+)
+def test_clean_route_drops_passed_and_merged_points(route_points):
+    assert clean_route(ORIGIN, route_points, DEST) == [ORIGIN, DEST]
+
+
+def test_clean_route_keeps_points_ahead_and_drops_only_those_passed():
+    ahead = (35.2, 126.85)
+    assert clean_route(ORIGIN, [(34.9, 126.8), ahead], DEST) == [ORIGIN, ahead, DEST]
+    # 아직 첫 경로 지점에 닿기 전이면 그대로 둔다
+    assert clean_route(ORIGIN, [ahead], DEST) == [ORIGIN, ahead, DEST]
+
+
+def test_clean_route_keeps_the_destination_over_a_point_next_to_it():
+    near_dest = (35.5 - 0.0002, 126.8)  # 22m
+
+    assert clean_route(ORIGIN, [near_dest], DEST) == [ORIGIN, DEST]
+
+
+def test_clean_route_at_a_middle_route_point_keeps_the_points_after_it():
+    passed = (34.9, 126.8)
+    turn = (35.0, 126.8)  # 지금 위치가 이 경로 지점이다
+    after = (35.0, 126.9)
+
+    assert clean_route(ORIGIN, [passed, turn, after], DEST) == [ORIGIN, after, DEST]
+
+
+def test_clean_route_with_destination_next_to_origin_has_no_behind():
+    route = Route.of(clean_route(ORIGIN, [], (35.0001, 126.8)))
+
+    assert len(route.points) == 2
+    assert route.project((34.99, 126.8)).behind_start is False
