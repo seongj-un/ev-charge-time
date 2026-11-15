@@ -6,7 +6,7 @@ import yaml
 
 from evcharge.domain.calendar import YamlHolidayProvider
 from evcharge.domain.errors import TariffNotConfiguredError
-from evcharge.domain.pricing import hourly_prices, price_at
+from evcharge.domain.pricing import hourly_prices, price_at, public_tier_price
 from evcharge.domain.tariff import Tariff
 from evcharge.settings import get_settings
 
@@ -71,9 +71,68 @@ def test_public_fast_subtracts_flat_discount(tariff, holidays):
     assert weekday.discounted is False
 
 
-def test_public_fast_without_a_price_is_rejected(tariff, holidays):
+def test_public_fast_without_a_price_or_output_is_rejected(tariff, holidays):
     with pytest.raises(TariffNotConfiguredError):
         price_at(at(2026, 10, 16, 12), "public_fast", tariff, holidays)
+
+
+# ── 공공 충전: 기후에너지환경부 출력별 5단계 (2026-08-01 시행) ──────────────────
+# 30kW 미만 295.0 / 30~50kW 미만 307.2 / 50~100kW 미만 325.6 /
+# 100~200kW 미만 348.4 / 200kW 이상 393.1원/kWh. 경계값은 위 구간("이상")이다.
+
+
+@pytest.mark.parametrize(
+    ("charger_kw", "expected"),
+    [
+        (3.5, 295.0),
+        (7.0, 295.0),
+        (29.9, 295.0),
+        (30.0, 307.2),
+        (49.9, 307.2),
+        (50.0, 325.6),
+        (99.9, 325.6),
+        (100.0, 348.4),
+        (199.9, 348.4),
+        (200.0, 393.1),
+        (350.0, 393.1),
+    ],
+)
+def test_public_tier_price_follows_the_output_bands(tariff, charger_kw, expected):
+    assert public_tier_price(tariff, charger_kw) == pytest.approx(expected)
+
+
+def test_public_charging_uses_the_tier_of_the_charger_output(tariff, holidays):
+    weekday = price_at(at(2026, 10, 16, 12), "public_fast", tariff, holidays, charger_kw=100.0)
+
+    assert weekday.price_per_kwh == pytest.approx(348.4)
+    assert weekday.discounted is False
+
+
+def test_public_tier_price_keeps_the_weekend_daytime_discount(tariff, holidays):
+    """봄·가을 주말 낮 할인(토 48.6, 일·공휴일 42.7)은 출력별 단가에도 그대로 붙는다."""
+    saturday = price_at(at(2026, 10, 17, 12), "public_fast", tariff, holidays, charger_kw=7.0)
+    sunday = price_at(at(2026, 10, 18, 12), "public_fast", tariff, holidays, charger_kw=7.0)
+
+    assert saturday.price_per_kwh == pytest.approx(295.0 - 48.6)
+    assert sunday.price_per_kwh == pytest.approx(295.0 - 42.7)
+
+
+def test_a_requested_public_price_wins_over_the_tier(tariff, holidays):
+    """민간 사업자 자체 요금처럼 요청이 단가를 주면 그 값을 쓴다(기존 계약)."""
+    weekday = price_at(
+        at(2026, 10, 16, 12),
+        "public_fast",
+        tariff,
+        holidays,
+        public_base_price=500.0,
+        charger_kw=100.0,
+    )
+
+    assert weekday.price_per_kwh == pytest.approx(500.0)
+
+
+def test_public_tier_price_is_not_marked_unverified(tariff):
+    assert not [item for item in tariff.unverified_items() if item.startswith("public_fast.")]
 
 
 def test_hourly_prices_covers_the_whole_day(tariff, holidays):
@@ -124,6 +183,7 @@ def test_the_public_fast_error_does_not_leak_developer_instructions(tariff, holi
         )
     # 그러면서도 무엇을 해야 하는지는 말해야 한다.
     assert "단가" in message
+    assert "출력" in message
 
 
 # ── 자가 충전 단가는 요금표 공식 그대로여야 한다 ────────────────────────────

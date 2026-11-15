@@ -99,18 +99,15 @@ def test_real_config_unverified_set_is_exactly_what_we_expect():
     확인 중" 안내가 여기에 달려 있다.)
 
     기후에너지환경부 보도자료 2026-04-14(붙임 3)로 시간대·전력량요금·주말 할인이
-    전부 verified가 됐다. 남은 둘은 그 문서가 말하지 않는 값이다:
-    공공 급속 기준단가는 충전사업자가 각자 정하고, 주말 할인의 일몰 연도는
-    어디에도 적혀 있지 않다(기능 명세서만 2030년이라고 한다).
+    전부 verified가 됐다. 공공 충전 단가도 기후에너지환경부 출력별 요금(2026-08-01)으로
+    verified다. 남은 하나는 어디에도 적혀 있지 않은 주말 할인의 일몰 연도다
+    (기능 명세서만 2030년이라고 한다).
     """
     from evcharge.settings import get_settings
 
     unverified = Tariff.load(get_settings().tariff_path).unverified_items()
 
-    assert set(unverified) == {
-        "public_fast.base_price_per_kwh",
-        "weekend_discount_sunset",
-    }
+    assert set(unverified) == {"weekend_discount_sunset"}
 
 
 def test_real_config_marks_the_kepco_sourced_items_verified():

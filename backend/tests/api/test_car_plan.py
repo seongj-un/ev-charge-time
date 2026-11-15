@@ -62,6 +62,21 @@ def test_plan_matches_recommend_for_the_same_conditions(client):
     assert car_body["unverified_tariff_items"] == recommend_body["unverified_tariff_items"]
 
 
+@pytest.mark.parametrize(("charger_kw", "price"), [(7.0, 295.0), (29.9, 295.0), (100.0, 348.4)])
+def test_public_charging_costs_the_output_tier_price(client, charger_kw, price):
+    """공공 충전(mode=public_fast)은 기후에너지환경부 출력별 단가로 계산한다(BE-16).
+
+    2026-10-07(수)은 할인이 없는 평일이라 시간대와 상관없이 같은 단가다.
+    """
+    body = post(client, mode="public_fast", charger_kw=charger_kw).json()
+
+    assert body["needs_charging"] is True
+    assert body["plan"]["energy_kwh"] == 21.0
+    assert body["plan"]["cost_won"] == round(21 * price)
+    assert body["savings_won"] == 0
+    assert body["unverified_tariff_items"] == ["weekend_discount_sunset"]
+
+
 def test_reservation_crosses_midnight(client):
     body = post(client).json()
 
@@ -174,7 +189,7 @@ def test_target_at_or_below_now_needs_no_charging(client, soc_target):
     assert body["savings_won"] is None
     assert body["reservation"] is None
     assert body["assumptions"] == []
-    assert "public_fast.base_price_per_kwh" in body["unverified_tariff_items"]
+    assert body["unverified_tariff_items"] == ["weekend_discount_sunset"]
     assert body["speech"] == f"잔량 30%가 목표 {soc_target}% 이상이라 충전하지 않아도 됩니다."
 
 
