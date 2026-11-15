@@ -10,23 +10,31 @@
 복합 인덱스가 있다.
 
 사용자의 ``lat``/``lng``는 조회에만 쓰고 저장하지 않는다 (명세).
+
+상태 신선도(BE-10): 충전기 상태는 수집 시각(``charger_cache.updated_at``)부터 낡는다.
+``CHARGER_STATUS_STALE_MIN``(20)분을 넘으면 stale로 표시하고, ``CHARGER_STATUS_MAX_AGE_MIN``
+(60)분을 넘으면 상태 미확인으로 보아 "비어 있음"(``available_only``, 경로 위 추천)으로 세지
+않는다. 상태 판정은 아래 ``_ChargerFilter``와 ``_has_matching_charger`` 한 곳에서 한다.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, case, or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from ...domain.geo import bounding_box, haversine_m
+from ...domain.pricing import KST
 from ...infra.db import get_session
 from ...infra.models import ChargerCache, FavoriteStation, User
 from ...settings import get_settings
 from ..auth_deps import optional_user
-from ..schemas import MAX_CHARGER_KW, ChargerOut, StationOut
+from ..schemas import MAX_CHARGER_KW, ChargerFreshnessOut, ChargerOut, StationOut
 
 router = APIRouter(prefix="/api", tags=["chargers"])
 
@@ -38,6 +46,45 @@ DEFAULT_RADIUS_M = 2_000
 # 공공 API 충전기 상태 코드(stat) 중 "충전대기" = 지금 꽂을 수 있음. 활용가이드의
 # 다른 코드(통신이상·충전중·운영중지·점검중·상태미확인)는 비어 있다고 보지 않는다.
 STATUS_AVAILABLE = "2"
+
+# available_only로 찾았는데 오래된 상태만 있어 비었을 때 알리는 문장(GET /api/chargers는
+# ``X-Status-Note`` 헤더, 경로 위 찾기는 coverage_note)
+STATUS_UNKNOWN_NOTE = "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요."
+STATUS_NOTE_HEADER = "X-Status-Note"
+
+
+def now_kst() -> datetime:
+    """서버 현재 시각. 테스트가 이 함수를 바꿔 시각을 고정한다."""
+    return datetime.now(KST)
+
+
+@dataclass(frozen=True)
+class FreshnessLimits:
+    stale_min: int
+    max_age_min: int
+
+    @classmethod
+    def current(cls) -> FreshnessLimits:
+        """요청마다 한 번 읽는다(설정은 캐시되지 않아 행마다 읽으면 느리다)."""
+        settings = get_settings()
+        return cls(settings.charger_status_stale_min, settings.charger_status_max_age_min)
+
+
+@dataclass(frozen=True)
+class StatusAge:
+    synced_at: datetime
+    # 수집 뒤 지난 분(내림). 수집 시각이 지금보다 뒤면(시계 차이) 0
+    age_min: int
+    # age_min > stale_min
+    stale: bool
+    # age_min <= max_age_min: "충전대기"를 비어 있음으로 믿어도 되는지
+    known: bool
+
+
+def status_age(row: ChargerCache, now: datetime, limits: FreshnessLimits) -> StatusAge:
+    synced = row.updated_at.astimezone(KST)
+    age = max(0, math.floor((now - synced).total_seconds() / 60))
+    return StatusAge(synced, age, age > limits.stale_min, age <= limits.max_age_min)
 
 
 def charger_api_key() -> str:
@@ -52,6 +99,7 @@ def charger_api_key() -> str:
 
 @router.get("/chargers", response_model=list[StationOut])
 def list_chargers(
+    response: Response,
     lat: float = Query(ge=-90, le=90, description="위도. 조회에만 쓰고 저장하지 않는다"),
     lng: float = Query(ge=-180, le=180, description="경도. 조회에만 쓰고 저장하지 않는다"),
     radius_m: int = Query(DEFAULT_RADIUS_M, gt=0, le=MAX_RADIUS_M),
@@ -92,15 +140,17 @@ def list_chargers(
             detail="주변 충전소 조회는 아직 준비되지 않았습니다. (충전소 API 인증키 미설정)",
         )
 
-    found = find_nearby(
-        session,
-        lat=lat,
-        lng=lng,
-        radius_m=radius_m,
-        charger_type=charger_type,
-        available_only=available_only,
-        min_kw=min_kw,
-    )
+    now = now_kst()
+    limits = FreshnessLimits.current()
+    query = {
+        "lat": lat,
+        "lng": lng,
+        "radius_m": radius_m,
+        "charger_type": charger_type,
+        "available_only": available_only,
+        "min_kw": min_kw,
+    }
+    found = find_nearby(session, **query, now=now, limits=limits)
 
     if not found and cache_is_empty(session):
         # "주변에 충전소가 없다"와 "아직 수집하지 않았다"는 다른 말이다. 빈
@@ -113,12 +163,49 @@ def list_chargers(
             ),
         )
 
+    # 오래된 상태 때문에 비었으면 "주변에 빈 충전기가 없다"가 아니라 "확인할 수 없다"다.
+    # 응답 본문은 목록이라 필드를 더할 수 없어 헤더로 알린다(UTF-8 퍼센트 인코딩).
+    if (
+        available_only
+        and not found
+        and find_nearby(session, **query, now=now, limits=limits, ignore_status_age=True)
+    ):
+        response.headers[STATUS_NOTE_HEADER] = quote(STATUS_UNKNOWN_NOTE)
+
     favorites = _favorite_ids(session, user, [row.station_id for _, row in found])
 
     return [
-        _to_station_out(row, distance, favorites if user is not None else None)
+        _to_station_out(
+            row, distance, favorites if user is not None else None, status_age(row, now, limits)
+        )
         for distance, row in found
     ]
+
+
+@router.get("/chargers/freshness", response_model=ChargerFreshnessOut)
+def charger_freshness(session: DbSession = Depends(get_session)) -> ChargerFreshnessOut:
+    """수집된 충전소(좌표 있는 행)의 상태 수집 시각 범위와 stale 수. 집계 쿼리 한 번이다.
+
+    운영 확인용 공개 API다. 위치나 개인정보는 없다. 캐시가 비면 시각은 null, 수는 0이다.
+    """
+    now = now_kst()
+    limits = FreshnessLimits.current()
+    # stale은 지난 분(내림)이 stale_min을 넘는 것, 즉 stale_min + 1분 이상 지난 행이다.
+    stale_before = now - timedelta(minutes=limits.stale_min + 1)
+    latest, oldest, count, stale = session.execute(
+        select(
+            func.max(ChargerCache.updated_at),
+            func.min(ChargerCache.updated_at),
+            func.count(),
+            func.count().filter(ChargerCache.updated_at <= stale_before),
+        ).where(ChargerCache.lat.is_not(None))
+    ).one()
+    return ChargerFreshnessOut(
+        latest_synced_at=latest,
+        oldest_synced_at=oldest,
+        station_count=count,
+        stale_count=stale,
+    )
 
 
 def find_nearby(
@@ -130,8 +217,14 @@ def find_nearby(
     charger_type: str | None = None,
     available_only: bool = False,
     min_kw: float | None = None,
+    now: datetime,
+    limits: FreshnessLimits,
+    ignore_status_age: bool = False,
 ) -> list[tuple[float, ChargerCache]]:
     """반경 안의 충전소를 가까운 순으로 (거리 m, 캐시 행). 필터 규칙은 위 쿼리 설명과 같다.
+
+    ``available_only``는 상태 수집 뒤 ``limits.max_age_min``분 이하인 행만 센다.
+    ``ignore_status_age``는 "상태가 새것이었다면 남았을 충전소가 있는지" 알아볼 때만 쓴다.
 
     음성 대화(BE-3)의 ``find_chargers`` 도구도 HTTP를 거치지 않고 이 함수를 부른다.
     """
@@ -155,7 +248,8 @@ def find_nearby(
         distance = haversine_m(lat, lng, row.lat, row.lng)
         if distance > radius_m:
             continue
-        if wanted.is_set() and not _has_matching_charger(row, wanted):
+        known = ignore_status_age or status_age(row, now, limits).known
+        if wanted.is_set() and not _has_matching_charger(row, wanted, status_known=known):
             continue
         found.append((distance, row))
     found.sort(key=lambda item: item[0])
@@ -172,12 +266,17 @@ def charger_summary(row: ChargerCache) -> tuple[int, float | None]:
     return available, max(outputs) if outputs else None
 
 
-def matching_count(row: ChargerCache, *, available_only: bool, min_kw: float | None) -> int:
+def matching_count(
+    row: ChargerCache, *, available_only: bool, min_kw: float | None, status_known: bool
+) -> int:
     """이 충전소에서 조건(지금 충전대기, 출력 ``min_kw`` 이상)을 한 대가 모두 맞는 충전기 수.
 
     ``find_nearby``와 같은 판정(``_ChargerFilter``)이다. 경로 위 충전소 찾기(BE-7)가 쓴다.
+    ``status_known``이 거짓(상태가 오래됨)이면 ``available_only``에서 한 대도 세지 않는다.
     """
     wanted = _ChargerFilter(charger_type=None, available_only=available_only, min_kw=min_kw)
+    if available_only and not status_known:
+        return 0
     return sum(1 for charger in _chargers(row) if wanted.matches(charger))
 
 
@@ -233,14 +332,21 @@ class _ChargerFilter:
         return True
 
 
-def _has_matching_charger(row: ChargerCache, wanted: _ChargerFilter) -> bool:
+def _has_matching_charger(
+    row: ChargerCache, wanted: _ChargerFilter, *, status_known: bool
+) -> bool:
     """주어진 조건을 **같은 충전기 한 대가** 모두 맞으면 그 충전소를 남긴다.
 
     걸러내는 단위는 충전기가 아니라 충전소다 — 조건에 맞는 충전기가 있는
     충전소를 찾는 화면이므로, 그 충전소의 나머지 충전기도 함께 보여준다.
     조건을 충전기마다 따로 보면 "7kW 충전대기 + 100kW 충전중" 충전소가
     "100kW 이상 빈 충전기" 조건에 걸려, 차 안에서 헛걸음하게 된다.
+
+    상태가 오래된 행(``status_known`` 거짓)은 ``available_only``를 맞출 수 없다. "충전대기"가
+    한 시간 전 값이면 지금 비어 있다고 말할 근거가 아니다.
     """
+    if wanted.available_only and not status_known:
+        return False
     return any(wanted.matches(charger) for charger in _chargers(row))
 
 
@@ -287,7 +393,7 @@ def _favorite_ids(
 
 
 def _to_station_out(
-    row: ChargerCache, distance_m: float, favorites: set[str] | None
+    row: ChargerCache, distance_m: float, favorites: set[str] | None, age: StatusAge
 ) -> StationOut:
     """캐시 행 → 응답.
 
@@ -309,4 +415,7 @@ def _to_station_out(
         # 다른 뜻이 된다.
         is_favorite=(row.station_id in favorites) if favorites is not None else None,
         chargers=[ChargerOut(**charger) for charger in _chargers(row)],
+        synced_at=age.synced_at,
+        status_age_min=age.age_min,
+        stale=age.stale,
     )

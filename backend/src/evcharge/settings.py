@@ -98,6 +98,13 @@ class Settings(BaseSettings):
     # 나머지 기능은 그대로 돌아야 하므로 기동 시점에 막지 않는다.
     charger_api_key: str = ""
 
+    # 충전기 상태 신선도 (BE-10). 기준은 캐시 행의 수집 시각(charger_cache.updated_at).
+    # - 이 분(min)을 넘으면 stale: 응답에 표시하고, 추천 문장에 "N분 전 정보"를 붙인다.
+    # - 이 분을 넘으면 상태 미확인: "비어 있음"으로 세지 않는다(available_only, 경로 위 추천).
+    #   오래된 "충전대기"를 믿고 가면 헛걸음(충전 실패)이 된다.
+    charger_status_stale_min: int = Field(default=20, ge=0)
+    charger_status_max_age_min: int = Field(default=60, ge=0)
+
     # 수집 대상 시도 코드. 개발계정 트래픽이 하루 1,000건이라 전국을 다
     # 받으면 넘친다(2026-09 기준 전국 524,903건). 빛가람(나주) 대회이므로
     # 해당 지역만 받는다. 쉼표로 구분한다.

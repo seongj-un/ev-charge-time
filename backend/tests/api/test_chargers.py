@@ -12,7 +12,13 @@ from datetime import datetime, timedelta
 import pytest
 
 from evcharge.api.auth_deps import SESSION_COOKIE
-from evcharge.api.routes.chargers import charger_api_key, charger_summary, find_nearby
+from evcharge.api.routes import chargers as chargers_route
+from evcharge.api.routes.chargers import (
+    FreshnessLimits,
+    charger_api_key,
+    charger_summary,
+    find_nearby,
+)
 from evcharge.domain.pricing import KST
 from evcharge.infra.models import ChargerCache, FavoriteStation, User
 from evcharge.infra.models import Session as SessionModel
@@ -517,9 +523,16 @@ def test_find_nearby_matches_the_route_order_and_filters(client, db_session):
     _cache(db_session, "NEAR", NEAR, chargers=[_charger(status="3", capacity_kw=7.0)])
     _cache(db_session, "HERE", HERE, chargers=[_charger(status="2", capacity_kw=7.0)])
 
-    every = find_nearby(db_session, lat=HERE[0], lng=HERE[1], radius_m=5_000)
+    clock = {"now": chargers_route.now_kst(), "limits": FreshnessLimits.current()}
+    every = find_nearby(db_session, lat=HERE[0], lng=HERE[1], radius_m=5_000, **clock)
     free_fast = find_nearby(
-        db_session, lat=HERE[0], lng=HERE[1], radius_m=5_000, available_only=True, min_kw=50
+        db_session,
+        lat=HERE[0],
+        lng=HERE[1],
+        radius_m=5_000,
+        available_only=True,
+        min_kw=50,
+        **clock,
     )
     route = _get(client, radius_m=5_000).json()
 

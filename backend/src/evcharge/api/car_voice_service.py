@@ -52,7 +52,13 @@ from .car_route_service import find_along_route
 from .car_savings import record_pending, summarize
 from .deps import get_public_prices
 from .months import month_bounds, month_of
-from .routes.chargers import MAX_RADIUS_M, cache_is_empty, charger_summary, find_nearby
+from .routes.chargers import (
+    MAX_RADIUS_M,
+    FreshnessLimits,
+    cache_is_empty,
+    charger_summary,
+    find_nearby,
+)
 from .schemas import (
     AddWaypointAction,
     AskAction,
@@ -418,6 +424,8 @@ class VoiceTools:
             radius_m=args.radius_m,
             available_only=args.available_only,
             min_kw=args.min_kw,
+            now=self.now,
+            limits=FreshnessLimits.current(),
         )[:MAX_STATIONS]
         if not found and cache_is_empty(self.session):
             return ToolOutcome({"error": "충전소 정보를 아직 수집하지 않았습니다."}, is_error=True)
@@ -529,7 +537,7 @@ class VoiceTools:
             min_kw=args.min_kw,
             corridor_m=args.corridor_m,
         )
-        result = find_along_route(self.session, request)
+        result = find_along_route(self.session, request, self.now)
         content = result.model_dump(mode="json", exclude={"actions"})
         # "기준 잔량 15% 아래예요", "50킬로와트 이상"도 근거가 있게 기준을 함께 준다.
         content["reserve_soc"] = request.reserve_soc

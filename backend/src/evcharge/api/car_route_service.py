@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
@@ -18,7 +19,14 @@ from sqlalchemy.orm import Session as DbSession
 from ..domain.route import Route, clean_route, query_boxes
 from ..infra.models import ChargerCache
 from .car_plan_service import spoken_distance, spoken_percent
-from .routes.chargers import cache_is_empty, charger_summary, matching_count, rows_in_boxes
+from .routes.chargers import (
+    FreshnessLimits,
+    cache_is_empty,
+    charger_summary,
+    matching_count,
+    rows_in_boxes,
+    status_age,
+)
 from .schemas import (
     AddWaypointAction,
     AskAction,
@@ -88,7 +96,7 @@ class _Estimate:
 
 
 def find_along_route(
-    session: DbSession, payload: CarRouteChargersRequest
+    session: DbSession, payload: CarRouteChargersRequest, now: datetime
 ) -> CarRouteChargersResponse:
     """경로 근처의 충전대기·``min_kw`` 이상 충전소를 경로 순서대로 최대 5곳.
 
@@ -120,10 +128,20 @@ def find_along_route(
     if not near and cache_is_empty(session):
         raise HTTPException(status_code=503, detail=NOT_COLLECTED)
 
+    limits = FreshnessLimits.current()
+    ages = {row.station_id: status_age(row, now, limits) for _, _, row in near}
     matching = [
         (along, offset, row, count)
         for along, offset, row in near
-        if (count := matching_count(row, available_only=True, min_kw=payload.min_kw)) > 0
+        if (
+            count := matching_count(
+                row,
+                available_only=True,
+                min_kw=payload.min_kw,
+                status_known=ages[row.station_id].known,
+            )
+        )
+        > 0
     ]
     matching.sort(key=lambda item: (item[0], item[1]))
     matching = matching[:MAX_RESULTS]

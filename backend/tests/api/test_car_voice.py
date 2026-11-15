@@ -219,12 +219,21 @@ def test_arrival_answer_plans_from_the_arrival_soc(client, fake):
     assert "집으로 가는 중" in fake.calls[0]["system"]
 
 
-def _station(db_session, station_id, lat, *, name, status="2", kw=7.0):
+def _station(db_session, station_id, lat, *, name, status="2", kw=7.0, updated_at=None):
     data = {
         "name": name,
         "chargers": [{"charger_id": "01", "type": "02", "capacity_kw": kw, "status": status}],
     }
-    db_session.add(ChargerCache(station_id=station_id, data=data, lat=lat, lng=HERE[1]))
+    db_session.add(
+        ChargerCache(
+            station_id=station_id,
+            data=data,
+            lat=lat,
+            lng=HERE[1],
+            # 시계를 MONDAY_EVENING으로 고정하므로 상태도 그때 수집한 것으로 둔다(BE-10).
+            updated_at=updated_at or MONDAY_EVENING,
+        )
+    )
     db_session.commit()
 
 
