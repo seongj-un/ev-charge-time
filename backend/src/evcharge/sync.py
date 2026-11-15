@@ -19,6 +19,7 @@ from .infra.charger_api import ChargerApiClient, ChargerApiError
 from .infra.charger_sync import (
     StationSyncResult,
     StatusSyncResult,
+    record_full_sync_run,
     sync_states,
     sync_stations,
 )
@@ -95,7 +96,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         with session_scope() as session:
             if args.states:
-                states = sync_states(session, api, zcodes, period=args.period)
+                states = sync_states(
+                    session,
+                    api,
+                    zcodes,
+                    period=args.period,
+                    recover_daily_max=settings.charger_full_sync_daily_max,
+                )
                 logger.info(
                     "상태 갱신 완료: %d행 → 충전소 %d곳 / 충전기 %d대 (캐시에 없는 행 %d)",
                     states.api_rows,
@@ -103,7 +110,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     states.chargers_updated,
                     states.unknown_rows,
                 )
+                if states.recovered is not None:
+                    logger.info(
+                        "끊김 복구 전체 수집 완료: 충전소 %d곳 / 충전기 %d대",
+                        states.recovered.stations,
+                        states.recovered.chargers,
+                    )
             else:
+                # 정기 전체 수집도 하루 횟수에 센다(되살리기 한도는 이 수를 포함한다).
+                record_full_sync_run(session, recovery=False)
                 full = sync_stations(session, api, zcodes)
                 logger.info(
                     "전체 수집 완료: %d행 → 충전소 %d곳 / 충전기 %d대 (건너뛴 행 %d)",

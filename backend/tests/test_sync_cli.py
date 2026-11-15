@@ -33,6 +33,7 @@ def _no_db(monkeypatch):
         yield object()
 
     monkeypatch.setattr(sync, "session_scope", fake_scope)
+    monkeypatch.setattr(sync, "record_full_sync_run", lambda *args, **kwargs: None)
 
 
 def _settings(**overrides) -> Settings:
@@ -94,7 +95,24 @@ def test_states_flag_takes_the_cheap_path(monkeypatch, _no_db):
     (_session, _api, zcodes), kwargs = states.calls[0]
     assert zcodes == ["12", "51"]
     assert kwargs["period"] == 5
+    assert kwargs["recover_daily_max"] == 4
     assert never.calls == []
+
+
+def test_full_run_is_recorded_before_it_calls_the_api(monkeypatch, _no_db):
+    monkeypatch.setattr(sync, "get_settings", lambda: _settings())
+    order: list[str] = []
+    monkeypatch.setattr(
+        sync, "record_full_sync_run", lambda _session, *, recovery: order.append(f"run {recovery}")
+    )
+    stations = _Recorder()
+    monkeypatch.setattr(
+        sync, "sync_stations", lambda *a, **kw: (order.append("sync"), stations(*a, **kw))[1]
+    )
+
+    assert sync.main([]) == 0
+
+    assert order == ["run False", "sync"]
 
 
 def test_zcodes_can_be_overridden_on_the_command_line(monkeypatch, _no_db):

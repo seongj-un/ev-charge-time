@@ -315,3 +315,103 @@ def test_full_sync_marks_its_start_equal_to_the_rows_it_wrote(db_session):
     mark = db_session.get(ChargerSyncState, "stations").confirmed_at
     assert db_session.get(ChargerCache, "ME174085").updated_at == mark
     assert db_session.get(ChargerCache, "GONE").updated_at < mark
+
+
+# ---------------------------------------------------------------------------
+# 끊김 뒤 전체 수집으로 되살리기 (BE-10 리뷰)
+# ---------------------------------------------------------------------------
+
+
+def _runs(db_session):
+    from evcharge.infra.models import ChargerFullSyncRun
+
+    db_session.expire_all()
+    return [run.recovery for run in db_session.query(ChargerFullSyncRun).order_by("id")]
+
+
+def test_a_gap_is_recovered_by_a_full_sync(db_session):
+    from datetime import datetime, timedelta
+
+    _set_confirmed(db_session, 16)  # 5분 주기 상태 수집이 두 번 빠졌다
+    api = FakeChargerApi(info_rows=[info_row()])
+
+    result = sync_states(db_session, api, ["12"], period=10, recover_daily_max=4)
+
+    assert result.confirmed is False
+    assert result.recovered is not None and result.recovered.stations == 1
+    assert api.info_calls == ["12"]
+    confirmed = _confirmed(db_session)
+    assert abs(datetime.now(confirmed.tzinfo) - confirmed) < timedelta(minutes=1)
+    assert _runs(db_session) == [True]
+
+
+def test_status_sync_before_any_full_sync_recovers_too(db_session):
+    api = FakeChargerApi(info_rows=[info_row()])
+
+    result = sync_states(db_session, api, ["12"], period=10, recover_daily_max=4)
+
+    assert result.recovered is not None
+    assert _confirmed(db_session) is not None
+
+
+def test_no_recovery_over_a_continuous_window(db_session):
+    _set_confirmed(db_session, 5)
+    api = FakeChargerApi(info_rows=[info_row()])
+
+    result = sync_states(db_session, api, ["12"], period=10, recover_daily_max=4)
+
+    assert (result.confirmed, result.recovered, api.info_calls) == (True, None, [])
+
+
+def test_recovery_stops_at_the_daily_full_sync_limit(db_session, caplog):
+    from evcharge.infra.charger_sync import record_full_sync_run
+
+    for _ in range(4):
+        record_full_sync_run(db_session, recovery=False)
+    _set_confirmed(db_session, 16)
+    before = _confirmed(db_session)
+    api = FakeChargerApi(info_rows=[info_row()])
+
+    with caplog.at_level("WARNING"):
+        result = sync_states(db_session, api, ["12"], period=10, recover_daily_max=4)
+
+    assert (result.confirmed, result.recovered, api.info_calls) == (False, None, [])
+    assert _confirmed(db_session) == before
+    assert "한도 4" in caplog.text
+    assert len(_runs(db_session)) == 4
+
+
+def test_below_the_limit_recovers(db_session):
+    from evcharge.infra.charger_sync import record_full_sync_run
+
+    for _ in range(3):
+        record_full_sync_run(db_session, recovery=False)
+    _set_confirmed(db_session, 16)
+    api = FakeChargerApi(info_rows=[info_row()])
+
+    sync_states(db_session, api, ["12"], period=10, recover_daily_max=4)
+
+    assert api.info_calls == ["12"]
+    assert _runs(db_session) == [False, False, False, True]
+
+
+def test_a_failed_recovery_still_counts_against_the_limit(db_session):
+    _set_confirmed(db_session, 16)
+
+    class Broken(FakeChargerApi):
+        def fetch_station_rows(self, zcode):
+            raise RuntimeError("api down")
+
+    with pytest.raises(RuntimeError):
+        sync_states(db_session, Broken(), ["12"], period=10, recover_daily_max=4)
+
+    assert _runs(db_session) == [True]
+
+
+def test_without_a_limit_a_gap_is_left_alone(db_session):
+    _set_confirmed(db_session, 16)
+    api = FakeChargerApi(info_rows=[info_row()])
+
+    result = sync_states(db_session, api, ["12"], period=10)
+
+    assert (result.recovered, api.info_calls) == (None, [])

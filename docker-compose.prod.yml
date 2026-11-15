@@ -46,6 +46,10 @@ services:
       # 없으면 해당 기능만 501이고 나머지는 그대로 돈다.
       CHARGER_API_KEY: ${CHARGER_API_KEY:-}
       CHARGER_ZCODES: ${CHARGER_ZCODES:-12}
+      # 충전기 상태 신선도(BE-10). 수집(python -m evcharge.sync)도 이 컨테이너에서 돈다.
+      CHARGER_STATUS_STALE_MIN: ${CHARGER_STATUS_STALE_MIN:-20}
+      CHARGER_STATUS_MAX_AGE_MIN: ${CHARGER_STATUS_MAX_AGE_MIN:-60}
+      CHARGER_FULL_SYNC_DAILY_MAX: ${CHARGER_FULL_SYNC_DAILY_MAX:-4}
       KMA_API_KEY: ${KMA_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.1-flash-lite}

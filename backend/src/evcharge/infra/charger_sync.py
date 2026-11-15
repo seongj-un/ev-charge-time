@@ -19,12 +19,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession
 
 from ..domain.pricing import KST
-from .models import ChargerCache, ChargerSyncState
+from .models import ChargerCache, ChargerFullSyncRun, ChargerSyncState
 
 # charger_sync_state의 두 행: 상태를 여기까지 확인한 시각, 마지막 전체 수집이 시작한 시각
 STATUS_KIND = "status"
@@ -75,6 +75,13 @@ class StatusSyncResult:
     stations_updated: int
     chargers_updated: int
     unknown_rows: int
+    # 확인 시각을 이번 수집 시작으로 앞당겼는지. 거짓이면 수집 창이 끊겼거나 기준이 없다.
+    confirmed: bool = True
+    # 끊김을 보고 그 자리에서 돌린 전체 수집의 결과(돌리지 않았으면 None)
+    recovered: StationSyncResult | None = None
+
+# 전체 수집 기록을 남기는 기간. 하루 한도만 세면 되므로 이틀이면 충분하다.
+RUN_RETENTION = timedelta(days=2)
 
 
 def build_station_records(rows: Iterable[dict]) -> list[StationRecord]:
@@ -155,7 +162,12 @@ def sync_stations(
 
 
 def sync_states(
-    session: DbSession, api: ChargerApi, zcodes: Sequence[str], period: int = 10
+    session: DbSession,
+    api: ChargerApi,
+    zcodes: Sequence[str],
+    period: int = 10,
+    *,
+    recover_daily_max: int | None = None,
 ) -> StatusSyncResult:
     """상태만 갱신. 전체 재수집보다 훨씬 싸다(zcode=12, period=10에 964건).
 
@@ -163,6 +175,11 @@ def sync_states(
     ``status`` 필드이지 이 함수의 상태가 아니다. 캐시에 없는 충전소·충전기는
     만들지 않는다 — 상태 응답에는 종류·용량·주소가 없어서 ``StationOut``을
     채울 수 없다. 그건 전체 수집의 몫이다.
+
+    수집 창이 끊겨 확인 시각을 앞당기지 못하면(또는 기준이 아직 없으면), ``recover_daily_max``가
+    주어졌을 때 오늘(KST) 전체 수집이 그 횟수보다 적은 경우에만 그 자리에서 전체 수집을 돌린다.
+    한 번 끊기면 다음 상태 수집도 계속 끊긴 것으로 판정되므로, 되살리지 않으면 다음 정기 전체
+    수집까지 바뀌지 않은 빈 충전기가 "상태 미확인"으로 숨는다.
     """
     started = _clock(session)
     rows: list[dict] = []
@@ -214,9 +231,14 @@ def sync_states(
                 updated_stations += 1
                 updated_chargers += touched
 
-    _confirm(session, started, window=timedelta(minutes=period))
+    confirmed = _confirm(session, started, window=timedelta(minutes=period))
     session.commit()
+    recovered = None
+    if not confirmed and recover_daily_max is not None:
+        recovered = _recover(session, api, zcodes, recover_daily_max)
     return StatusSyncResult(
+        confirmed=confirmed,
+        recovered=recovered,
         api_rows=len(rows),
         stations_updated=updated_stations,
         chargers_updated=updated_chargers,
@@ -244,26 +266,67 @@ def _mark(session: DbSession, kind: str, at: datetime) -> None:
         state.confirmed_at = at
 
 
-def _confirm(session: DbSession, started: datetime, *, window: timedelta | None) -> None:
+def record_full_sync_run(session: DbSession, *, recovery: bool) -> None:
+    """전체 수집을 시작한다는 기록을 남기고 바로 커밋한다(공공 API를 부르기 전)."""
+    session.execute(
+        delete(ChargerFullSyncRun).where(
+            ChargerFullSyncRun.started_at < func.now() - RUN_RETENTION
+        )
+    )
+    session.add(ChargerFullSyncRun(recovery=recovery))
+    session.commit()
+
+
+def full_syncs_today(session: DbSession) -> int:
+    """오늘(KST 0시부터) 시작한 전체 수집 수. 실패한 수집도 센다."""
+    now = _clock(session).astimezone(KST)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return session.scalar(
+        select(func.count()).where(ChargerFullSyncRun.started_at >= midnight)
+    )
+
+
+def _recover(
+    session: DbSession, api: ChargerApi, zcodes: Sequence[str], daily_max: int
+) -> StationSyncResult | None:
+    done = full_syncs_today(session)
+    if done >= daily_max:
+        logger.warning(
+            "상태 수집이 끊겼지만 오늘 전체 수집이 이미 %d회라(한도 %d) 되살리지 않습니다. "
+            "다음 정기 전체 수집 전까지 바뀌지 않은 충전소는 상태 미확인으로 보일 수 있습니다.",
+            done,
+            daily_max,
+        )
+        return None
+    logger.warning("상태 수집이 끊겨 전체 수집으로 확인 시각을 되살립니다 (오늘 %d회째)", done + 1)
+    record_full_sync_run(session, recovery=True)
+    return sync_stations(session, api, zcodes)
+
+
+def _confirm(session: DbSession, started: datetime, *, window: timedelta | None) -> bool:
     """확인 시각을 ``started``로 앞당긴다. ``window``는 상태 수집이 받은 변경 기간이다.
 
     상태 수집은 ``started - window``가 지난 확인 시각 이전일 때만(수집 창이 이어질 때만)
     앞당긴다. 수집이 끊겼던 동안의 변경은 놓쳤으므로, 바뀌지 않은 충전소를 확인했다고
     말할 수 없다. 확인 시각이 아직 없으면 상태 수집은 기준을 만들 수 없다(전체 수집이 만든다).
     전체 수집(``window=None``)은 모든 충전소를 새로 받으므로 언제나 앞당긴다.
+    앞당겼으면 True.
     """
     state = session.get(ChargerSyncState, STATUS_KIND, with_for_update=True)
     if state is None:
         if window is None:
             session.add(ChargerSyncState(kind=STATUS_KIND, confirmed_at=started))
-        return
+            return True
+        logger.warning("상태 확인 시각이 아직 없습니다 (전체 수집 전)")
+        return False
     if window is not None and started - window > state.confirmed_at:
         logger.warning(
             "상태 수집이 끊겼던 구간이 있어 확인 시각을 앞당기지 않습니다 (마지막 확인 %s)",
             state.confirmed_at.isoformat(),
         )
-        return
+        return False
     state.confirmed_at = max(state.confirmed_at, started)
+    return True
 
 
 def _upsert(session: DbSession, records: Sequence[StationRecord]) -> None:

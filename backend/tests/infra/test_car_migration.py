@@ -36,6 +36,7 @@ CAR_TABLES = {
     "car_voice_ip_limits",
     "car_departures",
     "charger_sync_state",
+    "charger_full_sync_runs",
 }
 
 
@@ -261,3 +262,16 @@ def test_charger_sync_state_migration_goes_down_alone(migration_db):
 
     command.upgrade(config, "head")
     assert "charger_sync_state" in _tables(migration_db)
+
+
+def test_charger_full_sync_runs_migration_goes_down_alone(migration_db):
+    config = _alembic()
+    command.upgrade(config, "head")
+
+    command.downgrade(config, "a9e4c2f7b3d1")
+    tables = _tables(migration_db)
+    assert "charger_full_sync_runs" not in tables
+    assert "charger_sync_state" in tables
+
+    command.upgrade(config, "head")
+    assert "charger_full_sync_runs" in _tables(migration_db)

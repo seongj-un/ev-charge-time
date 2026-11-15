@@ -274,6 +274,23 @@ class ChargerSyncState(Base):
     confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ChargerFullSyncRun(Base):
+    """전체 수집을 시작한 기록 (BE-10). 하루 전체 수집 횟수 한도를 세는 데만 쓴다.
+
+    공공 API를 부르기 **전에** 따로 커밋한다. 실패한 수집도 호출을 썼으므로 센다.
+    이틀 넘은 행은 새 기록을 남길 때 지운다.
+    """
+
+    __tablename__ = "charger_full_sync_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # 상태 수집이 끊김을 보고 돌린 수집이면 true, 정기 수집이면 false
+    recovery: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
 # ── 와트잇 차량 앱 (BE-5 절약 리포트) ─────────────────────────────────────
 # 차량 앱은 로그인이 없다. 기기마다 토큰 하나를 발급하고 해시만 저장한다
 # (세션 토큰과 같은 방식, infra/security.py). 개인정보는 담지 않는다.
