@@ -236,8 +236,11 @@ home에서는 `payment`·`charger_speed`를, public에서는 `depart_at`·`mode`
    - 토큰이 없으면 지금과 같은 응답이다(`saving_id: null`). DB를 열지 않는다.
    - 토큰이 틀려도 계산은 그대로 돌려주고 기록만 하지 않는다(`saving_id: null`).
    - 기록 중 DB 오류가 나도 계산은 그대로 나간다(`saving_id: null`, 서버 로그에 경고).
-3. 앱이 추천을 실제로 따른 것을 보면(예약 시각에 충전 시작을 Vehicle SDK로 확인, 운전자가
-   회원 결제로 바꿨다고 확인) `POST /api/car/savings/{saving_id}/confirm`으로 **확정**한다.
+3. 앱이 추천을 실제로 따른 것을 보면 `POST /api/car/savings/{saving_id}/confirm`으로 **확정**한다.
+   - 예약 충전: 시동이 꺼진 동안 앱은 돌지 않으므로 예약 충전이 시작되는 순간은 볼 수 없다. 앱은
+     주차할 때 잔량을 저장해 두고, 다음 시동 ON에 잔량이 그보다 올라 있으면(예약대로 충전됐다고
+     보고) 확정한다.
+   - 결제 방식: 운전자가 회원 결제로 바꿨다고 확인하면 확정한다.
 4. `GET /api/car/savings/summary`가 확정된 기록만 더한다.
 
 규칙
