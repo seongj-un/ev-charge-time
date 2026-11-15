@@ -43,6 +43,7 @@ uv run uvicorn evcharge.main:app --reload
 | `POST /api/car/chargers/along-route` | 차량 앱: 경로 위 빈 급속 충전기, 경유지 추천 | 구현 |
 | `POST/DELETE /api/car/departures` | 차량 앱: 집 출발 기록(기어 P 해제), 기록 전부 삭제 | 구현 (기기 토큰) |
 | `GET /api/car/departures/suggest` | 차량 앱: 평소 출발 시각 제안(high/low) | 구현 (기기 토큰) |
+| `POST /api/car/briefing` | 차량 앱: 시동 ON 한 줄 브리핑(지금 요금, 오늘 밤 충전, 이번 달 절약) | 구현 (토큰 선택) |
 
 **기능 명세의 F-01~F-14가 전부 구현됐다.** 스텁으로 남은 엔드포인트는 없다.
 
@@ -82,6 +83,10 @@ uv run uvicorn evcharge.main:app --reload
 출발 시각을 제안한다. leak-check(home)는 출발 시각이 없을 때 high 제안을 오전 8시 대신 가정하고,
 음성 귀가길 브리핑은 "내일도 오전 7시 30분에 출발하세요?"로 묻는다. 규칙은
 [docs/car-api.md](docs/car-api.md) "출발 시각 학습".
+
+시동 ON 브리핑(`POST /api/car/briefing`)은 지금 요금 구간과 다음으로 싸지는 시각, 오늘 밤 충전
+권장(예약 구간과 아끼는 금액, 평소 출발 시각이 있으면 그 기준), 이번 달 절약 합계를 기존 계산
+함수로 모아 최대 3문장으로 읽어 준다. 기기 토큰은 선택이다.
 
 세 엔드포인트는 외부 자격증명이 있어야 동작하고, 없으면 각자 501을 낸다.
 키 없이도 나머지 기능은 전부 돈다 — 기동 시점에 막지 않는다.
@@ -249,6 +254,7 @@ backend/src/evcharge/
 │   ├── car_voice_quota.py  음성 대화 하루 한도       (차량 앱)
 │   ├── car_route_service.py 경로 위 충전소 찾기      (차량 앱)
 │   ├── car_departures.py   출발 기록·제안            (차량 앱)
+│   ├── car_briefing_service.py 시동 ON 브리핑        (차량 앱)
 │   └── months.py           KST 달·해 경계            (F-13, 차량 앱)
 ├── infra/      SQLAlchemy 세션과 모델
 │   ├── charger_api.py    공공 충전소 API 호출     (F-07)

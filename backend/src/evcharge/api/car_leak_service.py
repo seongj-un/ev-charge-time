@@ -116,7 +116,7 @@ def _home(
     if usual_at is not None:
         moment = f"평소처럼 {moment}"
     if assumed:
-        assumptions.append(_assumed_depart(depart_at, usual if usual_at is not None else None))
+        assumptions.append(assumed_depart_note(depart_at, usual if usual_at is not None else None))
     try:
         # 시각 검증(지난 출발 시각, 72시간 상한)도 여기서 같은 422로 난다.
         result = _plan(payload, depart_at, now)
@@ -201,7 +201,7 @@ def _plan(payload: CarLeakCheckRequest, depart_at: datetime, now: datetime) -> C
     )
 
 
-def _assumed_depart(depart_at: datetime, usual: DepartureSuggestion | None = None) -> str:
+def assumed_depart_note(depart_at: datetime, usual: DepartureSuggestion | None = None) -> str:
     if usual is not None:
         local = depart_at.astimezone(KST)
         return (
