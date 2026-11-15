@@ -14,7 +14,7 @@ from evcharge.domain.route import (
     route_length_m,
 )
 
-# 나주 빛가람동에서 북쪽으로 약 11km (위도 0.1도 ≈ 11.1km)
+# 나주 근처 임의 지점에서 북쪽으로 약 11km (위도 0.1도 ≈ 11.1km)
 START = (35.0, 126.8)
 NORTH = (35.1, 126.8)
 NORTH_EAST = (35.1, 126.9)

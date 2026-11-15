@@ -30,7 +30,7 @@ BASE_URL = "https://apis.data.go.kr/B552584/EvCharger/"
 OK_RESULT_CODE = "00"
 
 # 충전소 상세(getChargerInfo)는 한 번에 크게 받는 편이 호출 수를 아낀다.
-# zcode=12가 32,835건이라 9999면 4페이지다.
+# 대전(zcode=30)이 15,062건이라 9999면 2페이지다.
 DEFAULT_PAGE_SIZE = 9999
 
 # 페이지 상한. totalCount와 실제 행 수가 어긋나도 무한히 부르지 않게 한다.

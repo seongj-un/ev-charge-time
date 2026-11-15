@@ -105,8 +105,8 @@ def test_favorite_station_pair_is_unique(db_session):
 
 
 def test_charger_cache_holds_json(db_session):
-    db_session.add(ChargerCache(station_id="ST-100", data={"name": "빛가람 충전소"}))
+    db_session.add(ChargerCache(station_id="ST-100", data={"name": "유성구 충전소"}))
     db_session.commit()
 
     cached = db_session.get(ChargerCache, "ST-100")
-    assert cached.data["name"] == "빛가람 충전소"
+    assert cached.data["name"] == "유성구 충전소"

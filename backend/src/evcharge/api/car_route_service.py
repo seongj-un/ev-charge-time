@@ -39,7 +39,7 @@ from .schemas import (
 
 MAX_RESULTS = 5
 # DB에서 읽는 후보 행 수 상한. 경로 순서로 앞쪽 구간부터 읽는다(``query_boxes``).
-# 전남·광주 크기 캐시(약 8천 곳)를 corridor 10km 지그재그 경로로 훑어도 계산이 0.3초
+# 약 8천 곳 크기 캐시(2026-09 전남광주 실측)를 corridor 10km 지그재그 경로로 훑어도 계산이 0.3초
 # 안에 끝나게 하는 크기다(측정값은 PR 본문).
 MAX_CANDIDATE_ROWS = 3000
 # 공공 API에서 온 충전소 이름을 응답과 Claude에 실을 때의 최대 길이

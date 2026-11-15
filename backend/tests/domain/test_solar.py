@@ -27,7 +27,7 @@ from evcharge.domain.solar import (
     solar_elevation_deg,
 )
 
-# 빛가람(나주) — 대회 지역
+# 나주 — 한국 위도대의 임의 지점
 NAJU_LAT, NAJU_LNG = 35.0160, 126.7108
 
 SUMMER = datetime(2026, 6, 21, tzinfo=KST)  # 하지

@@ -139,14 +139,14 @@ def test_reports_which_grid_cell_and_issuance_it_used():
     assert any("격자" in note for note in body["assumptions"])
 
 
-def test_naju_and_bitgaram_resolve_to_the_same_grid():
-    """대회 지역(빛가람/나주)이 반드시 동작해야 한다."""
+def test_naju_and_jeonnam_resolve_to_the_same_grid():
+    """'나주'는 '전남'의 별칭이다(전남 대표 지점이 나주라서)."""
     client = make_client(service_with(FakeKmaClient()))
 
     naju = get(client, region="나주").json()
-    bitgaram = get(client, region="빛가람").json()
+    jeonnam = get(client, region="전남").json()
 
-    assert (naju["grid_nx"], naju["grid_ny"]) == (bitgaram["grid_nx"], bitgaram["grid_ny"])
+    assert (naju["grid_nx"], naju["grid_ny"]) == (jeonnam["grid_nx"], jeonnam["grid_ny"])
     assert naju["hours"]
 
 
