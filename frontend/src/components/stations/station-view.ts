@@ -16,19 +16,19 @@ import { parseKstWallClock } from "@/lib/format";
  * 사용자는 브라우저에서 아무리 허용을 눌러도 고칠 수 없다. 그때 빠져나갈 길이
  * 없으면 화면이 그냥 죽는다.
  *
- * **좌표는 짐작한 값이 아니라 실제 API로 결과를 확인한 것만 남겼다** (반경 2km):
- * 빛가람 158곳 · 광주 상무 328곳 · 목포 137곳 · 여수 127곳 · 순천 96곳.
- * 캐시가 전남·광주만 담고 있어 그 밖 좌표를 넣으면 조용히 빈 목록이 된다.
+ * 수집 지역(`CHARGER_ZCODES` 기본값 30 = 대전광역시) 안의 지점만 둔다. 캐시에 없는
+ * 지역 좌표를 넣으면 조용히 빈 목록이 된다. 좌표는 OpenStreetMap에서 각 기관·역의
+ * 위치를 확인한 값이다(2026-11-15). 지점별 충전소 수는 아직 대전 캐시로 재 보지 않았다.
  */
 export type Area = { id: string; name: string; lat: number; lng: number };
 
 export const AREAS: Area[] = [
-  // 기본값이 빛가람인 건 대회장이기도 하고, 데이터가 확실히 있는 곳이기도 하다.
-  { id: "bitgaram", name: "빛가람혁신도시", lat: 35.0175, lng: 126.79 },
-  { id: "gwangju", name: "광주 상무지구", lat: 35.152, lng: 126.851 },
-  { id: "mokpo", name: "목포", lat: 34.8118, lng: 126.3922 },
-  { id: "yeosu", name: "여수", lat: 34.7604, lng: 127.6622 },
-  { id: "suncheon", name: "순천", lat: 34.9506, lng: 127.4872 },
+  // 기본값은 서비스 기본 지역 대전의 대표 지점(대전시청, 백엔드 태양광 지역과 같은 좌표).
+  { id: "dunsan", name: "대전시청", lat: 36.3504, lng: 127.3845 },
+  { id: "yuseong", name: "유성", lat: 36.3622, lng: 127.3562 },
+  { id: "daejeon-station", name: "대전역", lat: 36.3314, lng: 127.4334 },
+  { id: "daedeok", name: "대덕구", lat: 36.3467, lng: 127.4156 },
+  { id: "noeun", name: "노은", lat: 36.3746, lng: 127.3181 },
 ];
 
 export const DEFAULT_AREA = AREAS[0];

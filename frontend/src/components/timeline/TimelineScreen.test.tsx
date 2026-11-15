@@ -224,17 +224,17 @@ describe("TimelineScreen", () => {
  */
 describe("태양광 겹쳐 보기", () => {
   const SOLAR = {
-    region: "전남",
+    region: "대전",
     day: "2026-10-10",
     model_version: "v1",
-    grid_nx: 51,
-    grid_ny: 67,
+    grid_nx: 67,
+    grid_ny: 100,
     base_date: "20261010",
     base_time: "0500",
     installed_capacity_mw: null,
     capacity_source: null,
     assumptions: [
-      "전남 전체를 기상청 5km 격자 한 칸(nx=57, ny=71)의 예보로 대신합니다.",
+      "대전 전체를 기상청 5km 격자 한 칸(nx=67, ny=100)의 예보로 대신합니다.",
       "기상청 단기예보 20260921 2000 발표를 사용했습니다.",
     ],
     hours: [
@@ -268,7 +268,7 @@ describe("태양광 겹쳐 보기", () => {
     await waitFor(() =>
       expect(urls.some((url) => url.includes("day=2026-10-10"))).toBe(true),
     );
-    expect(await screen.findByText(/nx=57, ny=71/)).toBeInTheDocument();
+    expect(await screen.findByText(/nx=67, ny=100/)).toBeInTheDocument();
     expect(screen.getByText(/20260921 2000 발표/)).toBeInTheDocument();
   });
 
@@ -330,11 +330,11 @@ describe("태양광 겹쳐 보기", () => {
     // 켜진 척하지 않는다. 그러나 잠그지도 않는다.
     expect(solarButton()).toBeEnabled();
     expect(solarButton()).toHaveAttribute("aria-pressed", "false");
-    expect(screen.queryByText(/nx=57, ny=71/)).toBeNull();
+    expect(screen.queryByText(/nx=67, ny=100/)).toBeNull();
 
     await user.click(solarButton());
 
-    expect(await screen.findByText(/nx=57, ny=71/)).toBeInTheDocument();
+    expect(await screen.findByText(/nx=67, ny=100/)).toBeInTheDocument();
     expect(urls.filter((url) => url.startsWith("/api/solar-forecast"))).toHaveLength(2);
     expect(solarButton()).toHaveTextContent("켜짐");
   });
@@ -387,7 +387,7 @@ describe("태양광 겹쳐 보기", () => {
 
     render(<TimelineScreen initialDay="2026-10-10" initialMode="self_low" />);
     await user.click(solarButton());
-    expect(await screen.findByText(/nx=57, ny=71/)).toBeInTheDocument();
+    expect(await screen.findByText(/nx=67, ny=100/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "다음 날" }));
 
@@ -396,7 +396,7 @@ describe("태양광 겹쳐 보기", () => {
     await waitFor(() =>
       expect(urls.some((url) => url.includes("solar-forecast") && url.includes("2026-10-11"))).toBe(true),
     );
-    expect(screen.queryByText(/nx=57, ny=71/)).toBeNull();
+    expect(screen.queryByText(/nx=67, ny=100/)).toBeNull();
     expect(solarButton()).toHaveTextContent("불러오는 중");
   });
 });

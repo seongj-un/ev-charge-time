@@ -258,14 +258,24 @@ test("이름이 없는 즐겨찾기에 쓸 문구가 한 곳에만 있다", () =
  * getCurrentPosition이 PERMISSION_DENIED로 떨어진다(실제로 그렇게 막혔다).
  * 그때 빠져나갈 길이 없으면 시연 도중 화면이 죽는다.
  *
- * 여기 좌표는 지어낸 값이 아니라 **실제 API로 결과가 나오는 것만** 남긴 것이다
- * (빛가람 158곳 · 광주 320곳 · 목포 137곳 · 여수 127곳 · 순천 96곳, 반경 2km).
+ * 여기 좌표는 수집 지역(대전, zcode 30) 안의 지점만 남긴 것이다. 캐시에 없는 지역을
+ * 넣으면 조용히 빈 목록이 된다.
  * 충전소를 흉내 내는 상수가 아니라 조회 기준점이라 이 파일에 둔다.
  */
 describe("지역 기준점", () => {
-  test("기본값은 빛가람혁신도시다 — 대회장이고 데이터가 있는 곳이다", () => {
-    expect(DEFAULT_AREA.name).toBe("빛가람혁신도시");
+  test("기본값은 대전시청이다 — 서비스 기본 지역이고 백엔드 태양광 지역과 같은 좌표다", () => {
+    expect(DEFAULT_AREA.name).toBe("대전시청");
+    expect([DEFAULT_AREA.lat, DEFAULT_AREA.lng]).toEqual([36.3504, 127.3845]);
     expect(AREAS[0]).toBe(DEFAULT_AREA);
+  });
+
+  test("모든 지점이 대전 안에 있다 — 수집 지역 밖 좌표는 빈 목록이 된다", () => {
+    for (const area of AREAS) {
+      expect(area.lat).toBeGreaterThan(36.18);
+      expect(area.lat).toBeLessThan(36.5);
+      expect(area.lng).toBeGreaterThan(127.24);
+      expect(area.lng).toBeLessThan(127.56);
+    }
   });
 
   test("id가 겹치지 않는다", () => {
@@ -278,15 +288,6 @@ describe("지역 기준점", () => {
    * 사람에게는 빈 목록이 나오고, 화면은 "충전소가 없다"고 거짓말한다.
    * 그래서 경계를 테스트로 박아 둔다.
    */
-  test("전부 수집된 지역(전남·광주) 안에 있다", () => {
-    for (const area of AREAS) {
-      expect(area.lat).toBeGreaterThan(34.0);
-      expect(area.lat).toBeLessThan(35.5);
-      expect(area.lng).toBeGreaterThan(125.8);
-      expect(area.lng).toBeLessThan(128.0);
-    }
-  });
-
   test("이름이 비어 있지 않다", () => {
     for (const area of AREAS) expect(area.name.trim()).not.toBe("");
   });

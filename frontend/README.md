@@ -1,7 +1,6 @@
 # EV 충전 최적 시간 추천 — 프론트엔드
 
 2026년 개편 전기요금 기준으로 **가장 싸게 충전할 수 있는 시간**을 보여주는 반응형 웹.
-빛가람 AI·ICT 경진대회 출품작.
 
 설계: [프론트엔드 설계서](../docs/superpowers/specs/2026-09-21-frontend-design.md) ·
 명세: 노션 [기능 명세서](https://app.notion.com/p/3e2c8fd1afc981d0a00ef5fdcec314f1) ·

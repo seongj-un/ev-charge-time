@@ -12,6 +12,7 @@ import {
 import { SolarOverlay } from "@/components/chart/SolarOverlay";
 import { Card } from "@/components/ui/Card";
 import { motionDelay } from "@/lib/motion";
+import { SOLAR_REGION } from "@/lib/region";
 
 import { axisRangeLabel, type Axis, type SolarRow } from "./chart-data";
 
@@ -82,7 +83,7 @@ export function PriceChartCard({
              */
             <div className="mt-4 border-t border-line pt-3">
               <p className="text-sm font-bold">
-                태양광 발전 예측 <span className="font-normal text-ink-2">· 전남 · 참고용</span>
+                태양광 발전 예측 <span className="font-normal text-ink-2">· {SOLAR_REGION} · 참고용</span>
               </p>
               <SolarOverlay
                 className="mt-2"

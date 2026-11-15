@@ -18,6 +18,7 @@ import {
   type SolarForecast,
   type TimelineResponse,
 } from "@/lib/api/types";
+import { SOLAR_REGION } from "@/lib/region";
 import { unverifiedNotice } from "@/lib/tariff";
 
 import { DayStepper } from "./DayStepper";
@@ -57,8 +58,6 @@ type Load =
 
 const MARKER_LABEL = "최저 단가";
 
-/** 대회가 빛가람(나주)이라 전남으로 고정한다. 지역 선택을 넣으면 상태로 올린다. */
-const SOLAR_REGION = "전남";
 
 export function TimelineScreen({
   initialDay,
@@ -125,8 +124,8 @@ export function TimelineScreen({
   /**
    * 태양광 예측. 버튼을 켤 때만 부른다 — 기상청 호출이라 늘 받아둘 이유가 없다.
    *
-   * 지역은 지금 전남으로 고정한다. 대회가 빛가람(나주)이고 화면에 지역 선택이
-   * 없다. 선택을 넣게 되면 이 상수를 상태로 올리면 된다.
+   * 지역은 서비스 기본 지역(대전)으로 고정한다(`lib/region.ts`). 화면에 지역 선택이
+   * 없다. 선택을 넣게 되면 그 상수를 상태로 올리면 된다.
    */
   const [solarOn, setSolarOn] = useState(false);
   /*

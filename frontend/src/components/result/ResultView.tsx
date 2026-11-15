@@ -19,6 +19,7 @@ import {
   type Axis,
   type SolarRow,
 } from "./chart-data";
+import { SOLAR_REGION } from "@/lib/region";
 import { unverifiedNotice } from "@/lib/tariff";
 
 import { assumptionsSentence } from "./plan-text";
@@ -57,8 +58,6 @@ type ChartState =
     }
   | { status: "error" };
 
-/** 하루 단가 화면과 같은 지역. 데이터가 전남·광주만 있다. */
-const SOLAR_REGION = "전남";
 
 /** 어느 요청에 대한 결과인지를 결과와 함께 들고 다닌다. */
 type Loaded = { key: string; plan: PlanState; chart: ChartState };
