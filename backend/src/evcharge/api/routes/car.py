@@ -18,6 +18,7 @@ from ...infra.claude import AnthropicClaudeClient, ClaudeClient
 from ...infra.db import get_session
 from ...infra.models import CarDevice
 from ...settings import get_settings
+from ..car_briefing_service import REUSE_WINDOW, compute_briefing, load_personal
 from ..car_departures import (
     DepartureLimitError,
     check_observed_time,
@@ -46,6 +47,8 @@ from ..car_voice_service import arrival_briefing, check_arrival_at, converse
 from ..deps import get_holidays, get_public_prices
 from ..months import month_of
 from ..schemas import (
+    CarBriefingRequest,
+    CarBriefingResponse,
     CarDepartureIn,
     CarDepartureOut,
     CarDeparturesDeleted,
@@ -90,6 +93,32 @@ def car_plan(payload: CarPlanRequest, request: Request) -> CarPlanResponse:
             savings_won=result.savings_won,
             energy_kwh=result.plan.energy_kwh,
             source="plan",
+        )
+        result = result.model_copy(update={"saving_id": saving_id})
+    return result
+
+
+@router.post("/briefing", response_model=CarBriefingResponse)
+def car_briefing(payload: CarBriefingRequest, request: Request) -> CarBriefingResponse:
+    """시동 ON 한 줄 브리핑(최대 3문장): 지금 요금, 오늘 밤 충전, 이번 달 절약.
+
+    기기 토큰은 선택이다. 없거나 틀리면 개인화 값(평소 출발 시각, 절약 합계)만 빠지고 계산은
+    같다. 아끼는 돈이 있으면 대기 절감 기록을 만들고, 10분 안 같은 계획이면 그 기록을 다시 준다.
+    """
+    now = now_kst()
+    personal = load_personal(request, now)
+    briefing = compute_briefing(
+        payload, now, low_soc=get_settings().car_briefing_low_soc, personal=personal
+    )
+    result = briefing.response
+    if briefing.record_won > 0:
+        saving_id = try_record(
+            request,
+            cause="time",
+            savings_won=briefing.record_won,
+            energy_kwh=briefing.record_energy_kwh,
+            source="briefing",
+            reuse_within=REUSE_WINDOW,
         )
         result = result.model_copy(update={"saving_id": saving_id})
     return result

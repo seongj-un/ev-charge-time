@@ -797,3 +797,75 @@ class CarDepartureSuggestion(BaseModel):
     basis_count: int
     day_type: Literal["weekday", "weekend_holiday"]
     speech: str
+
+
+# ── 시동 ON 브리핑 (BE-9) ───────────────────────────────────────────────────
+
+
+class CarBriefingRequest(BaseModel):
+    """``POST /api/car/briefing``. 시동 ON(또는 앱 시작) 때 한 번 부른다.
+
+    ``mode``는 집 충전(자가소비용) 두 가지만 받는다. "오늘 밤 충전" 예약은 집 충전기
+    이야기이고, 공공 급속은 단가가 없으면 계산할 수 없다(422)라 시동 브리핑을 막는다.
+    ``place``는 받아 두기만 한다(지금 계산에 쓰지 않음, docs/car-api.md).
+    """
+
+    soc_now: float = Field(ge=0, le=100, allow_inf_nan=False)
+    battery_capacity_wh: float = Field(
+        ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
+    )
+    charger_kw: float = Field(default=7.0, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
+    mode: Literal["self_low", "self_high"] = "self_low"
+    place: Literal["home", "public"] | None = None
+
+
+class BriefingWindow(BaseModel):
+    start_at: KstDatetime
+    end_at: KstDatetime
+
+
+class BriefingPrice(BaseModel):
+    band: Band
+    band_label: Literal["경부하", "중간부하", "최대부하"]
+    price_per_kwh: float
+    # 지금이 주말·공휴일 할인 시간인지
+    discounted: bool
+    # 오늘 안에서 지금보다 kWh당 단가가 싸지는 첫 시각. 없으면 null
+    next_cheaper_at: KstDatetime | None
+    next_cheaper_price_per_kwh: float | None
+    # 오늘 주말·공휴일 할인 구간(봄·가을 토·일·공휴일 11~14시). 없으면 null
+    discount_window: BriefingWindow | None
+
+
+class BriefingTonight(BaseModel):
+    needs_charging: bool
+    soc_now: float
+    # 이 값보다 낮으면 충전 권장 (CAR_BRIEFING_LOW_SOC)
+    low_soc: float
+    # 충전 권장일 때만: 계획에 쓴 출발 시각과 그 근거(평소 출발 high 제안 / 오전 8시 가정)
+    depart_at: KstDatetime | None = None
+    depart_basis: Literal["usual", "default"] | None = None
+    reservation: ReservationOut | None = None
+    savings_won: int | None = None
+    energy_kwh: float | None = None
+
+
+class BriefingSavings(BaseModel):
+    month: str
+    month_won: int
+    year: int
+    year_won: int
+
+
+class CarBriefingResponse(BaseModel):
+    price: BriefingPrice
+    tonight: BriefingTonight
+    # 기기 토큰이 있고 이번 달 확정 절감이 0보다 클 때만
+    savings: BriefingSavings | None = None
+    # TTS가 읽는 최대 3문장. 숫자는 전부 위 계산값에서 온다.
+    speech: str
+    actions: list[SetReservationAction]
+    # 기기 토큰과 함께 와서 대기 절감 기록을 만들었거나 재사용했을 때만
+    saving_id: str | None = None
+    assumptions: list[str]
+    unverified_tariff_items: list[str]
