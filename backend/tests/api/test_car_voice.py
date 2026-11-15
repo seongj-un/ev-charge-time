@@ -1172,3 +1172,83 @@ def test_yes_to_the_usual_time_plans_and_records_it(client, fake, db_session):
     assert tool_results(fake, 1)[0]["content"]["depart_at"] == "2026-11-17 07:30"
     stated = list(db_session.scalars(select(CarDeparture).where(CarDeparture.source == "stated")))
     assert [r.departed_at for r in stated] == [datetime(2026, 11, 17, 7, 30, tzinfo=KST)]
+
+
+USUAL_QUESTION = [{"role": "wattit", "text": "내일도 오전 7시 30분에 출발하세요?"}]
+
+
+def stated_rows(db_session) -> list[datetime]:
+    from evcharge.infra.models import CarDeparture
+
+    query = select(CarDeparture.departed_at).where(CarDeparture.source == "stated")
+    return list(db_session.scalars(query))
+
+
+@pytest.mark.parametrize(
+    ("text", "history", "depart_time"),
+    [
+        # 시각 없는 질문에 Claude가 시스템 컨텍스트의 평소 시각을 넣었다
+        ("오늘 밤 충전하면 얼마 아껴?", [], "07:30"),
+        # Claude가 지어낸 시각
+        ("충전 계획 세워줘", [], "09:40"),
+        # 서버 질문이 아닌 와트잇 턴에 "응"
+        ("응", [{"role": "wattit", "text": "충전 계획을 세워 드릴까요?"}], "07:30"),
+        # 평소 시각 질문에 아니라고 했는데 Claude가 평소 시각을 넣었다
+        ("아니 좀 늦게", USUAL_QUESTION, "07:30"),
+        ("어 아니다, 좀 늦게 나가", USUAL_QUESTION, "07:30"),
+        # "어디"는 긍정이 아니다
+        ("어디서 충전해?", USUAL_QUESTION, "07:30"),
+        # 운전자가 말한 시각과 다른 시각
+        ("8시에 나가", [], "07:30"),
+    ],
+)
+def test_times_the_driver_did_not_say_are_planned_but_not_recorded(
+    client, fake, db_session, text, history, depart_time
+):
+    headers = register(client)
+    seed_departures(client, headers, [28, 31, 33, 40, 22])
+    fake.replies = [use("plan_charge", {"depart_time": depart_time}), say("예약해 두었어요.")]
+
+    body = ask(client, headers, text, history=history).json()
+
+    assert tool_results(fake, 1)[0]["content"]["depart_at"].endswith(depart_time)
+    assert body["fallback"] is False
+    assert stated_rows(db_session) == []
+
+
+@pytest.mark.parametrize(
+    ("text", "history", "depart_time", "recorded"),
+    [
+        ("7시 반에 나가", [], "07:30", datetime(2026, 11, 17, 7, 30, tzinfo=KST)),
+        (
+            "응 그래",
+            [
+                {"role": "driver", "text": "내일 6시 50분 출발이야"},
+                {"role": "wattit", "text": "네"},
+            ],
+            "06:50",
+            datetime(2026, 11, 17, 6, 50, tzinfo=KST),
+        ),
+        (
+            "맞아요",
+            [
+                {
+                    "role": "wattit",
+                    "text": "집에 도착하면 배터리가 32% 남아요. 내일도 오전 7시 30분에 출발하세요?",
+                }
+            ],
+            "07:30",
+            datetime(2026, 11, 17, 7, 30, tzinfo=KST),
+        ),
+    ],
+)
+def test_times_the_driver_said_or_agreed_to_are_recorded(
+    client, fake, db_session, text, history, depart_time, recorded
+):
+    headers = register(client)
+    seed_departures(client, headers, [28, 31, 33, 40, 22])
+    fake.replies = [use("plan_charge", {"depart_time": depart_time}), say("예약해 두었어요.")]
+
+    ask(client, headers, text, history=history)
+
+    assert stated_rows(db_session) == [recorded]

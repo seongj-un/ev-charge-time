@@ -302,6 +302,9 @@ class VoiceTools:
     context: CarVoiceContext
     now: datetime
     used: list[str] = field(default_factory=list)
+    # 운전자가 말한 출발 시각 후보 (시, 분). plan_charge의 출발 시각이 여기 있을 때만
+    # stated로 기록한다. Claude가 고른 시각(평소 시각, 지어낸 시각)은 계산에만 쓴다.
+    stated_times: set[Clock] = field(default_factory=set)
 
     def run(self, name: str, raw: dict[str, Any]) -> ToolOutcome:
         self.used.append(name)
@@ -353,8 +356,9 @@ class VoiceTools:
         plug_in_at = self._plug_in_at()
         # 출발은 꽂은 뒤 처음 오는 그 시각이다(도착 23:00, "7시 반" → 다음 날 07:30).
         depart_at = resolve_clock_time(args.depart_time, plug_in_at)
-        # 운전자가 말한(또는 평소 시각 제안에 "응"이라고 한) 출발 시각을 출발 학습에 남긴다.
-        self._record_stated(depart_at)
+        # 운전자가 말한(또는 평소 시각 제안에 "응"이라고 한) 출발 시각만 출발 학습에 남긴다.
+        if (depart_at.hour, depart_at.minute) in self.stated_times:
+            self._record_stated(depart_at)
         soc = self._plan_soc()
         if soc >= args.soc_target:
             # CarPlanRequest는 soc_now < 100만 받는다. 충전이 필요 없는 답은 같은 문장이다.
@@ -682,6 +686,46 @@ def _mask(text: str, start: int, end: int) -> str:
     return text[:start] + " " * (end - start) + text[end:]
 
 
+# 평소 시각 질문에 대한 긍정. 낱말 전체가 맞아야 한다("어디", "네비"는 아님). "아니"가
+# 들어 있으면 긍정으로 보지 않는다.
+_AFFIRM_RE = re.compile(
+    r"^\s*(?:(?:응|웅)+|어|네|예|그래|맞아|좋아|ㅇㅇ|오케이|그렇지|그럼)요?(?![가-힣])"
+)
+_DENY_RE = re.compile(r"아니|말고|싫어|안\s*돼")
+
+
+def driver_stated_times(
+    payload: CarVoiceRequest, usual: DepartureSuggestion | None, now: datetime
+) -> set[Clock]:
+    """운전자가 출발 시각으로 말했다고 볼 수 있는 (시, 분).
+
+    - 이번 말과 앞선 운전자 턴에 나온 시각("7시 반" → 07:30, 19:30). 숫자 검증의 운전자
+      시각 근거와 같은 규칙이다.
+    - 직전 와트잇 턴이 서버가 만든 평소 시각 질문("내일도 오전 7시 30분에 출발하세요?")이고
+      운전자가 "응", "맞아"처럼 답했으면 그 평소 시각.
+
+    LLM 출력은 계산 인자로는 쓰되 사람의 진술로 저장하지 않는다. 시스템 컨텍스트의 평소
+    시각을 Claude가 스스로 넣은 경우까지 기록하면 제안이 자기 자신을 근거로 굳는다.
+    """
+    texts = [payload.text or ""] + [t.text for t in payload.history if t.role == "driver"]
+    times: set[Clock] = set()
+    for text in texts:
+        for match in _TIME_RE.finditer(text):
+            times |= _clock_candidates(*match.groups())
+    if usual is not None and usual.depart_at is not None and payload.history:
+        last = payload.history[-1]
+        answer = payload.text or ""
+        if (
+            last.role == "wattit"
+            and last.text.strip().endswith(suggestion_question(usual, now))
+            and _AFFIRM_RE.match(answer)
+            and not _DENY_RE.search(answer)
+        ):
+            at = usual.depart_at.astimezone(KST)
+            times.add((at.hour, at.minute))
+    return times
+
+
 @dataclass
 class NumberSources:
     """말해도 되는 숫자의 근거. 단위마다 따로 모은다."""
@@ -1005,7 +1049,13 @@ def converse(
 ) -> CarVoiceResponse:
     """Claude와 도구 루프를 돌려 답을 만든다. 실패해도 200으로 돌려줄 응답을 만든다."""
     text = payload.text or ""  # 라우터가 text 없는 요청(귀가길 브리핑 첫 질문)을 먼저 처리한다
-    tools = VoiceTools(session=session, device=device, context=payload.context, now=now)
+    tools = VoiceTools(
+        session=session,
+        device=device,
+        context=payload.context,
+        now=now,
+        stated_times=driver_stated_times(payload, usual, now),
+    )
     system = _system_prompt(payload, now, usual)
     messages = build_messages(payload.history, text)
     outcomes: list[ToolOutcome] = []
