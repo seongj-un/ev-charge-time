@@ -825,7 +825,7 @@ class CarDepartureSuggestion(BaseModel):
 # 상한(remain_distance_m)과 같다. 그보다 먼 이동은 계산해도 "가는 길에 충전"으로 같다.
 MAX_NEXT_TRIP_KM = 3_000
 
-ChargeTargetReason = Literal["daily", "long_trip", "insufficient"]
+ChargeTargetReason = Literal["unknown", "daily", "long_trip", "insufficient"]
 
 
 class CarChargeTargetRequest(BaseModel):
@@ -846,7 +846,8 @@ class CarChargeTargetRequest(BaseModel):
 class CarChargeTargetResponse(BaseModel):
     # 차 설정의 충전 한도나 계획(BE-1)의 soc_target에 넣을 값. 평소 목표~100, 5% 단위
     soc_target: int
-    # daily: 평소 목표로 충분하거나 거리·전비를 모름 / long_trip: 다음 이동 때문에 올림 /
+    # unknown: 거리나 전비를 몰라 평소 목표 / daily: 계산해 보니 평소 목표로 충분 /
+    # long_trip: 다음 이동 때문에 올림 /
     # insufficient: 100%로도 필요 잔량 + 여유를 못 채움
     reason: ChargeTargetReason
     # 다음 이동에 드는 잔량(%, 소수 첫째 자리). 거리나 전비가 없으면 null. 100을 넘을 수 있다.

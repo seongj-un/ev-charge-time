@@ -58,7 +58,7 @@ def compute_charge_target(payload: CarChargeTargetRequest) -> CarChargeTargetRes
             if value is None
         ]
         assumptions.append(f"{'와 '.join(missing)}를 몰라 평소 기준 {daily}%로 정했어요.")
-        return _response(daily, "daily", None, payload, assumptions)
+        return _response(daily, "unknown", None, payload, assumptions)
 
     need = needed_soc(
         payload.next_trip_km, payload.efficiency_km_per_kwh, payload.battery_capacity_wh
@@ -84,7 +84,17 @@ def _response(
     payload: CarChargeTargetRequest,
     assumptions: list[str],
 ) -> CarChargeTargetResponse:
-    if reason == "daily":
+    # 끝에 붙는 질문(거리를 말해 달라). 잔량 문장 뒤에 둬서 운전자가 바로 답하게 한다.
+    ask = ""
+    if reason == "unknown":
+        # 계산하지 않았으니 "충분해요"라고 단정하지 않는다. 장거리일 수도 있다.
+        if payload.next_trip_km is None:
+            speech = f"다음 이동 거리를 몰라서 평소처럼 {target}%를 권해요."
+            ask = " 멀리 가시면 거리를 말씀해 주세요."
+        else:
+            speech = f"전비를 몰라서 평소처럼 {target}%를 권해요."
+    elif reason == "daily":
+        # 필요 잔량 + 여유가 평소 목표 이하로 계산된 경우만
         speech = f"평소처럼 {target}%까지만 채우면 충분해요."
     elif reason == "long_trip":
         speech = f"{spoken_km(payload.next_trip_km)}를 가시려면 {target}%까지 채우세요."
@@ -95,6 +105,7 @@ def _response(
         speech = "100%로 채워도 도착할 때 여유가 부족해요. 가는 길에 급속충전을 한 번 하세요."
     if payload.soc_now is not None and payload.soc_now >= target:
         speech += f" 지금 {spoken_percent(payload.soc_now)}라 더 채우지 않아도 돼요."
+    speech += ask
     return CarChargeTargetResponse(
         soc_target=target,
         reason=reason,

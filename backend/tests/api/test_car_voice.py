@@ -1436,7 +1436,7 @@ def test_charge_target_ignores_a_distance_the_driver_did_not_say(client, fake):
     content = tool_results(fake, 1)[0]["content"]
     assert (content["soc_target"], content["reason"], content["next_trip_km"]) == (
         80,
-        "daily",
+        "unknown",
         None,
     )
     assert "280" not in json.dumps(content)
@@ -1445,7 +1445,9 @@ def test_charge_target_ignores_a_distance_the_driver_did_not_say(client, fake):
     )
     # 지어낸 280km와 95%는 근거가 없어 서버 문장으로 돌아간다.
     assert body["fallback"] is True
-    assert body["speech"] == "평소처럼 80%까지만 채우면 충분해요."
+    assert body["speech"] == (
+        "다음 이동 거리를 몰라서 평소처럼 80%를 권해요. 멀리 가시면 거리를 말씀해 주세요."
+    )
 
 
 def test_charge_target_distance_from_an_earlier_driver_turn(client, fake):
@@ -1472,16 +1474,20 @@ def test_charge_target_percent_must_be_computed(client, fake):
     assert body["speech"] == "280킬로미터를 가시려면 95%까지 채우세요."
 
 
-def test_charge_target_without_efficiency_is_the_daily_target(client, fake):
+def test_charge_target_without_efficiency_is_unknown(client, fake):
     fake.replies = [
         use("recommend_charge_target", {"next_trip_km": 280}),
-        say("평소처럼 80%까지만 채우면 충분해요. 여유는 20%p로 잡아요."),
+        say("전비를 몰라서 평소처럼 80%를 권해요. 여유는 20%p로 잡아요."),
     ]
 
     body = ask(client, register(client), "280킬로 가면 몇 퍼센트?").json()
 
     content = tool_results(fake, 1)[0]["content"]
-    assert (content["soc_target"], content["reason"], content["needed_soc"]) == (80, "daily", None)
+    assert (content["soc_target"], content["reason"], content["needed_soc"]) == (
+        80,
+        "unknown",
+        None,
+    )
     assert (content["daily_soc"], content["reserve_soc"]) == (80, 20)
     assert body["fallback"] is False
 

@@ -26,10 +26,28 @@ def test_without_distance_or_efficiency_it_is_the_daily_target(client, body):
 
     assert response.status_code == 200
     out = response.json()
-    assert (out["soc_target"], out["reason"], out["needed_soc"]) == (80, "daily", None)
+    assert (out["soc_target"], out["reason"], out["needed_soc"]) == (80, "unknown", None)
     assert out["needs_charge_on_route"] is False
-    assert out["speech"] == "평소처럼 80%까지만 채우면 충분해요."
+    assert "충분" not in out["speech"]
     assert "평소 기준 80%" in out["assumptions"][0]
+
+
+def test_unknown_distance_asks_for_it_instead_of_saying_enough(client):
+    no_distance = client.post(URL, json={"battery_capacity_wh": 40_000}).json()["speech"]
+    no_efficiency = client.post(
+        URL, json={"battery_capacity_wh": 40_000, "next_trip_km": 330}
+    ).json()["speech"]
+    parked_full = client.post(URL, json={"battery_capacity_wh": 40_000, "soc_now": 85}).json()
+
+    assert no_distance == (
+        "다음 이동 거리를 몰라서 평소처럼 80%를 권해요. 멀리 가시면 거리를 말씀해 주세요."
+    )
+    assert no_efficiency == "전비를 몰라서 평소처럼 80%를 권해요."
+    # 잔량 문장은 질문 앞에 둔다(질문으로 끝나야 운전자가 바로 답한다).
+    assert parked_full["speech"] == (
+        "다음 이동 거리를 몰라서 평소처럼 80%를 권해요. 지금 85%라 더 채우지 않아도 돼요. "
+        "멀리 가시면 거리를 말씀해 주세요."
+    )
 
 
 def test_assumption_names_what_is_missing(client):
@@ -116,7 +134,7 @@ def test_insufficient_speech_tells_reserve_from_running_out(client):
     ],
 )
 def test_soc_now_at_or_above_the_target_says_no_charge_needed(client, soc_now, suffix):
-    out = client.post(URL, json={"battery_capacity_wh": 40_000, "soc_now": soc_now}).json()
+    out = post(client, next_trip_km=100, soc_now=soc_now).json()  # 50 + 20 → 평소 80
 
     assert out["speech"] == "평소처럼 80%까지만 채우면 충분해요." + suffix
     assert out["soc_target"] == 80
@@ -126,7 +144,7 @@ def test_targets_come_from_settings(client, monkeypatch):
     monkeypatch.setenv("CAR_TARGET_DAILY", "90")
     monkeypatch.setenv("CAR_TARGET_RESERVE", "10")
 
-    daily = client.post(URL, json={"battery_capacity_wh": 40_000}).json()
+    daily = post(client, next_trip_km=100).json()  # 50 + 10 → 평소 90
     trip = post(client, next_trip_km=170).json()  # 85 + 10 = 95
 
     assert (daily["soc_target"], daily["speech"]) == (90, "평소처럼 90%까지만 채우면 충분해요.")
