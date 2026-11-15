@@ -50,6 +50,7 @@ from .car_plan_service import (
 )
 from .car_route_service import find_along_route, stale_sentence
 from .car_savings import record_pending, summarize
+from .car_target_service import compute_charge_target
 from .deps import get_public_prices
 from .months import month_bounds, month_of
 from .routes.chargers import (
@@ -62,8 +63,10 @@ from .routes.chargers import (
     status_age,
 )
 from .schemas import (
+    MAX_NEXT_TRIP_KM,
     AddWaypointAction,
     AskAction,
+    CarChargeTargetRequest,
     CarLeakCheckRequest,
     CarPlanRequest,
     CarRouteChargersRequest,
@@ -115,6 +118,8 @@ SYSTEM_PROMPT = """너는 전기차 충전 도우미 '와트잇'이다. 운전 �
 - 아낀 금액, 절약 리포트는 savings_summary.
 - 장거리 이동 중 가는 길에 충전할 곳, 목적지까지 배터리가 버티는지는
   find_chargers_along_route. 목적지는 서버가 채운다.
+- 몇 %까지 충전하면 되는지는 recommend_charge_target. 운전자가 다음에 갈 거리를 직접 말했을
+  때만 그 거리를 next_trip_km에 넣고, 아니면 비워 둔다.
 - 배터리 잔량, 배터리 용량, 위치는 서버가 채우므로 운전자에게 묻지 않는다.
 - 앞에서 말한 시각이나 금액을 다시 말할 때도 도구를 다시 불러 그 결과로 말한다.
 
@@ -225,6 +230,27 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "recommend_charge_target",
+        "description": (
+            "배터리를 몇 %까지 채우면 되는지 알려 준다. 평소에는 80%, 다음 이동이 길면 그 "
+            "거리에 맞춰 올린다. 배터리 용량, 전비, 잔량은 서버가 채운다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "next_trip_km": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 3000,
+                    "description": (
+                        "운전자가 말한 다음 이동 거리(km). 운전자가 거리를 말하지 않았으면 "
+                        "넣지 않는다."
+                    ),
+                }
+            },
+        },
+    },
+    {
         "name": "savings_summary",
         "description": "와트잇 추천을 따라 이 차가 아낀 금액(이번 달, 올해, 전체)을 알려 준다.",
         "input_schema": {
@@ -270,6 +296,12 @@ class _RouteInput(BaseModel):
     corridor_m: int = Field(default=3000, ge=500, le=10_000)
 
 
+class _TargetInput(BaseModel):
+    next_trip_km: float | None = Field(
+        default=None, gt=0, le=MAX_NEXT_TRIP_KM, allow_inf_nan=False
+    )
+
+
 class _SummaryInput(BaseModel):
     month: str | None = Field(default=None, max_length=7)
 
@@ -313,6 +345,9 @@ class VoiceTools:
     # 운전자가 말한 출발 시각 후보 (시, 분). plan_charge의 출발 시각이 여기 있을 때만
     # stated로 기록한다. Claude가 고른 시각(평소 시각, 지어낸 시각)은 계산에만 쓴다.
     stated_times: set[Clock] = field(default_factory=set)
+    # 운전자 말에 나온 거리(m, 반올림한 모양 포함). recommend_charge_target의 거리는 여기
+    # 있을 때만 쓴다. Claude가 지어낸 거리가 계산과 숫자 검증의 근거가 되지 않게 한다.
+    stated_distances_m: set[int] = field(default_factory=set)
 
     def run(self, name: str, raw: dict[str, Any]) -> ToolOutcome:
         self.used.append(name)
@@ -322,6 +357,7 @@ class VoiceTools:
             "leak_check": self._leak,
             "savings_summary": self._summary,
             "find_chargers_along_route": self._along_route,
+            "recommend_charge_target": self._target,
         }
         if name not in handler:
             return ToolOutcome({"error": "없는 도구입니다."}, is_error=True)
@@ -336,6 +372,11 @@ class VoiceTools:
             return ToolOutcome({"error": str(exc)}, is_error=True, speech=str(exc))
         except HTTPException as exc:
             return ToolOutcome({"error": str(exc.detail)}, is_error=True)
+        except ArithmeticError as exc:
+            # 입력 검증을 지나온 극단값의 계산 오류(OverflowError 등). 운전 중이라 500 대신
+            # 도구 오류로 돌려 대화를 이어 간다(마지막 서버 문장이나 일반 문장으로 fallback).
+            logger.warning("음성 대화 도구 %s 계산 실패: %s", name, type(exc).__name__)
+            return ToolOutcome({"error": "지금은 계산할 수 없습니다."}, is_error=True)
         except DomainError as exc:
             # 요금 설정 오류 문구에는 서버 경로가 들어갈 수 있어 종류만 알린다.
             logger.warning("음성 대화 도구 %s 계산 실패: %s", name, type(exc).__name__)
@@ -563,6 +604,42 @@ class VoiceTools:
         action = result.actions[0] if result.actions else None
         return ToolOutcome(content, speech=result.speech, action=action)
 
+    def _target(self, raw: dict[str, Any]) -> ToolOutcome:
+        args = _TargetInput.model_validate(raw)
+        ctx = self.context
+        km = args.next_trip_km
+        ignored = km is not None and _meters(km) not in self.stated_distances_m
+        # "몇 %까지 채우나"는 다음 충전 때의 질문이다. 주행 중 잔량(soc_now)은 그때의 잔량이
+        # 아니다. 내비 도착 예상 잔량이 있으면 그 값으로 "도착하면 N%라"고 말하고, 주행 중인데
+        # 도착 잔량을 모르면 잔량 문장을 붙이지 않는다. 주행 중이 아니면 지금 잔량이다.
+        if ctx.arrival_soc is not None:
+            soc, when = ctx.arrival_soc, "arrival"
+        elif ctx.remain_distance_m is not None:
+            soc, when = None, "now"
+        else:
+            soc, when = ctx.soc_now, "now"
+        result = compute_charge_target(
+            CarChargeTargetRequest(
+                battery_capacity_wh=ctx.battery_capacity_wh,
+                efficiency_km_per_kwh=ctx.efficiency_km_per_kwh,
+                next_trip_km=None if ignored else km,
+                soc_now=soc,
+            ),
+            soc_when=when,
+        )
+        content = result.model_dump(mode="json")
+        if ignored:
+            # 지어낸 거리는 결과에 넣지 않는다(넣으면 숫자 검증의 근거가 된다).
+            content["assumptions"].append(
+                "운전자가 말한 거리가 아니어서 다음 이동 거리로 쓰지 않았어요."
+            )
+        content["next_trip_km"] = None if ignored else km
+        # "여유 20%p", "평소 80%"도 근거가 있게 기준을 함께 준다.
+        settings = get_settings()
+        content["reserve_soc"] = settings.car_target_reserve
+        content["daily_soc"] = settings.car_target_daily
+        return ToolOutcome(content, speech=result.speech)
+
     def _summary(self, raw: dict[str, Any]) -> ToolOutcome:
         args = _SummaryInput.model_validate(raw)
         month = args.month or month_of(self.now)
@@ -753,6 +830,18 @@ def driver_stated_times(
             at = usual.depart_at.astimezone(KST)
             times.add((at.hour, at.minute))
     return times
+
+
+def driver_stated_distances(payload: CarVoiceRequest) -> set[int]:
+    """이번 말과 앞선 운전자 턴에 나온 거리(m). 숫자 검증의 거리 규칙과 같다."""
+    sources = NumberSources()
+    for text in [payload.text or ""] + [t.text for t in payload.history if t.role == "driver"]:
+        sources.add_spoken(text, times=False)
+    return sources.distance
+
+
+def _meters(km: float) -> int:
+    return int((Decimal(repr(km)) * 1000).quantize(Decimal(1), rounding="ROUND_HALF_UP"))
 
 
 @dataclass
@@ -1094,6 +1183,7 @@ def converse(
         context=payload.context,
         now=now,
         stated_times=driver_stated_times(payload, usual, now),
+        stated_distances_m=driver_stated_distances(payload),
     )
     system = _system_prompt(payload, now, usual)
     messages = build_messages(payload.history, text)

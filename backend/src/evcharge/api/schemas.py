@@ -415,6 +415,10 @@ class ChatResponse(BaseModel):
 
 
 MIN_BATTERY_CAPACITY_WH = 1000
+# 전비(km/kWh) 하한. 실제 전기차는 1을 넘는다(겨울 고속 주행 대형차도 2 안팎). gt=0이면
+# 5e-324 같은 값이 나눗셈에서 OverflowError(500)를 낸다. 경로 위 충전소·음성 context·목표
+# 충전량이 같은 하한을 쓴다.
+MIN_EFFICIENCY_KM_PER_KWH = 0.5
 
 
 class CarPlanRequest(BaseModel):
@@ -606,7 +610,9 @@ class CarVoiceContext(BaseModel):
     # 내비 경유지(남은 것, 순서대로). 없으면 현재 위치에서 목적지까지 직선 근사다.
     route_points: list[LatLng] = Field(default_factory=list, max_length=ROUTE_POINTS_MAX)
     # Vehicle SDK 충전 후 평균 전비(km/kWh). 경로 위 충전소 잔량 추정에 쓴다.
-    efficiency_km_per_kwh: float | None = Field(default=None, gt=0, le=20, allow_inf_nan=False)
+    efficiency_km_per_kwh: float | None = Field(
+        default=None, ge=MIN_EFFICIENCY_KM_PER_KWH, le=20, allow_inf_nan=False
+    )
 
     @field_validator("arrival_at")
     @classmethod
@@ -711,7 +717,9 @@ class CarRouteChargersRequest(BaseModel):
     reserve_soc: float = Field(default=15, ge=0, le=100, allow_inf_nan=False)
     # Vehicle SDK의 충전 후 평균 전비(getSinceChargeEvEfficiency, km/kWh)와 배터리 용량(Wh).
     # 도착 예상 잔량이나 남은 거리가 없을 때 이 둘로 잔량을 추정한다.
-    efficiency_km_per_kwh: float | None = Field(default=None, gt=0, le=20, allow_inf_nan=False)
+    efficiency_km_per_kwh: float | None = Field(
+        default=None, ge=MIN_EFFICIENCY_KM_PER_KWH, le=20, allow_inf_nan=False
+    )
     battery_capacity_wh: float | None = Field(
         default=None, ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
     )
@@ -817,6 +825,47 @@ class CarDepartureSuggestion(BaseModel):
 
 
 # ── 시동 ON 브리핑 (BE-9) ───────────────────────────────────────────────────
+
+
+# ── 목표 충전량 추천 (BE-11) ─────────────────────────────────────────────
+
+# 다음 이동 거리 상한(km). 경로 위 충전소 찾기의 전체 경로 상한(1,000km)의 세 배로, 남은 거리
+# 상한(remain_distance_m)과 같다. 그보다 먼 이동은 계산해도 "가는 길에 충전"으로 같다.
+MAX_NEXT_TRIP_KM = 3_000
+
+ChargeTargetReason = Literal["unknown", "daily", "long_trip", "insufficient"]
+
+
+class CarChargeTargetRequest(BaseModel):
+    """몇 %까지 채우면 되는지. 공개 계산 API다(기기 토큰 없음, DB 없음)."""
+
+    battery_capacity_wh: float = Field(
+        ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
+    )
+    # Vehicle SDK getSinceChargeEvEfficiency(충전 후 평균 전비, km/kWh)
+    efficiency_km_per_kwh: float | None = Field(
+        default=None, ge=MIN_EFFICIENCY_KM_PER_KWH, le=20, allow_inf_nan=False
+    )
+    # 다음 이동 거리(km): 내비 목적지 남은 거리나 운전자가 말한 거리
+    next_trip_km: float | None = Field(
+        default=None, gt=0, le=MAX_NEXT_TRIP_KM, allow_inf_nan=False
+    )
+    soc_now: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+
+
+class CarChargeTargetResponse(BaseModel):
+    # 차 설정의 충전 한도나 계획(BE-1)의 soc_target에 넣을 값. 평소 목표~100, 5% 단위
+    soc_target: int
+    # unknown: 거리나 전비를 몰라 평소 목표 / daily: 계산해 보니 평소 목표로 충분 /
+    # long_trip: 다음 이동 때문에 올림 /
+    # insufficient: 100%로도 필요 잔량 + 여유를 못 채움
+    reason: ChargeTargetReason
+    # 다음 이동에 드는 잔량(%, 소수 첫째 자리). 거리나 전비가 없으면 null. 100을 넘을 수 있다.
+    needed_soc: float | None
+    # 100%로도 모자라 가는 길에 충전해야 함(경로 위 충전소 찾기로 이어진다)
+    needs_charge_on_route: bool
+    speech: str
+    assumptions: list[str]
 
 
 class CarBriefingRequest(BaseModel):

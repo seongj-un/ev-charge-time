@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     # 알려 준다. 이상이면 "오늘 밤은 충전 안 해도 돼요".
     car_briefing_low_soc: float = Field(default=50, gt=0, le=100)
 
+    # 와트잇 BE-11 목표 충전량 추천(POST /api/car/charge-target).
+    # - 평소 목표(%). 다음 이동이 짧거나 거리·전비를 모르면 이 값이고, 추천의 하한이다.
+    # - 도착 여유(%p). 다음 이동에 필요한 잔량에 더한다. 도착해서도 이만큼 남게 한다.
+    car_target_daily: int = Field(default=80, ge=1, le=100)
+    car_target_reserve: int = Field(default=20, ge=0, le=100)
+
     # 기기 발급 한도의 IP 키를 만드는 서버 비밀값(HMAC-SHA256). 솔트 없는 sha256은
     # IPv4 전체(약 43억 개)를 대입하면 원래 IP를 되찾을 수 있다. 이 값을 두면 비밀값
     # 없이는 되찾을 수 없다. 비어 있으면 sha256으로 동작하고 기동 후 처음 쓸 때 경고를

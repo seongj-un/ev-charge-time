@@ -682,6 +682,7 @@ def test_driver_words_stay_out_of_the_system_prompt(client, fake):
         "find_chargers",
         "leak_check",
         "find_chargers_along_route",
+        "recommend_charge_target",
         "savings_summary",
     ]
     assert "2026-11-16 18:00 (월요일" in call["system"]
@@ -1396,3 +1397,151 @@ def test_along_route_tool_carries_status_age_without_an_offset(client, fake, db_
     )
     assert "충전기 상태는 25분 전 정보예요. 경유지로 넣을까요?" in content["speech"]
     assert body["fallback"] is False
+
+
+# ── 목표 충전량 추천 도구 (BE-11) ─────────────────────────────────────────
+
+# 전비 5km/kWh x 77.4kWh = 100%로 387km
+TARGET_CONTEXT = {**CONTEXT, "efficiency_km_per_kwh": 5}
+
+
+def test_charge_target_uses_the_distance_the_driver_said(client, fake):
+    fake.replies = [
+        use("recommend_charge_target", {"next_trip_km": 280}),
+        say("280킬로미터를 가시려면 95%까지 채우세요. 필요한 건 72.4%예요."),
+    ]
+
+    text = "내일 280킬로 가는데 몇 퍼센트까지 충전해?"
+    body = ask(client, register(client), text, context=TARGET_CONTEXT).json()
+
+    content = tool_results(fake, 1)[0]["content"]
+    assert (content["soc_target"], content["reason"], content["needed_soc"]) == (
+        95,
+        "long_trip",
+        72.4,
+    )
+    assert content["next_trip_km"] == 280
+    assert content["speech"] == "280킬로미터를 가시려면 95%까지 채우세요."
+    assert body["fallback"] is False
+
+
+def test_charge_target_ignores_a_distance_the_driver_did_not_say(client, fake):
+    fake.replies = [
+        use("recommend_charge_target", {"next_trip_km": 280}),
+        say("280킬로미터를 가시려면 95%까지 채우세요."),
+    ]
+
+    body = ask(client, register(client), "몇 퍼센트까지 충전해?", context=TARGET_CONTEXT).json()
+
+    content = tool_results(fake, 1)[0]["content"]
+    assert (content["soc_target"], content["reason"], content["next_trip_km"]) == (
+        80,
+        "unknown",
+        None,
+    )
+    assert "280" not in json.dumps(content)
+    assert content["assumptions"][-1] == (
+        "운전자가 말한 거리가 아니어서 다음 이동 거리로 쓰지 않았어요."
+    )
+    # 지어낸 280km와 95%는 근거가 없어 서버 문장으로 돌아간다.
+    assert body["fallback"] is True
+    assert body["speech"] == (
+        "다음 이동 거리를 몰라서 평소처럼 80%를 권해요. 멀리 가시면 거리를 말씀해 주세요."
+    )
+
+
+def test_charge_target_distance_from_an_earlier_driver_turn(client, fake):
+    fake.replies = [use("recommend_charge_target", {"next_trip_km": 280}), say("95%까지요.")]
+    history = [
+        {"role": "driver", "text": "내일 부산까지 280km 가"},
+        {"role": "wattit", "text": "알겠어요."},
+    ]
+
+    ask(client, register(client), "그럼 몇 퍼센트?", context=TARGET_CONTEXT, history=history)
+
+    assert tool_results(fake, 1)[0]["content"]["soc_target"] == 95
+
+
+def test_charge_target_percent_must_be_computed(client, fake):
+    fake.replies = [
+        use("recommend_charge_target", {"next_trip_km": 280}),
+        say("280킬로미터를 가시려면 90%까지 채우세요."),
+    ]
+
+    body = ask(client, register(client), "280킬로 가면 몇 퍼센트?", context=TARGET_CONTEXT).json()
+
+    assert body["fallback"] is True
+    assert body["speech"] == "280킬로미터를 가시려면 95%까지 채우세요."
+
+
+def test_charge_target_without_efficiency_is_unknown(client, fake):
+    fake.replies = [
+        use("recommend_charge_target", {"next_trip_km": 280}),
+        say("전비를 몰라서 평소처럼 80%를 권해요. 여유는 20%p로 잡아요."),
+    ]
+
+    body = ask(client, register(client), "280킬로 가면 몇 퍼센트?").json()
+
+    content = tool_results(fake, 1)[0]["content"]
+    assert (content["soc_target"], content["reason"], content["needed_soc"]) == (
+        80,
+        "unknown",
+        None,
+    )
+    assert (content["daily_soc"], content["reserve_soc"]) == (80, 20)
+    assert body["fallback"] is False
+
+
+def test_charge_target_distance_in_a_wattit_turn_is_not_the_drivers(client, fake):
+    fake.replies = [use("recommend_charge_target", {"next_trip_km": 280}), say("80%예요.")]
+    history = [
+        {"role": "driver", "text": "부산 가"},
+        {"role": "wattit", "text": "부산까지 280km예요."},  # 클라이언트가 보낸 턴, 근거 아님
+    ]
+
+    ask(client, register(client), "그럼 몇 퍼센트?", context=TARGET_CONTEXT, history=history)
+
+    assert tool_results(fake, 1)[0]["content"]["next_trip_km"] is None
+
+
+@pytest.mark.parametrize(
+    ("extra", "suffix"),
+    [
+        # 주행 중, 도착 예상 55%: 도착 잔량 기준(80 미만이라 덧붙이지 않음)
+        ({"remain_distance_m": 150_000, "arrival_soc": 55}, ""),
+        # 주행 중, 도착 예상 82%: "도착하면"
+        (
+            {"remain_distance_m": 150_000, "arrival_soc": 82},
+            " 도착하면 82%라 더 채우지 않아도 돼요.",
+        ),
+        # 주행 중인데 도착 잔량을 모름: 지금 85%로 말하지 않는다
+        ({"remain_distance_m": 150_000}, ""),
+        # 주행 중이 아님(주차): 지금 잔량
+        ({}, " 지금 85%라 더 채우지 않아도 돼요."),
+    ],
+)
+def test_charge_target_soc_sentence_uses_the_charge_time_soc(client, fake, extra, suffix):
+    fake.replies = [use("recommend_charge_target", {"next_trip_km": 100}), say("알겠어요.")]
+    context = {**TARGET_CONTEXT, "soc_now": 85, **extra}
+
+    ask(client, register(client), "내일 100킬로 가는데 몇 퍼센트까지 채워?", context=context)
+
+    content = tool_results(fake, 1)[0]["content"]
+    assert content["reason"] == "daily"  # 100km = 25.8% + 20 → 평소 80
+    assert content["speech"] == "평소처럼 80%까지만 채우면 충분해요." + suffix
+
+
+def test_a_calculation_error_inside_a_tool_is_a_tool_error(client, fake, monkeypatch):
+    from evcharge.api import car_voice_service
+
+    def overflow(*args, **kwargs):
+        raise OverflowError("int too large to convert to float")
+
+    monkeypatch.setattr(car_voice_service, "compute_charge_target", overflow)
+    fake.replies = [use("recommend_charge_target"), say("확인할 수 없어요.")]
+
+    response = ask(client, register(client), "몇 퍼센트까지 채워?", context=TARGET_CONTEXT)
+
+    assert response.status_code == 200
+    assert tool_results(fake, 1)[0]["is_error"] is True
+    assert tool_results(fake, 1)[0]["content"] == {"error": "지금은 계산할 수 없습니다."}
