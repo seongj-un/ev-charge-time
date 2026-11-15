@@ -1,9 +1,10 @@
 """하루 시나리오 (BE-12): 차량 앱이 실제로 부르는 순서대로 하루를 따라간다.
 
 기기 발급 → 시동 ON 브리핑 → 귀가 중 음성 브리핑(가짜 Claude) → "7시 반" → 계획(saving_id)
-→ 출발 기록 → 확정 → 월 합계 → 출발 기록이 쌓인 뒤 다음 귀가 브리핑이 "내일도 오전 7시
-30분" 제안. 단계마다 숫자가 앞 단계, 그리고 같은 입력의 공개 계산 API(`car/plan`)와 맞는지
-본다. 시계는 고정한다(`routes.car.now_kst`). Claude는 가짜 클라이언트다.
+→ 다음 시동 ON에 확정 → 월 합계 → 그날 첫 P 해제만 출발 기록 → 출발 기록이 쌓인 뒤 다음
+귀가 브리핑이 "내일도 오전 7시 30분" 제안. 단계마다 숫자가 앞 단계, 그리고 같은 입력의 공개
+계산 API(`car/plan`)와 맞는지 본다. 시계는 고정한다(`routes.car.now_kst`). Claude는 가짜
+클라이언트다.
 """
 
 from __future__ import annotations
@@ -188,25 +189,17 @@ def test_a_day_with_the_car_app(client, clock, fake, db_session):
     assert (tool_result["soc_start"], tool_result["depart_at"]) == (25, "2026-11-18 07:30")
 
     # 운전자가 말한 07:30은 출발 학습에 "말한 시각"으로 남는다(그 날 이후의 제안 근거)
+    assert departures_of(db_session, "stated") == [kst(WED, 7, 30)]
     suggest = client.get("/api/car/departures/suggest?date=2026-11-19", headers=headers).json()
     assert suggest["basis_count"] == 1
     assert suggest["confidence"] is None  # 1건으로는 제안하지 않는다
 
-    # ── 5. 다음 날 집 출발(그날 첫 P 해제) 기록 (수 07:31) ────────────────────
-    reporter = DepartureReporter(client, headers)
-    clock.now = kst(WED, 7, 31)
-    departed = reporter.park_released(kst(WED, 7, 31))
-    assert departed.status_code == 200  # 30분 안의 "말한 07:30"을 실제 출발로 바꾼다
-    assert departed.json()["merged"] is True
-    assert departed.json()["source"] == "observed"
-
-    # 같은 날 두 번째 P 해제(회사에서 점심 외출 12:10)는 보내지 않는다
-    clock.now = kst(WED, 12, 10)
-    assert reporter.park_released(kst(WED, 12, 10)) is None
-    assert departures_of(db_session, "observed") == [kst(WED, 7, 31)]
-
-    # ── 6. 예약 충전이 돌았음을 확인하고 절감 확정 (수 08:00) ────────────────
-    clock.now = kst(WED, 8, 0)
+    # ── 5. 다음 시동 ON에 밤사이 충전을 확인하고 절감 확정 (수 07:25) ─────────
+    # 시동이 꺼진 동안 앱은 돌지 않는다. 주차 때 잔량(도착 25%)을 저장해 두고, 다음 시동 때
+    # 잔량이 그보다 올라 있으면 예약대로 충전됐다고 보고 확정한다.
+    parked_soc, soc_at_next_ignition = context["arrival_soc"], 80
+    clock.now = kst(WED, 7, 25)
+    assert soc_at_next_ignition > parked_soc
     confirmed = client.post(f"/api/car/savings/{plan_saving_id}/confirm", headers=headers)
     assert confirmed.status_code == 200
     assert confirmed.json()["savings_won"] == plan_savings
@@ -217,6 +210,20 @@ def test_a_day_with_the_car_app(client, clock, fake, db_session):
     assert (summary["month_won"], summary["month_count"]) == (plan_savings, 1)
     assert summary["year_won"] == summary["total_won"] == plan_savings
     assert f"{plan_savings:,}원" in summary["speech"]
+
+    # ── 6. 집 출발(그날 첫 P 해제) 기록 (수 07:31) ───────────────────────────
+    reporter = DepartureReporter(client, headers)
+    clock.now = kst(WED, 7, 31)
+    departed = reporter.park_released(kst(WED, 7, 31))
+    assert departed.status_code == 200  # 30분 안의 "말한 07:30"을 실제 출발로 바꾼다
+    assert departed.json()["merged"] is True
+    assert departed.json()["source"] == "observed"
+    assert departures_of(db_session, "stated") == []
+
+    # 같은 날 두 번째 P 해제(회사에서 점심 외출 12:10)는 보내지 않는다
+    clock.now = kst(WED, 12, 10)
+    assert reporter.park_released(kst(WED, 12, 10)) is None
+    assert departures_of(db_session, "observed") == [kst(WED, 7, 31)]
 
     # ── 7. 지난주 평일 출발 기록 4건 더 (앱이 쌓아 둔 것을 보낸다) ─────────
     clock.now = kst(WED, 8, 5)
@@ -287,8 +294,9 @@ def test_a_day_with_the_car_app(client, clock, fake, db_session):
             "end_hhmm": expected["reservation"]["end_hhmm"],
         }
     ]
-    # 평소 시각 질문에 "응"이라고 한 07:30은 말한 시각으로 남지만(목요일), 실제 출발이 3건
-    # 이상이면 제안은 실제 출발만 센다.
+    # 평소 시각 질문에 "응"이라고 한 07:30은 말한 시각으로 남는다(목요일 1건). 실제 출발이
+    # 3건 이상이면 제안은 실제 출발만 센다.
+    assert departures_of(db_session, "stated") == [kst(THU, 7, 30)]
     suggest = client.get("/api/car/departures/suggest?date=2026-11-20", headers=headers).json()
     assert suggest["suggested_depart_at"] == "2026-11-20T07:30:00+09:00"
     assert (suggest["confidence"], suggest["basis_count"]) == ("high", 5)
