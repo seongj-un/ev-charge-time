@@ -372,6 +372,11 @@ class VoiceTools:
             return ToolOutcome({"error": str(exc)}, is_error=True, speech=str(exc))
         except HTTPException as exc:
             return ToolOutcome({"error": str(exc.detail)}, is_error=True)
+        except ArithmeticError as exc:
+            # 입력 검증을 지나온 극단값의 계산 오류(OverflowError 등). 운전 중이라 500 대신
+            # 도구 오류로 돌려 대화를 이어 간다(마지막 서버 문장이나 일반 문장으로 fallback).
+            logger.warning("음성 대화 도구 %s 계산 실패: %s", name, type(exc).__name__)
+            return ToolOutcome({"error": "지금은 계산할 수 없습니다."}, is_error=True)
         except DomainError as exc:
             # 요금 설정 오류 문구에는 서버 경로가 들어갈 수 있어 종류만 알린다.
             logger.warning("음성 대화 도구 %s 계산 실패: %s", name, type(exc).__name__)

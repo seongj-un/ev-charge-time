@@ -205,3 +205,47 @@ def test_needing_exactly_100_percent_runs_out_even_without_a_reserve(client, mon
     out = post(client, next_trip_km=200).json()  # 정확히 100%
 
     assert (out["reason"], out["needs_charge_on_route"]) == ("insufficient", True)
+
+
+@pytest.mark.parametrize("efficiency", [5e-324, 1e-300, 0.49])
+def test_tiny_efficiency_is_422_not_500(client, efficiency):
+    # gt=0만 있을 때는 5e-324 x 3,000km가 OverflowError(500)를 냈다.
+    response = post(client, efficiency_km_per_kwh=efficiency, next_trip_km=3000)
+
+    assert response.status_code == 422
+
+
+def test_lowest_efficiency_still_computes(client):
+    out = post(client, efficiency_km_per_kwh=0.5, next_trip_km=3000).json()
+
+    assert (out["reason"], out["needed_soc"]) == ("insufficient", 15000.0)
+
+
+@pytest.mark.parametrize(
+    ("url", "body"),
+    [
+        (
+            "/api/car/chargers/along-route",
+            {
+                "origin": {"lat": 35.0, "lng": 126.8},
+                "destination": {"lat": 35.5, "lng": 126.8},
+                "soc_now": 60,
+                "battery_capacity_wh": 77_400,
+                "efficiency_km_per_kwh": 5e-324,
+            },
+        ),
+        (
+            "/api/car/voice",
+            {
+                "text": "몇 퍼센트까지?",
+                "context": {
+                    "soc_now": 60,
+                    "battery_capacity_wh": 77_400,
+                    "efficiency_km_per_kwh": 5e-324,
+                },
+            },
+        ),
+    ],
+)
+def test_tiny_efficiency_is_422_on_the_other_endpoints(client, url, body):
+    assert client.post(url, json=body).status_code == 422

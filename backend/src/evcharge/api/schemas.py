@@ -415,6 +415,10 @@ class ChatResponse(BaseModel):
 
 
 MIN_BATTERY_CAPACITY_WH = 1000
+# 전비(km/kWh) 하한. 실제 전기차는 1을 넘는다(겨울 고속 주행 대형차도 2 안팎). gt=0이면
+# 5e-324 같은 값이 나눗셈에서 OverflowError(500)를 낸다. 경로 위 충전소·음성 context·목표
+# 충전량이 같은 하한을 쓴다.
+MIN_EFFICIENCY_KM_PER_KWH = 0.5
 
 
 class CarPlanRequest(BaseModel):
@@ -606,7 +610,9 @@ class CarVoiceContext(BaseModel):
     # 내비 경유지(남은 것, 순서대로). 없으면 현재 위치에서 목적지까지 직선 근사다.
     route_points: list[LatLng] = Field(default_factory=list, max_length=ROUTE_POINTS_MAX)
     # Vehicle SDK 충전 후 평균 전비(km/kWh). 경로 위 충전소 잔량 추정에 쓴다.
-    efficiency_km_per_kwh: float | None = Field(default=None, gt=0, le=20, allow_inf_nan=False)
+    efficiency_km_per_kwh: float | None = Field(
+        default=None, ge=MIN_EFFICIENCY_KM_PER_KWH, le=20, allow_inf_nan=False
+    )
 
     @field_validator("arrival_at")
     @classmethod
@@ -711,7 +717,9 @@ class CarRouteChargersRequest(BaseModel):
     reserve_soc: float = Field(default=15, ge=0, le=100, allow_inf_nan=False)
     # Vehicle SDK의 충전 후 평균 전비(getSinceChargeEvEfficiency, km/kWh)와 배터리 용량(Wh).
     # 도착 예상 잔량이나 남은 거리가 없을 때 이 둘로 잔량을 추정한다.
-    efficiency_km_per_kwh: float | None = Field(default=None, gt=0, le=20, allow_inf_nan=False)
+    efficiency_km_per_kwh: float | None = Field(
+        default=None, ge=MIN_EFFICIENCY_KM_PER_KWH, le=20, allow_inf_nan=False
+    )
     battery_capacity_wh: float | None = Field(
         default=None, ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
     )
@@ -835,7 +843,9 @@ class CarChargeTargetRequest(BaseModel):
         ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
     )
     # Vehicle SDK getSinceChargeEvEfficiency(충전 후 평균 전비, km/kWh)
-    efficiency_km_per_kwh: float | None = Field(default=None, gt=0, le=20, allow_inf_nan=False)
+    efficiency_km_per_kwh: float | None = Field(
+        default=None, ge=MIN_EFFICIENCY_KM_PER_KWH, le=20, allow_inf_nan=False
+    )
     # 다음 이동 거리(km): 내비 목적지 남은 거리나 운전자가 말한 거리
     next_trip_km: float | None = Field(
         default=None, gt=0, le=MAX_NEXT_TRIP_KM, allow_inf_nan=False

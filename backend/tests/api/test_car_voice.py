@@ -1529,3 +1529,19 @@ def test_charge_target_soc_sentence_uses_the_charge_time_soc(client, fake, extra
     content = tool_results(fake, 1)[0]["content"]
     assert content["reason"] == "daily"  # 100km = 25.8% + 20 → 평소 80
     assert content["speech"] == "평소처럼 80%까지만 채우면 충분해요." + suffix
+
+
+def test_a_calculation_error_inside_a_tool_is_a_tool_error(client, fake, monkeypatch):
+    from evcharge.api import car_voice_service
+
+    def overflow(*args, **kwargs):
+        raise OverflowError("int too large to convert to float")
+
+    monkeypatch.setattr(car_voice_service, "compute_charge_target", overflow)
+    fake.replies = [use("recommend_charge_target"), say("확인할 수 없어요.")]
+
+    response = ask(client, register(client), "몇 퍼센트까지 채워?", context=TARGET_CONTEXT)
+
+    assert response.status_code == 200
+    assert tool_results(fake, 1)[0]["is_error"] is True
+    assert tool_results(fake, 1)[0]["content"] == {"error": "지금은 계산할 수 없습니다."}
