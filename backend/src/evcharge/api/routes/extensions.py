@@ -82,7 +82,10 @@ def get_solar_service() -> SolarForecastService:
 def solar_forecast(
     region: str = Query(
         max_length=32,
-        description="시도 이름. 대회 지역은 '전남'·'나주'·'빛가람' 모두 같은 격자를 가리킨다.",
+        description=(
+            "시도 이름. 기본 지역은 '대전'('대전광역시'·'대전시'도 같은 격자). "
+            "'전남'·'나주'·'빛가람'은 모두 나주 격자를 가리킨다."
+        ),
     ),
     day: date = Query(description="예측할 날짜. 기상청 시간별 예보는 약 2일 앞까지만 있다."),
     api_key: str = Depends(kma_api_key),

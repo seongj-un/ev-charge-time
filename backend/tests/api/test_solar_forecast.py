@@ -150,6 +150,18 @@ def test_naju_and_bitgaram_resolve_to_the_same_grid():
     assert naju["hours"]
 
 
+def test_daejeon_names_resolve_to_the_city_hall_grid():
+    """기본 지역 대전(BE-15): 이름 셋이 대전시청 격자 하나를 가리키고, 나주 격자와 다르다."""
+    client = make_client(service_with(FakeKmaClient()))
+
+    bodies = [get(client, region=name).json() for name in ("대전", "대전광역시", "대전시")]
+    naju = get(client, region="나주").json()
+
+    assert {body["region"] for body in bodies} == {"대전"}
+    assert len({(body["grid_nx"], body["grid_ny"]) for body in bodies}) == 1
+    assert (bodies[0]["grid_nx"], bodies[0]["grid_ny"]) != (naju["grid_nx"], naju["grid_ny"])
+
+
 def test_unknown_region_is_rejected_with_the_known_list():
     response = get(make_client(service_with(FakeKmaClient())), region="아무데나")
 
