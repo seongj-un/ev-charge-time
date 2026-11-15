@@ -353,7 +353,7 @@ IP가 다시 발급할 때 재사용되어 따로 정리하지 않는다.
 | `destination` | `{lat, lng}` | | 내비 목적지. `find_chargers_along_route` 도구가 쓴다(없으면 그 도구는 오류 결과) |
 | `remain_distance_m` | number | | 내비 남은 거리 m. 있으면 경로 위 충전소별 잔량을 추정한다 |
 | `route_points` | `{lat, lng}[]` | | 내비 경유지(남은 것, 순서대로), 최대 50개. 없으면 현재 위치에서 목적지까지 직선 근사 |
-| `efficiency_km_per_kwh` | number | | Vehicle SDK 충전 후 평균 전비(km/kWh), 0 초과 20 이하. 도착 예상 잔량이나 남은 거리가 없을 때 경로 위 충전소 잔량 추정에 쓴다 |
+| `efficiency_km_per_kwh` | number | | Vehicle SDK 충전 후 평균 전비(km/kWh), 0.5 이상 20 이하. 도착 예상 잔량이나 남은 거리가 없을 때 경로 위 충전소 잔량 추정에 쓴다 |
 | `charger_kw` | number | | 충전기 출력, 기본 7.0 |
 | `charging` | bool | | 지금 충전 중인지 (Claude에게 상황으로만 알린다) |
 | `place` | string | | `"home"`·`"public"`. `leak_check`가 쓴다(없으면 home) |
@@ -423,7 +423,7 @@ Claude가 넣는 값은 운전자의 의도뿐이고, 차량 값(잔량, 용량,
 | `find_chargers` | `available_only`(기본 true), `min_kw`, `radius_m` 500~20,000(기본 3,000) | `GET /api/chargers`와 같은 검색, 가까운 순 최대 3곳. 충전소 이름은 줄바꿈을 펴고 40자로 잘라 넘긴다(공공 API에서 온 글). `navigate` 동작에는 원래 이름. 충전소마다 `synced_at`·`status_age_min`·`stale`. 빈 충전기를 찾았고(`available_only`) 가장 가까운 곳이 `stale`이면 서버 문장 끝에 "충전기 상태는 N분 전 정보예요.", 오래된 상태 때문에 비었으면 "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요." |
 | `leak_check` | `payment`, `charger_speed`, `depart_time` | `car/leak-check` 계산. 장소는 `context.place` |
 | `find_chargers_along_route` | `min_kw`(기본 50), `corridor_m` 500~10,000(기본 3,000) | `POST /api/car/chargers/along-route`와 같은 함수. 출발은 `context`의 위치, 목적지·경로 지점·잔량·남은 거리·전비·배터리 용량도 `context`에서. 결과에 `reserve_soc`(15)와 `min_kw`를 함께 준다 |
-| `recommend_charge_target` | `next_trip_km` 0 초과 3,000 이하(선택) | `car/charge-target` 계산. 용량·전비·잔량은 `context`에서. `next_trip_km`는 운전자 말(이번 `text`와 `history`의 `driver` 턴)에 그 거리가 있을 때만 쓴다(숫자 검증의 거리 규칙과 같고, 반올림한 모양도 맞는 것으로 본다). 없으면 버리고 평소 기준으로 계산하며, 버린 거리는 결과에 넣지 않는다(넣으면 숫자 검증의 근거가 된다). 결과에 `next_trip_km`, `daily_soc`(80), `reserve_soc`(20)를 함께 준다 |
+| `recommend_charge_target` | `next_trip_km` 0 초과 3,000 이하(선택) | `car/charge-target` 계산. 용량·전비·잔량은 `context`에서. `next_trip_km`는 운전자 말(이번 `text`와 `history`의 `driver` 턴)에 그 거리가 있을 때만 쓴다(숫자 검증의 거리 규칙과 같고, 반올림한 모양도 맞는 것으로 본다). 없으면 버리고 평소 기준으로 계산하며, 버린 거리는 결과에 넣지 않는다(넣으면 숫자 검증의 근거가 된다). 결과에 `next_trip_km`, `daily_soc`(80), `reserve_soc`(20)를 함께 준다. 잔량 문장의 기준: `context.arrival_soc`(내비 도착 예상)가 있으면 그 값으로 "도착하면 N%라 더 채우지 않아도 돼요", 주행 중(`remain_distance_m` 있음)인데 도착 잔량이 없으면 잔량 문장을 붙이지 않고, 주행 중이 아니면 `soc_now`로 "지금 N%라" |
 | `savings_summary` | `month` "YYYY-MM"(기본 이번 달) | 이 기기의 절약 리포트 |
 
 ### 숫자 검증과 서버 문장
@@ -597,9 +597,9 @@ IP 한도 문장: "이 네트워크에서 오늘 음성 대화를 많이 써서 
 | 필드 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
 | `battery_capacity_wh` | number | O | 1,000~1,000,000 |
-| `efficiency_km_per_kwh` | number | | 0 초과 20 이하. Vehicle SDK `getSinceChargeEvEfficiency`(충전 후 평균 전비) |
+| `efficiency_km_per_kwh` | number | | 0.5 이상 20 이하. Vehicle SDK `getSinceChargeEvEfficiency`(충전 후 평균 전비) |
 | `next_trip_km` | number | | 0 초과 3,000 이하. 다음 이동 거리(내비 목적지 남은 거리나 운전자가 말한 거리) |
-| `soc_now` | number | | 0~100. 지금 잔량이 목표 이상이면 "더 채우지 않아도 돼요"를 붙인다 |
+| `soc_now` | number | | 0~100. 충전을 시작할 때(또는 주차 후)의 잔량. 주행 중 잔량을 보내지 않는다. 목표 이상이면 "더 채우지 않아도 돼요"를 붙인다 |
 
 계산
 
@@ -609,15 +609,17 @@ IP 한도 문장: "이 네트워크에서 오늘 음성 대화를 많이 써서 
     목표~100으로 자른다.
   - 나눗셈은 요청에 적힌 십진 값 그대로 분수로 한다. 그래서 정확히 5의 배수인 값이 부동소수
     오차로 한 칸 위로 올라가지 않는다(128.8km, 4.6km/kWh, 40kWh → 필요 70%, 목표 90%).
-- 필요 잔량 + 여유가 100을 넘으면 목표는 100이고 `needs_charge_on_route`가 true다.
-- 둘 중 하나라도 없으면 평소 목표이고, 무엇이 없어서인지 `assumptions`에 적는다.
+- 필요 잔량 + 여유가 100을 넘거나 필요 잔량이 100 이상(도착 추정 0% 이하, 경로 위 충전소의
+  `runs_out`과 같은 기준)이면 목표는 100이고 `needs_charge_on_route`가 true다.
+- 둘 중 하나라도 없으면 평소 목표(`reason: "unknown"`)이고, 무엇이 없어서인지 `assumptions`에
+  적는다. 계산하지 않았으므로 "충분해요"라고 말하지 않는다.
 
 응답 200
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `soc_target` | int | 평소 목표~100, 5% 단위 |
-| `reason` | `"daily"` \| `"long_trip"` \| `"insufficient"` | `daily`: 평소 목표로 충분하거나 거리·전비를 모름. `long_trip`: 다음 이동 때문에 올림. `insufficient`: 100%로도 필요 잔량 + 여유를 못 채움 |
+| `reason` | `"unknown"` \| `"daily"` \| `"long_trip"` \| `"insufficient"` | `unknown`: 거리나 전비를 몰라 평소 목표. `daily`: 계산해 보니 평소 목표로 충분. `long_trip`: 다음 이동 때문에 올림. `insufficient`: 100%로도 필요 잔량 + 여유를 못 채움 |
 | `needed_soc` | number \| null | 다음 이동에 드는 잔량(%, 소수 첫째 자리, 100을 넘을 수 있음). 거리나 전비가 없으면 null |
 | `needs_charge_on_route` | bool | `reason`이 `insufficient`일 때 true. 가는 길에 경로 위 충전소 찾기(`car/chargers/along-route`)로 이어진다 |
 | `speech` | string | TTS 문장(아래) |
@@ -625,14 +627,17 @@ IP 한도 문장: "이 네트워크에서 오늘 음성 대화를 많이 써서 
 
 `speech`
 
-- `daily`: "평소처럼 80%까지만 채우면 충분해요."
+- `unknown`, 거리를 모름: "다음 이동 거리를 몰라서 평소처럼 80%를 권해요. 멀리 가시면 거리를
+  말씀해 주세요." 거리는 있고 전비만 모름: "전비를 몰라서 평소처럼 80%를 권해요."
+- `daily`: "평소처럼 80%까지만 채우면 충분해요." (필요 잔량 + 여유가 평소 목표 이하로 계산된 경우만)
 - `long_trip`: "230킬로미터를 가시려면 95%까지 채우세요." 거리는 소수 첫째 자리까지 읽는다. 언제
   가는지는 요청에 없으므로 "내일"이라고 하지 않는다.
 - `insufficient`, 필요 잔량은 100 이하인데 여유가 모자람: "100%로 채워도 도착할 때 여유가
   부족해요. 가는 길에 급속충전을 한 번 하세요."
-- `insufficient`, 필요 잔량만으로 100 초과: "100%로 채워도 도착하기 전에 배터리가 모자라요. 가는
+- `insufficient`, 필요 잔량만으로 100 이상: "100%로 채워도 도착하기 전에 배터리가 모자라요. 가는
   길에 급속충전을 하세요." "여유가 부족해요"는 닿기는 한다고 들리기 때문이다.
-- `soc_now`가 목표 이상이면 끝에 "지금 85%라 더 채우지 않아도 돼요."를 붙인다.
+- `soc_now`가 목표 이상이면 "지금 85%라 더 채우지 않아도 돼요."를 붙인다. 거리를 묻는 질문이
+  있으면 그 앞에 둔다(질문으로 끝나야 운전자가 바로 답한다).
 
 오류: 범위 밖 값과 `NaN`·`Infinity`는 422(FastAPI 기본 `detail` 배열).
 
@@ -776,7 +781,7 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
 | `min_kw` | number | | 최소 출력 kW, 기본 50 |
 | `corridor_m` | int | | 경로에서 벗어나도 되는 거리, 기본 3,000, 500~10,000 |
 | `reserve_soc` | number | | 이 잔량 아래로 떨어지면 못 간다고 본다, 기본 15 |
-| `efficiency_km_per_kwh` | number | | Vehicle SDK 충전 후 평균 전비(`getSinceChargeEvEfficiency`), 0 초과 20 이하 |
+| `efficiency_km_per_kwh` | number | | Vehicle SDK 충전 후 평균 전비(`getSinceChargeEvEfficiency`), 0.5 이상 20 이하 |
 | `battery_capacity_wh` | number | | 배터리 용량 Wh, 1,000~1,000,000. 전비 추정에 쓴다 |
 
 경로 길이(꺾은선)는 1,000km 이하이고, 이웃한 두 점의 경도 차가 180도를 넘으면(날짜변경선)
