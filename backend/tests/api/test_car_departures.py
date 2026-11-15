@@ -8,11 +8,13 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy import func, select, text
 
-from evcharge.api.car_departures import DAILY_MAX, record_stated
+from evcharge.api.car_departures import record_stated
 from evcharge.api.routes import car
 from evcharge.domain.pricing import KST
 from evcharge.infra.models import CarDeparture, CarDevice
 from evcharge.infra.security import hash_token
+
+OBSERVED_MAX, STATED_MAX = 10, 5  # 설정 기본값
 
 # 2026-11-19(목) 21:00. 제안 기본 날짜는 내일 11-20(금).
 NOW = datetime(2026, 11, 19, 21, 0, tzinfo=KST)
@@ -171,9 +173,9 @@ def test_bad_bodies_are_422(client, body):
     assert response.status_code == 422
 
 
-def test_daily_limit_counts_new_records_only(client, db_session, monkeypatch):
+def test_observed_daily_limit_counts_new_records_only(client, db_session, monkeypatch):
     headers = register(client)
-    for day in range(DAILY_MAX):
+    for day in range(OBSERVED_MAX):
         assert depart(client, headers, kst(2026, 11, 9 + day, 7, 30)).status_code == 201
     merged = depart(client, headers, kst(2026, 11, 18, 7, 35))
 
@@ -181,21 +183,58 @@ def test_daily_limit_counts_new_records_only(client, db_session, monkeypatch):
 
     assert merged.status_code == 200
     assert over.status_code == 429
+    assert over.json()["detail"] == (
+        "오늘 남길 수 있는 출발 기록(10건)을 다 썼습니다. 내일 다시 보내 주세요."
+    )
     assert over.headers["Retry-After"] == str(3 * 3600)  # 다음 날 0시까지
-    assert len(rows(db_session)) == DAILY_MAX
+    assert len(rows(db_session)) == OBSERVED_MAX
 
     monkeypatch.setattr(car, "now_kst", lambda: NOW + timedelta(hours=3))
     assert depart(client, headers, kst(2026, 11, 19, 7, 30)).status_code == 201
 
 
-def test_stated_over_the_daily_limit_is_skipped_silently(client, db_session):
+def stated_times(count: int) -> list[datetime]:
+    """30분 넘게 떨어진 서로 다른 말한 시각."""
+    return [kst(2026, 11, 20, 6, 0) + timedelta(hours=hour) for hour in range(count)]
+
+
+def test_stated_over_its_daily_limit_is_skipped_silently(client, db_session):
+    device = device_of(db_session, register(client))
+
+    saved = [record_stated(db_session, device, at, NOW) for at in stated_times(STATED_MAX + 1)]
+
+    assert saved == [True] * STATED_MAX + [False]
+    assert len(rows(db_session)) == STATED_MAX
+
+
+def test_full_stated_quota_does_not_block_observed(client, db_session):
     headers = register(client)
     device = device_of(db_session, headers)
-    for day in range(DAILY_MAX):
+    for at in stated_times(STATED_MAX):
+        record_stated(db_session, device, at, NOW)
+
+    response = depart(client, headers, kst(2026, 11, 19, 7, 30))
+
+    assert response.status_code == 201
+    assert len(rows(db_session)) == STATED_MAX + 1
+
+
+def test_full_observed_quota_does_not_block_stated(client, db_session):
+    headers = register(client)
+    device = device_of(db_session, headers)
+    for day in range(OBSERVED_MAX):
         depart(client, headers, kst(2026, 11, 9 + day, 7, 30))
 
-    assert record_stated(db_session, device, kst(2026, 11, 20, 7, 30), NOW) is False
-    assert len(rows(db_session)) == DAILY_MAX
+    assert record_stated(db_session, device, kst(2026, 11, 20, 7, 30), NOW) is True
+
+
+def test_stated_limit_is_a_setting(client, db_session, monkeypatch):
+    monkeypatch.setenv("CAR_DEPARTURE_DAILY_STATED_MAX", "2")
+    device = device_of(db_session, register(client))
+
+    saved = [record_stated(db_session, device, at, NOW) for at in stated_times(3)]
+
+    assert saved == [True, True, False]
 
 
 def test_records_older_than_90_days_are_removed_on_write(client, db_session):

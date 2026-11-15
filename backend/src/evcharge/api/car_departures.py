@@ -12,7 +12,8 @@
 남기는 규칙
 - 같은 기기 30분 안의 기록은 하나로 합친다. observed가 stated를 대신하고, observed끼리는
   이른 시각(처음 P를 벗어난 때), stated끼리는 나중에 말한 시각을 남긴다.
-- 기기당 하루(KST, 기록한 날) 10건까지 새로 만든다. 넘으면 observed는 429, stated는 남기지 않는다.
+- 기기당 하루(KST, 기록한 날) 출처별로 새로 만드는 수를 센다: observed 10건(넘으면 429),
+  stated 5건(넘으면 남기지 않는다). 설정 ``CAR_DEPARTURE_DAILY_OBSERVED_MAX``/``..._STATED_MAX``.
 - 출발 시각이 90일 지난 기록은 기록할 때마다 (모든 기기에서) 지운다.
 - ``DELETE /api/car/departures``는 그 기기의 기록을 전부 지운다.
 """
@@ -36,6 +37,7 @@ from ..domain.errors import DomainError
 from ..domain.pricing import KST
 from ..infra.db import session_scope
 from ..infra.models import CarDeparture, CarDevice
+from ..settings import get_settings
 from .car_devices import bearer_token, find_device
 from .car_leak_service import default_depart_at
 from .car_plan_service import spoken_clock
@@ -45,7 +47,6 @@ from .schemas import CarDepartureSuggestion
 logger = logging.getLogger(__name__)
 
 MERGE_WINDOW = timedelta(minutes=30)
-DAILY_MAX = 10
 RETENTION = timedelta(days=90)
 # 앱 시계와 서버 시계가 조금 어긋나도 방금 출발한 기록을 받는다.
 CLOCK_SKEW = timedelta(minutes=5)
@@ -54,9 +55,18 @@ STATED_AHEAD = timedelta(hours=72)
 
 
 class DepartureLimitError(Exception):
-    def __init__(self, retry_after: int) -> None:
+    def __init__(self, limit: int, retry_after: int) -> None:
         super().__init__("daily departure limit")
+        self.limit = limit
         self.retry_after = retry_after
+
+
+def daily_limit(source: str) -> int:
+    """출처별 하루 새 기록 상한. 말한 시각이 다 차도 실제 출발(더 정확한 신호)은 남는다."""
+    settings = get_settings()
+    if source == "observed":
+        return settings.car_departure_daily_observed_max
+    return settings.car_departure_daily_stated_max
 
 
 def record_departure(
@@ -91,13 +101,15 @@ def record_departure(
     used = session.scalar(
         select(func.count()).where(
             CarDeparture.device_id == device.id,
+            CarDeparture.source == source,
             CarDeparture.recorded_at >= day_start,
             CarDeparture.recorded_at < day_end,
         )
     )
-    if used >= DAILY_MAX:
+    limit = daily_limit(source)
+    if used >= limit:
         session.rollback()
-        raise DepartureLimitError(max(1, ceil((day_end - now).total_seconds())))
+        raise DepartureLimitError(limit, max(1, ceil((day_end - now).total_seconds())))
 
     departure = CarDeparture(
         id=str(uuid.uuid4()),
@@ -151,7 +163,7 @@ def delete_departures(session: DbSession, device: CarDevice) -> int:
 def raise_limit(exc: DepartureLimitError) -> None:
     raise HTTPException(
         status_code=429,
-        detail=f"오늘 남길 수 있는 출발 기록({DAILY_MAX}건)을 다 썼습니다. 내일 다시 보내 주세요.",
+        detail=f"오늘 남길 수 있는 출발 기록({exc.limit}건)을 다 썼습니다. 내일 다시 보내 주세요.",
         headers={"Retry-After": str(exc.retry_after)},
     )
 

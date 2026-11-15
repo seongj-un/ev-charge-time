@@ -504,8 +504,10 @@ IP 한도 문장: "이 네트워크에서 오늘 음성 대화를 많이 써서 
 
 - 같은 기기 30분 안의 기록은 하나로 합친다. observed가 stated를 대신하고, observed끼리는 이른 시각
   (처음 P를 벗어난 때), stated끼리는 나중에 말한 시각을 남긴다. stated는 observed를 바꾸지 않는다.
-- 기기당 하루(KST, 기록한 날) 10건까지 새로 만든다. 합치기는 세지 않는다. 넘으면 observed는 429,
-  stated는 조용히 남기지 않는다.
+- 기기당 하루(KST, 기록한 날) 새로 만드는 수를 출처별로 센다. 합치기는 세지 않는다.
+  - observed: `CAR_DEPARTURE_DAILY_OBSERVED_MAX`(기본 10)건. 넘으면 429.
+  - stated: `CAR_DEPARTURE_DAILY_STATED_MAX`(기본 5)건. 넘으면 조용히 남기지 않는다.
+  - 따로 세므로 말한 시각이 다 차도 실제 출발은 남는다. 기기당 최대 약 90일 × 15건.
 - 출발 시각이 90일 지난 기록은 기록할 때마다(모든 기기) 지운다.
 
 ### `POST /api/car/departures`
@@ -519,7 +521,7 @@ IP 한도 문장: "이 네트워크에서 오늘 음성 대화를 많이 써서 
 | 200 | 30분 안의 기록과 합침 | 같은 모양, `merged: true`, 남은 기록의 시각과 출처 |
 | 401 | 기기 토큰 없음·틀림 | `{"detail": ...}`, `WWW-Authenticate: Bearer` |
 | 422 | `departed_at`이 지금+5분보다 늦음("departed_at은 지금보다 늦을 수 없습니다."), 90일보다 오래됨("departed_at은 90일 안이어야 합니다."), 연도 범위 밖, `source`가 `observed`가 아님 | FastAPI 기본 `detail` 배열, `loc: ["body", "departed_at"]` |
-| 429 | 오늘 10건을 다 씀 | `{"detail": "오늘 남길 수 있는 출발 기록(10건)을 다 썼습니다. 내일 다시 보내 주세요."}`, `Retry-After`(다음 날 0시까지 초) |
+| 429 | 오늘 observed 상한(기본 10건)을 다 씀 | `{"detail": "오늘 남길 수 있는 출발 기록(10건)을 다 썼습니다. 내일 다시 보내 주세요."}`, `Retry-After`(다음 날 0시까지 초) |
 
 ### `DELETE /api/car/departures`
 
