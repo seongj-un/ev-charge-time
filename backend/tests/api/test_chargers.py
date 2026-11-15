@@ -556,3 +556,24 @@ def test_charger_summary_counts_free_chargers_and_top_output(db_session):
     row = db_session.get(ChargerCache, "MIX")
 
     assert charger_summary(row) == (2, 100.0)
+
+
+def test_names_and_addresses_lose_control_and_format_chars(client, db_session):
+    """공공 API 글의 제어 문자·방향 제어·폭 없는 공백은 응답에 나가지 않는다(BE-14).
+
+    NUL은 PostgreSQL JSONB가 받지 않아 캐시에 들어올 수 없다(수집기가 뺀다, test_charger_sync).
+    """
+    _cache(
+        db_session,
+        "ST-CTRL",
+        HERE,
+        name="\u202e빛가람\x07 충전소 \u26a1",
+        address="서울 강남구\n테헤란로\u200b 1",
+        operator="기후\u2066에너지환경부",
+    )
+
+    (station,) = _get(client).json()
+
+    assert station["name"] == "빛가람 충전소 \u26a1"
+    assert station["address"] == "서울 강남구 테헤란로 1"
+    assert station["operator"] == "기후에너지환경부"

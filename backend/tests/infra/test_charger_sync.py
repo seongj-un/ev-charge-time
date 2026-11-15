@@ -458,3 +458,43 @@ def test_status_sync_logs_one_lag_line_without_station_ids(db_session, caplog, m
     lines = [r.getMessage() for r in caplog.records if "반영 지연" in r.getMessage()]
     assert lines == ["상태 반영 지연: 3행, 중앙값 10.0분, 최대 30.0분"]
     assert "ME174085" not in caplog.text
+
+
+def test_a_nul_in_public_text_does_not_break_the_full_sync(db_session):
+    """PostgreSQL JSONB는 \\u0000을 받지 않는다. 한 충전소 이름의 NUL이 전체 수집을 실패시키지
+    않게 수집할 때 글을 정리한다. 방향 제어·폭 없는 공백도 함께 빠진다(BE-14)."""
+    api = FakeChargerApi(
+        info_rows=[
+            info_row(
+                statNm="압해\x00읍사무소\u202e",
+                addr="전남 신안군\n압해읍\u200b 학교리 585",
+                addrDetail="\x00",
+                busiNm="기후\u2066에너지환경부",
+                useTime="24시간\x00 이용가능",
+            ),
+            info_row(statId="OTHER", statNm="다른 충전소"),
+        ]
+    )
+
+    result = sync_stations(db_session, api, ["12"])
+
+    assert result.stations == 2
+    data = db_session.get(ChargerCache, "ME174085").data
+    assert data["name"] == "압해읍사무소"
+    assert data["address"] == "전남 신안군 압해읍 학교리 585"
+    assert data["operator"] == "기후에너지환경부"
+    assert data["available_hours"] == "24시간 이용가능"
+    assert db_session.get(ChargerCache, "OTHER").data["name"] == "다른 충전소"
+
+
+def test_a_nul_in_a_status_update_does_not_break_the_status_sync(db_session):
+    sync_stations(db_session, FakeChargerApi(info_rows=[info_row()]), ["12"])
+
+    sync_states(
+        db_session,
+        FakeChargerApi(status_rows=[status_row(stat="3\x00")]),
+        ["12"],
+        period=10,
+    )
+
+    assert db_session.get(ChargerCache, "ME174085").data["chargers"][0]["status"] == "3"

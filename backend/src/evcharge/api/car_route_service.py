@@ -16,6 +16,7 @@ from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
 
+from ..domain.public_text import clean_public_text
 from ..domain.route import Route, clean_route, query_boxes
 from ..infra.models import ChargerCache
 from .car_plan_service import spoken_distance, spoken_percent
@@ -68,8 +69,8 @@ NOT_COLLECTED = "충전소 정보를 아직 수집하지 않았습니다. 잠시
 
 
 def short_name(value: object) -> str:
-    """공공 API 충전소 이름. 줄바꿈을 펴고 40자로 자른다."""
-    return " ".join(str(value or "").split())[:MAX_NAME]
+    """공공 API 충전소 이름. 제어·서식 문자를 빼고 줄바꿈을 펴서 40자로 자른다."""
+    return clean_public_text(value)[:MAX_NAME]
 
 
 # 주소는 내비(Pleos NaviHelper)에 그대로 넘기는 값이라 자르지 않는 것이 원칙이지만, 공공
@@ -78,12 +79,13 @@ MAX_ADDRESS = 200
 
 
 def station_address(data: dict | None) -> str | None:
-    """캐시 행의 주소(수집기가 addr와 addrDetail을 합친 값). 줄바꿈을 펴고, 없으면 None.
+    """캐시 행의 주소(수집기가 addr와 addrDetail을 합친 값). 제어·서식 문자를 빼고 줄바꿈을
+    펴며, 남는 것이 없으면 None.
 
     앱 동작과 화면에만 쓴다. Claude에게 주는 도구 결과에는 넣지 않는다(주소의 번지
     숫자가 숫자 검증 근거가 되고, 바깥 글이 프롬프트로 들어간다).
     """
-    text = " ".join(str((data or {}).get("address") or "").split())[:MAX_ADDRESS]
+    text = clean_public_text((data or {}).get("address"))[:MAX_ADDRESS]
     return text or None
 
 

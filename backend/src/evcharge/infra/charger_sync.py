@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession
 
 from ..domain.pricing import KST
+from ..domain.public_text import clean_public_text
 from .models import ChargerCache, ChargerFullSyncRun, ChargerSyncState
 
 # charger_sync_state의 두 행: 상태를 여기까지 확인한 시각, 마지막 전체 수집이 시작한 시각
@@ -96,7 +97,7 @@ def build_station_records(rows: Iterable[dict]) -> list[StationRecord]:
     coordinates: dict[str, tuple[float, float]] = {}
 
     for row in rows:
-        station_id = str(row.get("statId") or "").strip()
+        station_id = _text(row.get("statId"))
         if not station_id:
             continue
 
@@ -108,13 +109,13 @@ def build_station_records(rows: Iterable[dict]) -> list[StationRecord]:
         document = stations.get(station_id)
         if document is None:
             document = {
-                "name": str(row.get("statNm") or "").strip(),
+                "name": _text(row.get("statNm")),
                 "address": _address(row),
                 "lat": lat,
                 "lng": lng,
                 # busiNm(사업자명)이 비면 bnm(운영기관 약칭)으로 대체한다.
-                "operator": str(row.get("busiNm") or row.get("bnm") or "").strip(),
-                "available_hours": str(row.get("useTime") or "").strip(),
+                "operator": _text(row.get("busiNm") or row.get("bnm")),
+                "available_hours": _text(row.get("useTime")),
                 "chargers": [],
             }
             stations[station_id] = document
@@ -194,7 +195,7 @@ def sync_states(
 
     by_station: dict[str, list[dict]] = {}
     for row in rows:
-        station_id = str(row.get("statId") or "").strip()
+        station_id = _text(row.get("statId"))
         if station_id:
             by_station.setdefault(station_id, []).append(row)
 
@@ -220,11 +221,11 @@ def sync_states(
 
             touched = 0
             for row in by_station[station_id]:
-                charger = index.get(str(row.get("chgerId") or "").strip())
+                charger = index.get(_text(row.get("chgerId")))
                 if charger is None:
                     unknown += 1
                     continue
-                charger["status"] = str(row.get("stat") or "").strip()
+                charger["status"] = _text(row.get("stat"))
                 charger["status_updated_at"] = _status_time(row.get("statUpdDt"))
                 touched += 1
 
@@ -406,19 +407,25 @@ def _charger(row: dict) -> dict:
     헛걸음시킨다. 프론트는 모르는 코드를 원문 표시하고 사용 가능으로 세지 않는다.
     """
     return {
-        "charger_id": str(row.get("chgerId") or "").strip(),
-        "type": str(row.get("chgerType") or "").strip(),
+        "charger_id": _text(row.get("chgerId")),
+        "type": _text(row.get("chgerType")),
         # 출력이 비어 있어도 충전기를 버리지는 않는다. ChargerOut.capacity_kw가
         # 필수라 숫자는 넣어야 하고, 0은 화면에서 "0kW"로 그대로 보인다.
         "capacity_kw": _as_float(row.get("output")) or 0.0,
-        "status": str(row.get("stat") or "").strip(),
+        "status": _text(row.get("stat")),
         "status_updated_at": _status_time(row.get("statUpdDt")),
     }
 
 
+def _text(value: object) -> str:
+    """공공 API 글. 공백을 펴고 제어·서식 문자를 뺀다(BE-14). PostgreSQL JSONB는 NUL(\\u0000)을
+    받지 않아, 한 행의 NUL이 수집 전체(한 트랜잭션)를 실패시킨다."""
+    return clean_public_text(value)
+
+
 def _address(row: dict) -> str:
-    address = str(row.get("addr") or "").strip()
-    detail = str(row.get("addrDetail") or "").strip()
+    address = _text(row.get("addr"))
+    detail = _text(row.get("addrDetail"))
     return f"{address} {detail}".strip() if detail else address
 
 

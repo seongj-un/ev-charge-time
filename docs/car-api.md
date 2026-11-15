@@ -425,7 +425,7 @@ Claude가 넣는 값은 운전자의 의도뿐이고, 차량 값(잔량, 용량,
 | 도구 | Claude 입력 | 서버가 하는 일 |
 | --- | --- | --- |
 | `plan_charge` | `depart_time` "HH:MM"(필수), `soc_target` 1~100(기본 80) | `car/plan` 계산. 꽂는 시각은 `arrival_at`(없으면 지금), 출발은 꽂은 뒤 처음 오는 그 시각, 시작 잔량은 `arrival_soc` 또는 `soc_now`. 절감액은 도착하자마자 충전하는 경우와 비교한다. 충전 요금(`cost_won`)은 Claude에 넘기지 않는다 |
-| `find_chargers` | `available_only`(기본 true), `min_kw`, `radius_m` 500~20,000(기본 3,000) | `GET /api/chargers`와 같은 검색, 가까운 순 최대 3곳. 충전소 이름은 줄바꿈을 펴고 40자로 잘라 넘긴다(공공 API에서 온 글). `navigate` 동작에는 원래 이름과 `address`. 주소는 Claude에 넘기지 않는다(번지 숫자가 숫자 근거가 되지 않게, 바깥 글이 프롬프트에 들어가지 않게). `find_chargers_along_route`의 충전소 목록에서도 `address`를 빼고 넘긴다. 충전소마다 `synced_at`·`status_age_min`·`stale`. 빈 충전기를 찾았고(`available_only`) 가장 가까운 곳이 `stale`이면 서버 문장 끝에 "충전기 상태는 N분 전 정보예요.", 오래된 상태 때문에 비었으면 "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요." |
+| `find_chargers` | `available_only`(기본 true), `min_kw`, `radius_m` 500~20,000(기본 3,000) | `GET /api/chargers`와 같은 검색, 가까운 순 최대 3곳. 충전소 이름은 줄바꿈을 펴고 40자로 잘라 넘긴다(공공 API에서 온 글). `navigate` 동작에는 자르지 않은 이름(제어·서식 문자를 빼고 줄바꿈을 편 것)과 `address`. 주소는 Claude에 넘기지 않는다(번지 숫자가 숫자 근거가 되지 않게, 바깥 글이 프롬프트에 들어가지 않게). `find_chargers_along_route`의 충전소 목록에서도 `address`를 빼고 넘긴다. 충전소마다 `synced_at`·`status_age_min`·`stale`. 빈 충전기를 찾았고(`available_only`) 가장 가까운 곳이 `stale`이면 서버 문장 끝에 "충전기 상태는 N분 전 정보예요.", 오래된 상태 때문에 비었으면 "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요." |
 | `leak_check` | `payment`, `charger_speed`, `depart_time` | `car/leak-check` 계산. 장소는 `context.place` |
 | `find_chargers_along_route` | `min_kw`(기본 50), `corridor_m` 500~10,000(기본 3,000) | `POST /api/car/chargers/along-route`와 같은 함수. 출발은 `context`의 위치, 목적지·경로 지점·잔량·남은 거리·전비·배터리 용량도 `context`에서. 결과에 `reserve_soc`(15)와 `min_kw`를 함께 준다 |
 | `recommend_charge_target` | `next_trip_km` 0 초과 3,000 이하(선택) | `car/charge-target` 계산. 용량·전비·잔량은 `context`에서. `next_trip_km`는 운전자 말(이번 `text`와 `history`의 `driver` 턴)에 그 거리가 있을 때만 쓴다(숫자 검증의 거리 규칙과 같고, 반올림한 모양도 맞는 것으로 본다). 없으면 버리고 평소 기준으로 계산하며, 버린 거리는 결과에 넣지 않는다(넣으면 숫자 검증의 근거가 된다). 결과에 `next_trip_km`, `daily_soc`(80), `reserve_soc`(20)를 함께 준다. 잔량 문장의 기준: `context.arrival_soc`(내비 도착 예상)가 있으면 그 값으로 "도착하면 N%라 더 채우지 않아도 돼요", 주행 중(`remain_distance_m` 있음)인데 도착 잔량이 없으면 잔량 문장을 붙이지 않고, 주행 중이 아니면 `soc_now`로 "지금 N%라" |
@@ -923,6 +923,9 @@ GET /api/chargers?lat=35.0175&lng=126.7905&radius_m=10000&available_only=true&mi
 `address`는 이 엔드포인트가 처음부터 내던 필드라 그대로 string이고, 주소가 없으면 빈 문자열이다(웹
 화면이 쓰는 기존 계약). 차량 응답(`add_waypoint`·`navigate` 동작, 경로 위 충전소)의 `address`는 같은
 값을 줄바꿈을 펴서 주고, 없으면 null이다.
+공공 API 글(충전소 이름, 주소, 운영기관, 이용 시간)은 수집할 때와 응답할 때 모두 제어·서식 문자(유니코드
+C 범주: NUL, U+202E 같은 방향 제어, U+200B 폭 없는 공백 등)를 빼고 줄바꿈·탭을 한 칸 공백으로 편다.
+한글, 이모지, 결합 문자는 그대로다. 길이 자르기(이름 40자, 주소 200자)는 정리한 뒤에 한다(BE-14).
 
 ### 충전기 상태 신선도
 
