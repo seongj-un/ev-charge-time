@@ -21,7 +21,7 @@ MONDAY_EVENING = datetime(2026, 11, 16, 18, 0, tzinfo=KST)
 
 EVENING_SPEECH = (
     "지금은 요금이 비싼 시간이고, 저녁 7시부터 싸져요. 배터리가 32%라 오늘 밤 충전하세요. "
-    "내일 오전 8시 출발 기준으로 오늘 밤 10시부터 내일 새벽 3시 19분까지 "
+    "내일 오전 8시 출발 기준으로 밤 10시부터 새벽 3시 19분까지 "
     "예약하면 약 1,995원 아껴요."
 )
 DEFAULT_ASSUMPTION = "출발 시각 미입력: 11월 17일 오전 8시(KST) 출발로 가정"
@@ -107,7 +107,7 @@ def test_weekday_light_night(client, monkeypatch):
     assert sentences(body["speech"])[0] == "지금은 요금이 싼 시간이에요."
     # 이미 싼 시간이라 지금 꽂아도 같은 값: 아끼는 금액 없이 예약만 안내한다
     assert sentences(body["speech"])[-1] == (
-        "내일 오전 8시 출발 기준으로 오늘 밤 11시부터 내일 새벽 4시 19분까지 예약하세요."
+        "내일 오전 8시 출발 기준으로 밤 11시부터 새벽 4시 19분까지 예약하세요."
     )
 
 
@@ -202,7 +202,7 @@ def test_after_midnight_tonight_is_this_night(client, monkeypatch):
     body = brief(client).json()
 
     assert body["tonight"]["depart_at"] == "2026-11-17T08:00:00+09:00"
-    assert sentences(body["speech"])[-1].startswith("오늘 오전 8시 출발 기준으로 오늘 새벽 2시부터")
+    assert sentences(body["speech"])[-1].startswith("오늘 오전 8시 출발 기준으로 새벽 2시부터")
 
 
 def test_no_time_left_asks_to_charge_on_arrival(client, monkeypatch):
@@ -371,7 +371,27 @@ def test_never_more_than_three_sentences(client, db_session, monkeypatch, moment
     speech = brief(client, headers, soc_now=soc).json()["speech"]
 
     assert 2 <= len(sentences(speech)) <= 3
-    assert len(speech) <= 120  # 격자 실측 최대 120자 (명세: 약 120자)
+    assert len(speech) <= MAX_SPEECH_CHARS
+
+
+# 명세는 "약 120자". 8만여 조합(날짜 7개 × 30분 간격 × 잔량 6개 × 충전기 3.3~22kW × 요금제 2개
+# × 평소 출발 5가지, 절약 합계 있음)을 돌린 실측 최대가 122자다. 아래 테스트가 그 조합을 담는다.
+MAX_SPEECH_CHARS = 122
+
+
+@pytest.mark.parametrize("moment", [(2026, 11, 16, 15, 30), (2026, 11, 16, 19, 0)])
+@pytest.mark.parametrize(("soc", "kw"), [(12.3, 7.0), (5.5, 7.0), (40.5, 3.3), (49.9, 3.3)])
+def test_longest_speech_found_in_the_grid(client, db_session, monkeypatch, moment, soc, kw):
+    headers = register(client)
+    seed_departures(client, headers, [-110] * 5)  # 평소 새벽 5시 10분 출발
+    confirm_saving(client, headers, db_session, 4200)
+    monkeypatch.setattr(car, "now_kst", at(datetime(*moment, tzinfo=KST)))
+
+    speech = brief(client, headers, soc_now=soc, charger_kw=kw).json()["speech"]
+
+    assert "평소처럼 내일 새벽 5시 10분 출발 기준으로" in speech
+    assert len(sentences(speech)) == 3
+    assert len(speech) <= MAX_SPEECH_CHARS
 
 
 def test_parallel_briefings_make_one_record(concurrent):

@@ -33,7 +33,6 @@ from .car_plan_service import (
     spoken_clock,
     spoken_moment,
     spoken_percent,
-    spoken_range,
 )
 from .car_savings import summarize
 from .deps import get_holidays, get_tariff
@@ -240,6 +239,23 @@ def compose_price_sentence(price: BriefingPrice, now: datetime) -> str:
 # tonight
 # ---------------------------------------------------------------------------
 
+_PERIODS = frozenset({"새벽", "오전", "낮", "오후", "저녁", "밤"})
+
+
+def night_range(start: datetime, end: datetime) -> str:
+    """ "저녁 8시 55분부터 새벽 5시 10분까지", "밤 10시부터 11시 19분까지".
+
+    시동 브리핑은 3문장·약 120자 안에 들어가야 해서 ``spoken_range``의 날("오늘", "내일")을
+    뺀다. 앞 문장이 "오늘 밤 충전하세요"이고 예약은 출발 전 한 번(24시간 미만, 실제로는 꽂는
+    시각부터 다음 아침 출발까지 16시간 안)이라 날이 없어도 헷갈리지 않는다. 끝 시각의 때가
+    시작과 같으면 뺀다.
+    """
+    start_text, end_text = spoken_clock(start), spoken_clock(end)
+    start_period, *end_rest = start_text.split()[0], *end_text.split()[1:]
+    if end_text.split()[0] == start_period and start_period in _PERIODS and end_rest:
+        end_text = " ".join(end_rest)
+    return f"{start_text}부터 {end_text}까지"
+
 
 def _tonight(
     payload: CarBriefingRequest, now: datetime, low_soc: float, personal: Personal | None
@@ -334,5 +350,5 @@ def _tonight(
         start = result.reservation.start_at.astimezone(KST)
         end = result.reservation.end_at.astimezone(KST)
         tail = f"예약하면 약 {won:,}원 아껴요." if won > 0 else "예약하세요."
-        plan_sentence = f"{lead} {spoken_range(start, end, now)} {tail}"
+        plan_sentence = f"{lead} {night_range(start, end)} {tail}"
     return tonight, [ask, plan_sentence], assumptions, (won, result.plan.energy_kwh)
