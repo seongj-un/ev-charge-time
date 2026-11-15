@@ -370,7 +370,7 @@ def test_never_more_than_three_sentences(client, db_session, monkeypatch, moment
     speech = brief(client, headers, soc_now=soc).json()["speech"]
 
     assert 2 <= len(sentences(speech)) <= 3
-    assert len(speech) <= 130
+    assert len(speech) <= 120  # 격자 실측 최대 120자 (명세: 약 120자)
 
 
 def test_parallel_briefings_make_one_record(concurrent):
