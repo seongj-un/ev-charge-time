@@ -615,3 +615,30 @@ def test_late_night_departures_give_no_suggestion_and_no_date_mismatch(client):
     assert body["date"] == "2026-11-20"
     assert (body["suggested_depart_at"], body["confidence"], body["basis_count"]) == (None, None, 5)
     assert body["speech"] == "내일 몇 시에 출발하세요?"
+
+
+def test_failure_logs_carry_no_device_or_time(client, monkeypatch, caplog):
+    """제약 위반 DETAIL에는 키 값이 있다. 로그에는 오류 종류만 남긴다."""
+    from sqlalchemy.exc import IntegrityError
+
+    from evcharge.api import car_departures
+
+    detail = 'Key (device_id)=(dev-secret-123) at 2026-11-20 07:30 is not present in "car_devices".'
+
+    def broken(*args, **kwargs):
+        raise IntegrityError("INSERT INTO car_departures ...", {}, Exception(detail))
+
+    monkeypatch.setattr(car_departures, "record_stated", broken)
+    monkeypatch.setattr(car_departures, "suggestion_for", broken)
+    headers = register(client)
+
+    with caplog.at_level("WARNING", logger="evcharge.api.car_departures"):
+        client.post("/api/car/plan", json=PLAN, headers=headers)
+        client.post("/api/car/leak-check", json=HOME, headers=headers)
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("IntegrityError" in m for m in messages)
+    assert len(messages) >= 2
+    joined = caplog.text
+    assert "dev-secret-123" not in joined
+    assert "07:30" not in joined

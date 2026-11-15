@@ -54,6 +54,16 @@ CLOCK_SKEW = timedelta(minutes=5)
 STATED_AHEAD = timedelta(hours=72)
 
 
+def error_kind(exc: Exception) -> str:
+    """로그용 오류 종류. 문구는 남기지 않는다.
+
+    PostgreSQL의 제약 위반 DETAIL은 키 값(기기 ID, 출발 시각)을 그대로 담고,
+    ``hide_parameters``는 이것까지 가리지 못한다. 종류와 SQLSTATE면 운영자가 원인을 고른다.
+    """
+    sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None)
+    return f"{type(exc).__name__} {sqlstate}" if sqlstate else type(exc).__name__
+
+
 class DepartureLimitError(Exception):
     def __init__(self, limit: int, retry_after: int) -> None:
         super().__init__("daily departure limit")
@@ -201,8 +211,8 @@ def try_record_stated(request: Request, depart_at: datetime, now: datetime) -> N
             except SQLAlchemyError:
                 session.rollback()
                 raise
-    except SQLAlchemyError:
-        logger.warning("출발 기록을 남기지 못했습니다 (stated)", exc_info=True)
+    except SQLAlchemyError as exc:
+        logger.warning("출발 기록을 남기지 못했습니다 (stated, %s)", error_kind(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -244,9 +254,9 @@ def next_usual_departure(
             found = suggestion_for(session, device, target, holidays)
             if found.depart_at is not None and found.depart_at > local:
                 return found
-    except (DomainError, SQLAlchemyError):
+    except (DomainError, SQLAlchemyError) as exc:
         session.rollback()
-        logger.warning("평소 출발 시각을 계산하지 못했습니다", exc_info=True)
+        logger.warning("평소 출발 시각을 계산하지 못했습니다 (%s)", error_kind(exc))
     return None
 
 
@@ -297,7 +307,7 @@ def usual_departure_for(request: Request, now: datetime) -> DepartureSuggestion 
                 return None
             found = next_usual_departure(session, device, now, get_holidays())
             session.commit()  # last_seen_at
-    except (SQLAlchemyError, DomainError):
-        logger.warning("평소 출발 시각을 읽지 못했습니다", exc_info=True)
+    except (SQLAlchemyError, DomainError) as exc:
+        logger.warning("평소 출발 시각을 읽지 못했습니다 (%s)", error_kind(exc))
         return None
     return found if found is not None and found.confidence == "high" else None
