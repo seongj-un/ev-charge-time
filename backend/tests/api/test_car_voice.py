@@ -1502,3 +1502,30 @@ def test_charge_target_distance_in_a_wattit_turn_is_not_the_drivers(client, fake
     ask(client, register(client), "그럼 몇 퍼센트?", context=TARGET_CONTEXT, history=history)
 
     assert tool_results(fake, 1)[0]["content"]["next_trip_km"] is None
+
+
+@pytest.mark.parametrize(
+    ("extra", "suffix"),
+    [
+        # 주행 중, 도착 예상 55%: 도착 잔량 기준(80 미만이라 덧붙이지 않음)
+        ({"remain_distance_m": 150_000, "arrival_soc": 55}, ""),
+        # 주행 중, 도착 예상 82%: "도착하면"
+        (
+            {"remain_distance_m": 150_000, "arrival_soc": 82},
+            " 도착하면 82%라 더 채우지 않아도 돼요.",
+        ),
+        # 주행 중인데 도착 잔량을 모름: 지금 85%로 말하지 않는다
+        ({"remain_distance_m": 150_000}, ""),
+        # 주행 중이 아님(주차): 지금 잔량
+        ({}, " 지금 85%라 더 채우지 않아도 돼요."),
+    ],
+)
+def test_charge_target_soc_sentence_uses_the_charge_time_soc(client, fake, extra, suffix):
+    fake.replies = [use("recommend_charge_target", {"next_trip_km": 100}), say("알겠어요.")]
+    context = {**TARGET_CONTEXT, "soc_now": 85, **extra}
+
+    ask(client, register(client), "내일 100킬로 가는데 몇 퍼센트까지 채워?", context=context)
+
+    content = tool_results(fake, 1)[0]["content"]
+    assert content["reason"] == "daily"  # 100km = 25.8% + 20 → 평소 80
+    assert content["speech"] == "평소처럼 80%까지만 채우면 충분해요." + suffix

@@ -604,13 +604,23 @@ class VoiceTools:
         ctx = self.context
         km = args.next_trip_km
         ignored = km is not None and _meters(km) not in self.stated_distances_m
+        # "몇 %까지 채우나"는 다음 충전 때의 질문이다. 주행 중 잔량(soc_now)은 그때의 잔량이
+        # 아니다. 내비 도착 예상 잔량이 있으면 그 값으로 "도착하면 N%라"고 말하고, 주행 중인데
+        # 도착 잔량을 모르면 잔량 문장을 붙이지 않는다. 주행 중이 아니면 지금 잔량이다.
+        if ctx.arrival_soc is not None:
+            soc, when = ctx.arrival_soc, "arrival"
+        elif ctx.remain_distance_m is not None:
+            soc, when = None, "now"
+        else:
+            soc, when = ctx.soc_now, "now"
         result = compute_charge_target(
             CarChargeTargetRequest(
                 battery_capacity_wh=ctx.battery_capacity_wh,
                 efficiency_km_per_kwh=ctx.efficiency_km_per_kwh,
                 next_trip_km=None if ignored else km,
-                soc_now=ctx.soc_now,
-            )
+                soc_now=soc,
+            ),
+            soc_when=when,
         )
         content = result.model_dump(mode="json")
         if ignored:

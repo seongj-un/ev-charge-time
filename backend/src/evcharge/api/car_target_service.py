@@ -18,12 +18,15 @@ from __future__ import annotations
 
 import math
 from fractions import Fraction
+from typing import Literal
 
 from ..settings import get_settings
 from .car_plan_service import spoken_percent
 from .schemas import CarChargeTargetRequest, CarChargeTargetResponse
 
 STEP = 5
+
+SocWhen = Literal["now", "arrival"]
 
 
 def _exact(value: float) -> Fraction:
@@ -42,7 +45,12 @@ def spoken_km(km: float) -> str:
     return f"{round(km, 1):g}킬로미터"
 
 
-def compute_charge_target(payload: CarChargeTargetRequest) -> CarChargeTargetResponse:
+def compute_charge_target(
+    payload: CarChargeTargetRequest, *, soc_when: SocWhen = "now"
+) -> CarChargeTargetResponse:
+    """``soc_when``: ``soc_now``가 언제의 잔량인지. HTTP API는 지금(충전을 시작할 때나 주차
+    뒤), 음성은 내비 도착 예상 잔량을 넘길 때 "arrival"이다. 문장의 시점이 그에 맞춰진다.
+    """
     settings = get_settings()
     daily = settings.car_target_daily
     reserve = settings.car_target_reserve
@@ -58,7 +66,7 @@ def compute_charge_target(payload: CarChargeTargetRequest) -> CarChargeTargetRes
             if value is None
         ]
         assumptions.append(f"{'와 '.join(missing)}를 몰라 평소 기준 {daily}%로 정했어요.")
-        return _response(daily, "unknown", None, payload, assumptions)
+        return _response(daily, "unknown", None, payload, assumptions, soc_when)
 
     need = needed_soc(
         payload.next_trip_km, payload.efficiency_km_per_kwh, payload.battery_capacity_wh
@@ -70,11 +78,11 @@ def compute_charge_target(payload: CarChargeTargetRequest) -> CarChargeTargetRes
         "더했어요."
     )
     if want > 100:
-        return _response(100, "insufficient", need, payload, assumptions)
+        return _response(100, "insufficient", need, payload, assumptions, soc_when)
     target = max(daily, math.ceil(want / STEP) * STEP)
     if target <= daily:
-        return _response(daily, "daily", need, payload, assumptions)
-    return _response(min(target, 100), "long_trip", need, payload, assumptions)
+        return _response(daily, "daily", need, payload, assumptions, soc_when)
+    return _response(min(target, 100), "long_trip", need, payload, assumptions, soc_when)
 
 
 def _response(
@@ -83,6 +91,7 @@ def _response(
     need: Fraction | None,
     payload: CarChargeTargetRequest,
     assumptions: list[str],
+    soc_when: SocWhen,
 ) -> CarChargeTargetResponse:
     # 끝에 붙는 질문(거리를 말해 달라). 잔량 문장 뒤에 둬서 운전자가 바로 답하게 한다.
     ask = ""
@@ -104,7 +113,8 @@ def _response(
     else:
         speech = "100%로 채워도 도착할 때 여유가 부족해요. 가는 길에 급속충전을 한 번 하세요."
     if payload.soc_now is not None and payload.soc_now >= target:
-        speech += f" 지금 {spoken_percent(payload.soc_now)}라 더 채우지 않아도 돼요."
+        when = "도착하면" if soc_when == "arrival" else "지금"
+        speech += f" {when} {spoken_percent(payload.soc_now)}라 더 채우지 않아도 돼요."
     speech += ask
     return CarChargeTargetResponse(
         soc_target=target,
