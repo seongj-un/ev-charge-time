@@ -45,6 +45,7 @@ uv run uvicorn evcharge.main:app --reload
 | `POST/DELETE /api/car/departures` | 차량 앱: 집 출발 기록(기어 P 해제), 기록 전부 삭제 | 구현 (기기 토큰) |
 | `GET /api/car/departures/suggest` | 차량 앱: 평소 출발 시각 제안(high/low) | 구현 (기기 토큰) |
 | `POST /api/car/briefing` | 차량 앱: 시동 ON 한 줄 브리핑(지금 요금, 오늘 밤 충전, 이번 달 절약) | 구현 (토큰 선택) |
+| `POST /api/car/charge-target` | 차량 앱: 몇 %까지 채우면 되는지(평소 80%, 다음 이동이 길면 올림) | 구현 |
 
 **기능 명세의 F-01~F-14가 전부 구현됐다.** 스텁으로 남은 엔드포인트는 없다.
 
@@ -88,6 +89,11 @@ uv run uvicorn evcharge.main:app --reload
 시동 ON 브리핑(`POST /api/car/briefing`)은 지금 요금 구간과 다음으로 싸지는 시각, 오늘 밤 충전
 권장(예약 구간과 아끼는 금액, 평소 출발 시각이 있으면 그 기준), 이번 달 절약 합계를 기존 계산
 함수로 모아 최대 3문장으로 읽어 준다. 기기 토큰은 선택이다.
+
+목표 충전량 추천(`POST /api/car/charge-target`)은 평소 80%(`CAR_TARGET_DAILY`)를 권하고, 다음
+이동 거리와 전비가 있으면 필요 잔량에 도착 여유 20%p(`CAR_TARGET_RESERVE`)를 더해 5% 단위로
+올린다(최대 100). 100%로도 모자라면 가는 길에 충전하라고 말한다. 공개 계산 API이고, 음성 도구
+`recommend_charge_target`도 같은 함수를 쓴다(거리는 운전자가 말한 것만).
 
 세 엔드포인트는 외부 자격증명이 있어야 동작하고, 없으면 각자 501을 낸다.
 키 없이도 나머지 기능은 전부 돈다 — 기동 시점에 막지 않는다.
