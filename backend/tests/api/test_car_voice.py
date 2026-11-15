@@ -219,11 +219,15 @@ def test_arrival_answer_plans_from_the_arrival_soc(client, fake):
     assert "집으로 가는 중" in fake.calls[0]["system"]
 
 
-def _station(db_session, station_id, lat, *, name, status="2", kw=7.0, updated_at=None):
+def _station(
+    db_session, station_id, lat, *, name, status="2", kw=7.0, updated_at=None, address=None
+):
     data = {
         "name": name,
         "chargers": [{"charger_id": "01", "type": "02", "capacity_kw": kw, "status": status}],
     }
+    if address is not None:
+        data["address"] = address
     db_session.add(
         ChargerCache(
             station_id=station_id,
@@ -240,7 +244,9 @@ def _station(db_session, station_id, lat, *, name, status="2", kw=7.0, updated_a
 def test_find_chargers_returns_up_to_three_and_navigates_to_the_nearest(client, fake, db_session):
     _station(db_session, "S4", HERE[0] + 0.004, name="넷째 충전소")
     _station(db_session, "S2", HERE[0] + 0.002, name="둘째 충전소")
-    _station(db_session, "S1", HERE[0] + 0.001, name="빛가람 1 충전소")
+    _station(
+        db_session, "S1", HERE[0] + 0.001, name="빛가람 1 충전소", address="나주시 빛가람로 101"
+    )
     _station(db_session, "S3", HERE[0] + 0.003, name="셋째 충전소")
     _station(db_session, "BUSY", HERE[0], name="사용 중 충전소", status="3")
     fake.replies = [
@@ -261,8 +267,11 @@ def test_find_chargers_returns_up_to_three_and_navigates_to_the_nearest(client, 
             "name": "빛가람 1 충전소",
             "lat": HERE[0] + 0.001,
             "lng": HERE[1],
+            "address": "나주시 빛가람로 101",
         }
     ]
+    # 주소는 동작에만 간다. Claude가 보는 결과에는 없다(번지 숫자가 근거가 되지 않게, BE-13)
+    assert all("address" not in station for station in content["stations"])
 
 
 def test_find_chargers_without_location_is_a_tool_error(client, fake):
@@ -850,7 +859,7 @@ ROUTE_CONTEXT = {
 
 
 def test_along_route_tool_uses_context_and_returns_a_waypoint(client, fake, db_session):
-    _station(db_session, "R1", 35.09, name="빛가람 휴게소", kw=100.0)
+    _station(db_session, "R1", 35.09, name="빛가람 휴게소", kw=100.0, address="광주 남구 대촌로 7")
     fake.replies = [
         use("find_chargers_along_route", {"min_kw": 50, "soc_now": 99}),
         say("빛가람 휴게소에서 충전하고 가세요."),
@@ -863,10 +872,11 @@ def test_along_route_tool_uses_context_and_returns_a_waypoint(client, fake, db_s
     assert [c["station_id"] for c in content["chargers"]] == ["R1"]
     assert content["chargers"][0]["est_soc"] is not None
     assert "actions" not in content
+    assert all("address" not in charger for charger in content["chargers"])  # BE-13
     assert body["fallback"] is False
     assert body["actions"] == [
         {"type": "add_waypoint", "station_id": "R1", "name": "빛가람 휴게소", "lat": 35.09,
-         "lng": HERE[1]}
+         "lng": HERE[1], "address": "광주 남구 대촌로 7"}
     ]
 
 
