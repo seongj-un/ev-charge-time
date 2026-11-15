@@ -266,7 +266,11 @@ def spoken_percent(value: float) -> str:
 
 
 def spoken_distance(meters: float) -> str:
-    """1,000m 미만은 10m 단위 "약 350미터", 이상은 "약 1.2킬로미터"."""
-    if meters < 1000:
-        return f"약 {max(10, round(meters / 10) * 10)}미터"
+    """10m 단위로 반올림해 1,000m 미만이면 "약 350미터", 이상은 "약 1.2킬로미터".
+
+    반올림한 뒤에 단위를 고른다. 995m를 "약 1000미터"로 읽지 않는다.
+    """
+    rounded = max(10, round(meters / 10) * 10)
+    if rounded < 1000:
+        return f"약 {rounded}미터"
     return f"약 {round(meters / 1000, 1):g}킬로미터"

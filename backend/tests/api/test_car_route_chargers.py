@@ -132,14 +132,22 @@ def test_need_charge_speech_recommends_the_first_reachable_charger(client, stati
     body = post(client, **ESTIMATE).json()
 
     first = body["chargers"][0]
-    distance = spoken_distance(first["along_m"] * 60_000 / body["route_m"])
+    assert first["distance_m"] == pytest.approx(
+        first["along_m"] * 60_000 / body["route_m"] + first["offset_m"], abs=1
+    )
+    distance = spoken_distance(first["distance_m"])
     assert body["speech"] == (
-        f"이대로면 도착할 때 배터리가 8%예요. {distance} 앞 A 충전소에 "
-        "비어 있는 급속충전기가 1대 있어요. 경유지로 넣을까요?"
+        f"이대로면 도착할 때 배터리가 8%예요. {distance} 앞, 경로에서 약 1킬로미터 벗어난 "
+        "A 충전소에 비어 있는 급속충전기가 1대 있어요. 경유지로 넣을까요?"
     )
     assert body["actions"] == [
-        {"type": "add_waypoint", "station_id": "A", "name": "A 충전소", "lat": 35.09,
-         "lng": 126.8 + KM_EAST}
+        {
+            "type": "add_waypoint",
+            "station_id": "A",
+            "name": "A 충전소",
+            "lat": 35.09,
+            "lng": 126.8 + KM_EAST,
+        }
     ]
 
 
@@ -163,9 +171,7 @@ def test_no_need_to_charge_still_returns_chargers(client, stations):
     assert [c["station_id"] for c in body["chargers"]] == ["A", "B"]
 
 
-@pytest.mark.parametrize(
-    "missing", [{"arrival_soc": 8}, {"remain_distance_m": 60_000}, {}]
-)
+@pytest.mark.parametrize("missing", [{"arrival_soc": 8}, {"remain_distance_m": 60_000}, {}])
 def test_without_all_three_values_nothing_is_estimated(client, stations, missing):
     body = post(client, **missing).json()
 
@@ -176,9 +182,11 @@ def test_without_all_three_values_nothing_is_estimated(client, stations, missing
 def test_without_arrival_soc_the_speech_only_offers_the_charger(client, stations):
     body = post(client).json()
 
-    assert body["speech"].startswith("약 10")
-    assert body["speech"].endswith(
-        "앞 A 충전소에 비어 있는 급속충전기가 1대 있어요. 경유지로 넣을까요?"
+    # 남은 거리가 없으면 꺾은선 거리 그대로: 10km 앞 + 1km 옆
+    assert body["chargers"][0]["distance_m"] == pytest.approx(11_000, rel=0.01)
+    assert body["speech"] == (
+        "약 11킬로미터 앞, 경로에서 약 1킬로미터 벗어난 A 충전소에 비어 있는 급속충전기가 "
+        "1대 있어요. 경유지로 넣을까요?"
     )
 
 
@@ -307,9 +315,7 @@ def test_segments_over_100km_ask_for_more_route_points(client, stations):
     body = {"origin": ORIGIN, "destination": {"lat": 36.0, "lng": 126.8}, "soc_now": 60}
 
     direct = client.post(URL, json=body)
-    with_points = client.post(
-        URL, json={**body, "route_points": [{"lat": 35.5, "lng": 126.8}]}
-    )
+    with_points = client.post(URL, json={**body, "route_points": [{"lat": 35.5, "lng": 126.8}]})
 
     assert direct.status_code == 422
     assert "경로 지점을 더 보내 주세요" in direct.json()["detail"][0]["msg"]
@@ -338,3 +344,42 @@ def test_candidate_cap_note_is_added_to_the_no_match_note(client, db_session, mo
         "경로 근처 충전소 2곳 중 지금 비어 있는 50kW 이상 충전기가 없어요. "
         "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요."
     )
+
+
+def test_station_next_to_the_start_is_not_spoken_as_10m_ahead(client, db_session):
+    # 현재 위치 바로 옆(동쪽 2.5km), 경로 진행 방향으로는 거의 0m
+    station(db_session, "SIDE", 35.0005, 126.8 + 2.5 * KM_EAST)
+
+    body = post(client).json()
+
+    item = body["chargers"][0]
+    assert item["along_m"] < 100
+    assert item["distance_m"] == pytest.approx(item["along_m"] + item["offset_m"], abs=1)
+    assert item["offset_m"] == pytest.approx(2_500, rel=0.01)
+    assert body["speech"].startswith(
+        f"{spoken_distance(item['distance_m'])} 앞, 경로에서 약 2.5킬로미터 벗어난 SIDE 충전소에"
+    )
+
+
+@pytest.mark.parametrize(
+    ("meters", "spoken"),
+    [
+        (3, "약 10미터"),
+        (994, "약 990미터"),
+        (995, "약 1킬로미터"),
+        (1049, "약 1킬로미터"),
+        (1050, "약 1.1킬로미터"),
+        (22_239, "약 22.2킬로미터"),
+    ],
+)
+def test_spoken_distance_picks_the_unit_after_rounding(meters, spoken):
+    assert spoken_distance(meters) == spoken
+
+
+def test_station_close_to_the_route_does_not_mention_the_offset(client, db_session):
+    station(db_session, "ON", 35.2, 126.8 + 0.4 * KM_EAST)  # 400m 옆
+
+    body = post(client).json()
+
+    assert "벗어난" not in body["speech"]
+    assert body["speech"].startswith("약 22.6킬로미터 앞 ON 충전소에")

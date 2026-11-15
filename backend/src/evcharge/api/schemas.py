@@ -729,6 +729,10 @@ class RouteChargerOut(BaseModel):
     # 출발(origin)부터 경로 근사를 따라간 거리, 경로에서 벗어난 거리 (m, 반올림)
     along_m: int
     offset_m: int
+    # 현재 위치에서 그 충전소까지 가는 거리 추정(m). along_m에 도로 비율(남은 거리 ÷
+    # 꺾은선 길이, 남은 거리가 없으면 1)을 곱하고 offset_m을 더한다. 문장과 잔량 추정이
+    # 같은 값을 쓴다.
+    distance_m: int
     # 지금 충전대기이면서 min_kw 이상인 충전기 수
     available_count: int
     max_kw: float | None

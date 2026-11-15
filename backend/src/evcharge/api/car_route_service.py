@@ -50,13 +50,16 @@ def short_name(value: object) -> str:
     return " ".join(str(value or "").split())[:MAX_NAME]
 
 
+# 경로에서 이만큼 이상 벗어난 충전소는 문장에 벗어난 거리를 함께 말한다.
+OFFSET_SPOKEN_M = 500
+
+
 @dataclass(frozen=True)
 class _Estimate:
-    """거리 비례 잔량 추정. ``scale``은 꺾은선 거리를 내비 도로 거리로 바꾸는 비율이다."""
+    """거리 비례 잔량 추정."""
 
     soc_now: float
     rate_per_m: float
-    scale: float
 
     def soc_at(self, road_m: float) -> float:
         return round(max(0.0, self.soc_now - self.rate_per_m * road_m), 1)
@@ -103,13 +106,18 @@ def find_along_route(
     matching.sort(key=lambda item: (item[0], item[1]))
     matching = matching[:MAX_RESULTS]
 
-    estimate = _estimate(payload, route_m)
+    estimate = _estimate(payload)
+    # 꺾은선은 도로보다 짧다. 내비 남은 거리가 있으면 그 비율로 늘려 도로 거리로 맞춘다
+    # (목적지에서 추정이 내비 도착 예상 잔량과 같아진다).
+    remain = payload.remain_distance_m
+    scale = remain / route_m if remain is not None and route_m > 0 else 1.0
     chargers = []
     for along, offset, row, count in matching:
         _available, top_kw = charger_summary(row)
+        distance = along * scale + offset
         est_soc = reachable = None
         if estimate is not None:
-            est_soc = estimate.soc_at(along * estimate.scale + offset)
+            est_soc = estimate.soc_at(distance)
             reachable = est_soc >= payload.reserve_soc
         chargers.append(
             RouteChargerOut(
@@ -119,6 +127,7 @@ def find_along_route(
                 lng=row.lng,
                 along_m=round(along),
                 offset_m=round(offset),
+                distance_m=round(distance),
                 available_count=count,
                 max_kw=top_kw,
                 est_soc=est_soc,
@@ -130,7 +139,6 @@ def find_along_route(
     recommended = next((c for c in chargers if c.reachable is not False), None) or (
         chargers[0] if chargers else None
     )
-    scale = estimate.scale if estimate is not None else 1.0
     assumptions = [ASSUME_ROUTE, ASSUME_STATUS] + ([ASSUME_ESTIMATE] if estimate else [])
     if not near:
         coverage_note = NO_COVERAGE
@@ -157,7 +165,7 @@ def find_along_route(
     return CarRouteChargersResponse(
         need_charge=need_charge,
         chargers=chargers,
-        speech=_speech(payload, need_charge, recommended, scale),
+        speech=_speech(payload, need_charge, recommended),
         actions=actions,
         assumptions=assumptions,
         coverage_note=coverage_note,
@@ -165,26 +173,22 @@ def find_along_route(
     )
 
 
-def _estimate(payload: CarRouteChargersRequest, route_m: float) -> _Estimate | None:
+def _estimate(payload: CarRouteChargersRequest) -> _Estimate | None:
     """세 값(soc_now, arrival_soc, remain_distance_m)이 다 있을 때만 추정한다.
 
     소모율 = (soc_now − arrival_soc) / remain_distance_m (%/m). 내리막·회생으로 도착
-    잔량이 더 높으면 0으로 본다. 꺾은선은 도로보다 짧으니, 충전소까지의 꺾은선 거리에
-    ``remain_distance_m / route_m``을 곱해 도로 거리로 맞춘다(목적지에서 추정이 내비
-    도착 예상 잔량과 같아진다).
+    잔량이 더 높으면 0으로 본다.
     """
     if payload.arrival_soc is None or payload.remain_distance_m is None:
         return None
     rate = max(0.0, (payload.soc_now - payload.arrival_soc) / payload.remain_distance_m)
-    scale = payload.remain_distance_m / route_m if route_m > 0 else 1.0
-    return _Estimate(soc_now=payload.soc_now, rate_per_m=rate, scale=scale)
+    return _Estimate(soc_now=payload.soc_now, rate_per_m=rate)
 
 
 def _speech(
     payload: CarRouteChargersRequest,
     need_charge: bool | None,
     recommended: RouteChargerOut | None,
-    scale: float,
 ) -> str:
     kind = "급속충전기" if payload.min_kw >= FAST_KW else "충전기"
     arrival = spoken_percent(payload.arrival_soc) if payload.arrival_soc is not None else None
@@ -196,9 +200,11 @@ def _speech(
     if recommended is None:
         return f"{lead}경로 근처에 지금 비어 있는 {kind}를 찾지 못했어요."
 
-    distance = spoken_distance(recommended.along_m * scale)
+    where = f"{spoken_distance(recommended.distance_m)} 앞"
+    if recommended.offset_m >= OFFSET_SPOKEN_M:
+        where += f", 경로에서 {spoken_distance(recommended.offset_m)} 벗어난"
     sentence = (
-        f"{lead}{distance} 앞 {recommended.name or '이름 없는 충전소'}에 "
+        f"{lead}{where} {recommended.name or '이름 없는 충전소'}에 "
         f"비어 있는 {kind}가 {recommended.available_count}대 있어요."
     )
     if recommended.reachable is False and recommended.est_soc is not None:
