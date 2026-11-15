@@ -739,6 +739,9 @@ class RouteChargerOut(BaseModel):
     # 잔량 추정 (soc_now, arrival_soc, remain_distance_m가 다 있을 때만)
     est_soc: float | None = None
     reachable: bool | None = None
+    # 0으로 자르기 전 추정 잔량이 0 이하: 이 충전소까지 가기 전에 배터리가 바닥날 수 있다.
+    # 추정하지 않았으면 null
+    runs_out: bool | None = None
 
 
 class CarRouteChargersResponse(BaseModel):
@@ -746,7 +749,8 @@ class CarRouteChargersResponse(BaseModel):
     need_charge: bool | None
     chargers: list[RouteChargerOut]
     speech: str
-    actions: list[AddWaypointAction]
+    # 추천 충전소를 경유지로 넣거나, 추천 충전소까지 못 갈 수 있으면 운전자에게 묻는다
+    actions: list[Annotated[AddWaypointAction | AskAction, Field(discriminator="type")]]
     assumptions: list[str]
     coverage_note: str | None = None
     # 경로 근사(꺾은선) 길이 (m)

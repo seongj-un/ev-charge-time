@@ -1056,3 +1056,20 @@ def test_wrong_power_or_kilo_as_distance_fails(client, fake, db_session, sentenc
     _content, sources = _route_sources(client, fake, db_session)
 
     assert voice.unsupported_numbers(sentence, sources) == [problem]
+
+
+def test_along_route_tool_asks_instead_of_a_waypoint_it_cannot_reach(client, fake, db_session):
+    _station(db_session, "MID", 35.7, name="먼 휴게소", kw=100.0)
+    context = {
+        k: v for k, v in ROUTE_CONTEXT.items() if k not in ("arrival_soc", "remain_distance_m")
+    }
+    context.update(
+        soc_now=12, efficiency_km_per_kwh=5.0, destination={"lat": 36.4, "lng": HERE[1]}
+    )
+    fake.replies = [use("find_chargers_along_route"), say("확인했어요.")]
+
+    body = ask(client, register(client), "충전할 곳", context=context).json()
+
+    item = tool_results(fake, 1)[0]["content"]["chargers"][0]
+    assert item["runs_out"] is True
+    assert body["actions"] == [{"type": "ask", "question": "더 가까운 충전소를 찾아볼까요?"}]

@@ -271,7 +271,7 @@ class ToolOutcome:
     content: dict[str, Any]
     is_error: bool = False
     speech: str | None = None
-    action: SetReservationAction | NavigateAction | AddWaypointAction | None = None
+    action: SetReservationAction | NavigateAction | AddWaypointAction | AskAction | None = None
     saving_id: str | None = None
 
 

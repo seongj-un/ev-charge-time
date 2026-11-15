@@ -522,3 +522,73 @@ def test_efficiency_needs_capacity_too(client, stations, partial):
 )
 def test_efficiency_bounds(client, bad):
     assert post(client, **bad).status_code == 422
+
+
+# Momus 재현: 경유지 없는 155km, 잔량 25%, 전비 5km/kWh, 77.4kWh → 주행 가능 약 96.75km
+LONG_DEST = {"lat": 36.4, "lng": 126.8}
+LOW = {**EFFICIENCY, "soc_now": 25}
+RANGE_M = 25 / (100 / (5.0 * 77_400))
+
+
+def post_long(client, **body):
+    return client.post(URL, json={"origin": ORIGIN, "destination": LONG_DEST, **LOW, **body})
+
+
+def test_station_beyond_range_is_not_spoken_as_reaching_zero(client, db_session):
+    # 경로 77.84km 앞, 2km 옆 → 도로 거리 약 99.3km
+    station(db_session, "MID", 35.7, 126.8 + 2 * KM_EAST)
+
+    body = post_long(client).json()
+
+    item = body["chargers"][0]
+    assert item["distance_m"] == pytest.approx(99_300, rel=0.01) and item["distance_m"] > RANGE_M
+    assert (item["est_soc"], item["reachable"], item["runs_out"]) == (0, False, True)
+    assert "0%" not in body["speech"]
+    assert body["speech"] == (
+        "전비로 추정하면 목적지에 닿기 전에 배터리가 바닥날 수 있어요. "
+        f"{spoken_distance(item['distance_m'])} 앞, 경로에서 약 2킬로미터 벗어난 MID 충전소에 "
+        "비어 있는 급속충전기가 1대 있어요. 이 충전소까지 가기 전에 배터리가 바닥날 수 있어요. "
+        "더 가까운 충전소를 찾아볼까요?"
+    )
+    assert body["actions"] == [{"type": "ask", "question": "더 가까운 충전소를 찾아볼까요?"}]
+
+
+def test_a_nearer_reachable_station_is_recommended_instead(client, db_session):
+    station(db_session, "MID", 35.7, 126.8 + 2 * KM_EAST)
+    station(db_session, "NEAR", 35.18)  # 20km 앞 → 도로 25km, 약 18.5% 남음
+
+    body = post_long(client).json()
+
+    assert [c["station_id"] for c in body["chargers"]] == ["NEAR", "MID"]
+    assert [c["runs_out"] for c in body["chargers"]] == [False, True]
+    assert body["actions"][0] == {
+        "type": "add_waypoint", "station_id": "NEAR", "name": "NEAR 충전소", "lat": 35.18,
+        "lng": 126.8,
+    }
+    assert body["speech"].endswith("경유지로 넣을까요?")
+
+
+def test_a_later_station_that_does_not_run_out_wins_over_an_earlier_one_that_does(
+    client, db_session
+):
+    # FAR_SIDE: 76km 앞, 2.9km 옆 → 도로 97.9km (바닥남)
+    # ON_ROUTE: 76.5km 앞, 0.1km 옆 → 도로 95.7km (바닥나지 않지만 기준 15% 아래)
+    station(db_session, "FAR_SIDE", 35.0 + 76 / 111.195, 126.8 + 2.9 * KM_EAST)
+    station(db_session, "ON_ROUTE", 35.0 + 76.5 / 111.195, 126.8 + 0.1 * KM_EAST)
+
+    body = post_long(client).json()
+
+    assert [c["station_id"] for c in body["chargers"]] == ["FAR_SIDE", "ON_ROUTE"]
+    assert [c["runs_out"] for c in body["chargers"]] == [True, False]
+    assert body["actions"][0]["station_id"] == "ON_ROUTE"
+    low = body["chargers"][1]["est_soc"]
+    assert 0 < low < 15
+    assert f"가는 동안 배터리가 {low:g}%까지 내려갈 수 있어요. 경유지로 넣을까요?" in body["speech"]
+
+
+def test_runs_out_is_null_without_an_estimate_and_false_when_fine(client, stations):
+    without = post(client).json()
+    navi = post(client, **ESTIMATE).json()
+
+    assert all(c["runs_out"] is None for c in without["chargers"])
+    assert all(c["runs_out"] is False for c in navi["chargers"])

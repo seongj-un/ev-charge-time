@@ -21,6 +21,7 @@ from .car_plan_service import spoken_distance, spoken_percent
 from .routes.chargers import cache_is_empty, charger_summary, matching_count, rows_in_boxes
 from .schemas import (
     AddWaypointAction,
+    AskAction,
     CarRouteChargersRequest,
     CarRouteChargersResponse,
     RouteChargerOut,
@@ -62,6 +63,7 @@ def short_name(value: object) -> str:
     return " ".join(str(value or "").split())[:MAX_NAME]
 
 
+RUNS_OUT_QUESTION = "더 가까운 충전소를 찾아볼까요?"
 # 경로에서 이만큼 이상 벗어난 충전소는 문장에 벗어난 거리를 함께 말한다.
 OFFSET_SPOKEN_M = 500
 
@@ -75,7 +77,14 @@ class _Estimate:
     assumption: str
 
     def soc_at(self, road_m: float) -> float:
-        return round(max(0.0, self.soc_now - self.rate_per_m * road_m), 1)
+        return round(max(0.0, self.left_at(road_m)), 1)
+
+    def runs_out_before(self, road_m: float) -> bool:
+        """가는 동안 쓰는 양이 지금 잔량 이상이다(0으로 자르기 전 값이 0 이하)."""
+        return self.left_at(road_m) <= 0
+
+    def left_at(self, road_m: float) -> float:
+        return self.soc_now - self.rate_per_m * road_m
 
 
 def find_along_route(
@@ -128,10 +137,11 @@ def find_along_route(
     for along, offset, row, count in matching:
         _available, top_kw = charger_summary(row)
         distance = along * scale + offset
-        est_soc = reachable = None
+        est_soc = reachable = runs_out = None
         if estimate is not None:
             est_soc = estimate.soc_at(distance)
             reachable = est_soc >= payload.reserve_soc
+            runs_out = estimate.runs_out_before(distance)
         chargers.append(
             RouteChargerOut(
                 station_id=row.station_id,
@@ -145,19 +155,19 @@ def find_along_route(
                 max_kw=top_kw,
                 est_soc=est_soc,
                 reachable=reachable,
+                runs_out=runs_out,
             )
         )
 
     # 도착 잔량: 내비 값이 있으면 그대로, 없고 전비로 추정하면 목적지까지 도로 거리로 추정
     arrival: float | None = payload.arrival_soc
-    arrival_estimated = False
+    arrival_estimated = arrival_runs_out = False
     if arrival is None and estimate is not None and estimate.assumption == ASSUME_EFFICIENCY:
         arrival = estimate.soc_at(route_m * scale)
         arrival_estimated = True
+        arrival_runs_out = estimate.runs_out_before(route_m * scale)
     need_charge = None if arrival is None else arrival < payload.reserve_soc
-    recommended = next((c for c in chargers if c.reachable is not False), None) or (
-        chargers[0] if chargers else None
-    )
+    recommended = _recommend(chargers)
     assumptions = [ASSUME_ROUTE, ASSUME_STATUS]
     if max(route.lengths) > LONG_SEGMENT_M:
         assumptions.append(ASSUME_LONG_SEGMENT)
@@ -180,24 +190,47 @@ def find_along_route(
     actions = []
     # 충전이 필요 없다고 말할 때는 경유지 버튼을 주지 않는다(말과 화면이 어긋난다).
     # 충전소 목록은 그대로 준다.
+    # 가기 전에 바닥날 수 있는 충전소는 경유지로 넣지 않고 운전자에게 묻는다.
+    actions: list[AddWaypointAction | AskAction] = []
     if recommended is not None and need_charge is not False:
-        actions.append(
-            AddWaypointAction(
-                station_id=recommended.station_id,
-                name=recommended.name,
-                lat=recommended.lat,
-                lng=recommended.lng,
+        if recommended.runs_out:
+            actions.append(AskAction(question=RUNS_OUT_QUESTION))
+        else:
+            actions.append(
+                AddWaypointAction(
+                    station_id=recommended.station_id,
+                    name=recommended.name,
+                    lat=recommended.lat,
+                    lng=recommended.lng,
+                )
             )
-        )
     return CarRouteChargersResponse(
         need_charge=need_charge,
         chargers=chargers,
-        speech=_speech(payload, arrival, arrival_estimated, need_charge, recommended),
+        speech=_speech(
+            payload, arrival, arrival_estimated, arrival_runs_out, need_charge, recommended
+        ),
         actions=actions,
         assumptions=assumptions,
         coverage_note=coverage_note,
         route_m=round(route_m),
     )
+
+
+def _recommend(chargers: list[RouteChargerOut]) -> RouteChargerOut | None:
+    """경로 순서대로 보며, 갈 수 있는 첫 충전소 → 바닥나지 않는 첫 충전소 → 첫 충전소.
+
+    목록 순서는 바꾸지 않는다. 추정이 없으면(``reachable`` null) 첫 충전소다.
+    """
+    for wanted in (
+        lambda c: c.reachable is not False,
+        lambda c: c.runs_out is not True,
+        lambda c: True,
+    ):
+        found = next((c for c in chargers if wanted(c)), None)
+        if found is not None:
+            return found
+    return None
 
 
 def _estimate(payload: CarRouteChargersRequest) -> _Estimate | None:
@@ -222,10 +255,15 @@ def _speech(
     payload: CarRouteChargersRequest,
     arrival_soc: float | None,
     arrival_estimated: bool,
+    arrival_runs_out: bool,
     need_charge: bool | None,
     recommended: RouteChargerOut | None,
 ) -> str:
-    """도착 잔량을 전비로 추정했으면 "전비로 추정하면"으로 시작한다(내비 값이 아님을 밝힌다)."""
+    """도착 잔량을 전비로 추정했으면 "전비로 추정하면"으로 시작한다(내비 값이 아님을 밝힌다).
+
+    추정 잔량이 0 이하이면 "0%예요" 대신 "닿기 전에 바닥날 수 있어요"라고 말한다.
+    0%는 "아슬아슬하게 닿는다"로 들린다.
+    """
     kind = "급속충전기" if payload.min_kw >= FAST_KW else "충전기"
     arrival = spoken_percent(arrival_soc) if arrival_soc is not None else None
 
@@ -236,6 +274,8 @@ def _speech(
 
     if not need_charge:
         lead = ""
+    elif arrival_runs_out:
+        lead = "전비로 추정하면 목적지에 닿기 전에 배터리가 바닥날 수 있어요. "
     elif arrival_estimated:
         lead = f"전비로 추정하면 도착할 때 배터리가 {arrival}예요. "
     else:
@@ -250,6 +290,8 @@ def _speech(
         f"{lead}{where} {recommended.name or '이름 없는 충전소'}에 "
         f"비어 있는 {kind}가 {recommended.available_count}대 있어요."
     )
+    if recommended.runs_out:
+        return f"{sentence} 이 충전소까지 가기 전에 배터리가 바닥날 수 있어요. {RUNS_OUT_QUESTION}"
     if recommended.reachable is False and recommended.est_soc is not None:
         low = spoken_percent(recommended.est_soc)
         sentence += f" 가는 동안 배터리가 {low}까지 내려갈 수 있어요."

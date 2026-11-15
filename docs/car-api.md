@@ -372,7 +372,8 @@ IP가 다시 발급할 때 재사용되어 따로 정리하지 않는다.
 - `{"type": "navigate", "station_id", "name", "lat", "lng"}`: `find_chargers`가 찾은 가장 가까운
   충전소.
 - `{"type": "add_waypoint", "station_id", "name", "lat", "lng"}`: `find_chargers_along_route`가 고른
-  경유지 추천(위 "경로 위 충전소 찾기"와 같은 규칙).
+  경유지 추천(아래 "경로 위 충전소 찾기"와 같은 규칙). 추천 충전소까지 가기 전에 바닥날 수 있으면
+  대신 `ask` "더 가까운 충전소를 찾아볼까요?"를 준다.
 - `{"type": "ask", "question"}`: 와트잇이 질문으로 끝냈다. 앱은 읽은 뒤 바로 마이크를 연다.
   귀가길 브리핑 첫 질문과, Claude의 답이 `?`로 끝날 때(마지막 문장).
 
@@ -556,6 +557,8 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
    (1m에 1 / (전비 × 1000) kWh).
 
 - `est_soc` = `soc_now` − 소모율 × `distance_m` (소수 첫째 자리, 0 아래는 0)
+- `runs_out` = 0으로 자르기 전 추정 잔량 ≤ 0 (가는 동안 쓰는 양이 지금 잔량 이상). 이 충전소까지
+  가기 전에 배터리가 바닥날 수 있다. 추정하지 않았으면 null
 - 도착 잔량: `arrival_soc`가 있으면 그 값. 없고 전비로 추정했으면 `soc_now` − 소모율 ×
   (`route_m` × 도로 비율)로 추정해 `need_charge`에 쓰고, 문장 앞에 "전비로 추정하면"을 붙인다.
 - `reachable` = `est_soc` ≥ `reserve_soc`
@@ -565,25 +568,29 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `need_charge` | bool \| null | 도착 잔량 < `reserve_soc`. 도착 잔량은 `arrival_soc`, 없으면 전비로 추정한 값. 둘 다 없으면 null |
-| `chargers` | array | `{station_id, name, lat, lng, along_m, offset_m, distance_m, available_count, max_kw, est_soc, reachable}`. `distance_m`은 위 "잔량 추정"의 도로 기준 거리, `name`은 공공 API 이름을 줄바꿈을 펴고 40자로 자른 것, `available_count`는 지금 충전대기이면서 `min_kw` 이상인 충전기 수, `max_kw`는 그 충전소 충전기 중 최고 출력 |
+| `chargers` | array | `{station_id, name, lat, lng, along_m, offset_m, distance_m, available_count, max_kw, est_soc, reachable, runs_out}`. `distance_m`은 위 "잔량 추정"의 도로 기준 거리, `name`은 공공 API 이름을 줄바꿈을 펴고 40자로 자른 것, `available_count`는 지금 충전대기이면서 `min_kw` 이상인 충전기 수, `max_kw`는 그 충전소 충전기 중 최고 출력 |
 | `speech` | string | TTS 문장 |
-| `actions` | array | 추천이 있고 `need_charge`가 false가 아니면 `[{"type": "add_waypoint", station_id, name, lat, lng}]`. 충전이 필요 없다고 말할 때는 빈 배열 |
+| `actions` | array | 추천이 있고 `need_charge`가 false가 아니면 `[{"type": "add_waypoint", station_id, name, lat, lng}]`. 추천 충전소가 `runs_out`이면 경유지 대신 `[{"type": "ask", "question": "더 가까운 충전소를 찾아볼까요?"}]`. 충전이 필요 없다고 말할 때는 빈 배열 |
 | `assumptions` | string[] | 직선 근사, 상태는 최근 수집 기준, (100km 넘는 구간이 있으면) 장거리 직선 근사 한계, (추정했으면) 내비 또는 전비 기준 거리 비례 추정 |
 | `coverage_note` | string \| null | 경로 근처에 충전소가 하나도 없으면 "이 구간은 충전소 정보가 없을 수 있어요(수집 지역 밖).", 있지만 조건에 맞는 곳이 없으면 "경로 근처 충전소 N곳 중 지금 비어 있는 50kW 이상 충전기가 없어요.", 후보 행 상한에 걸리면 뒤에 "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요." |
 | `route_m` | int | 정리된 남은 꺾은선 길이 m |
 
-추천(경유지 동작과 문장): `reachable`이 false가 아닌 첫 충전소. 모두 false면 가장 가까운 충전소.
+추천(동작과 문장): 목록(경로 순서)은 그대로 두고, `reachable`이 false가 아닌 첫 충전소 → 없으면
+`runs_out`이 아닌 첫 충전소 → 없으면 첫 충전소.
 
 `speech` (`min_kw` 50 이상이면 "급속충전기", 아니면 "충전기"; 거리는 `distance_m`. `offset_m`이
 500m 이상이면 "약 N킬로미터 앞, 경로에서 약 M킬로미터 벗어난 ○○"):
 
 - 충전 필요: "이대로면 도착할 때 배터리가 8%예요. 약 42.3킬로미터 앞 ○○휴게소에 비어 있는
   급속충전기가 2대 있어요. 경유지로 넣을까요?" 추천이 `reachable: false`면 "가는 동안 배터리가
-  12.5%까지 내려갈 수 있어요."를 질문 앞에 붙인다.
+  12.5%까지 내려갈 수 있어요."를 질문 앞에 붙인다. 추천이 `runs_out`이면 "… 있어요. 이 충전소까지
+  가기 전에 배터리가 바닥날 수 있어요. 더 가까운 충전소를 찾아볼까요?"로 끝낸다("0%까지"라고 하지
+  않는다).
 - 충전 불필요: "도착할 때 배터리가 35% 남아요. 충전 없이 가셔도 돼요." (`chargers`는 그대로 주고,
   `actions`는 비운다)
 - 도착 잔량을 전비로 추정했으면: "전비로 추정하면 도착할 때 배터리가 42%예요. …" /
-  "전비로 추정하면 도착할 때 배터리가 42% 남아요. 충전 없이 가셔도 돼요."
+  "전비로 추정하면 도착할 때 배터리가 42% 남아요. 충전 없이 가셔도 돼요." 추정 잔량이 0 이하이면
+  "전비로 추정하면 목적지에 닿기 전에 배터리가 바닥날 수 있어요. …"
 - 잔량을 모름: "약 42.3킬로미터 앞 ○○휴게소에 비어 있는 급속충전기가 2대 있어요. 경유지로 넣을까요?"
 - 추천 없음: "(충전 필요면 첫 문장) 경로 근처에 지금 비어 있는 급속충전기를 찾지 못했어요."
 
