@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from itertools import pairwise
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -14,6 +15,7 @@ from pydantic import (
 )
 
 from ..domain.pricing import KST
+from ..domain.route import route_length_m
 
 Mode = Literal["self_low", "self_high", "public_fast"]
 Band = Literal["light", "middle", "peak"]
@@ -543,6 +545,26 @@ class CarSavingsSummary(BaseModel):
 # 와트잇 음성 대화 (BE-3) — 계약: docs/car-api.md
 # ---------------------------------------------------------------------------
 
+ROUTE_POINTS_MAX = 50
+
+
+class LatLng(BaseModel):
+    # 극 근처에서는 경도 1도의 길이가 0에 가까워 평면 근사가 무너진다. 국내 서비스라
+    # 위도 ±85도 밖은 받지 않는다.
+    lat: float = Field(ge=-85, le=85, allow_inf_nan=False)
+    lng: float = Field(ge=-180, le=180, allow_inf_nan=False)
+
+
+class AddWaypointAction(BaseModel):
+    """내비 경유지로 넣을 충전소 (BE-7, 음성 대화의 동작으로도 쓴다)."""
+
+    type: Literal["add_waypoint"] = "add_waypoint"
+    station_id: str
+    name: str
+    lat: float
+    lng: float
+
+
 VOICE_TEXT_MAX = 500
 VOICE_HISTORY_MAX = 6
 
@@ -564,6 +586,14 @@ class CarVoiceContext(BaseModel):
     charger_kw: float = Field(default=7.0, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
     charging: bool | None = None
     place: Literal["home", "public"] | None = None
+    # 내비 목적지와 남은 거리(BE-7 경로 위 충전소 찾기 도구). 목적지가 없으면 그 도구는
+    # 오류 결과를 준다. 남은 거리가 있어야 충전소별 잔량을 추정한다.
+    destination: LatLng | None = None
+    remain_distance_m: float | None = Field(default=None, gt=0, le=3_000_000, allow_inf_nan=False)
+    # 내비 경유지(남은 것, 순서대로). 없으면 현재 위치에서 목적지까지 직선 근사다.
+    route_points: list[LatLng] = Field(default_factory=list, max_length=ROUTE_POINTS_MAX)
+    # Vehicle SDK 충전 후 평균 전비(km/kWh). 경로 위 충전소 잔량 추정에 쓴다.
+    efficiency_km_per_kwh: float | None = Field(default=None, gt=0, le=20, allow_inf_nan=False)
 
     @field_validator("arrival_at")
     @classmethod
@@ -628,7 +658,8 @@ class AskAction(BaseModel):
 
 
 CarVoiceAction = Annotated[
-    SetReservationAction | NavigateAction | AskAction, Field(discriminator="type")
+    SetReservationAction | NavigateAction | AskAction | AddWaypointAction,
+    Field(discriminator="type"),
 ]
 
 
@@ -639,3 +670,88 @@ class CarVoiceResponse(BaseModel):
     fallback: bool
     # plan_charge·leak_check 도구가 대기 절감 기록을 만들었으면 (BE-5)
     saving_id: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# 와트잇 경로 위 충전소 찾기 (BE-7) — 계약: docs/car-api.md
+# ---------------------------------------------------------------------------
+
+# 경로 근사(꺾은선)의 최대 길이. 국내 장거리(약 500km)를 넉넉히 덮으면서, 아주 긴
+# 경로로 DB 후보를 한꺼번에 끌어오는 계산을 막는다.
+MAX_ROUTE_M = 1_000_000
+
+
+class CarRouteChargersRequest(BaseModel):
+    """``POST /api/car/chargers/along-route``. 경로는 origin → route_points → destination 꺾은선."""
+
+    origin: LatLng
+    destination: LatLng
+    route_points: list[LatLng] = Field(default_factory=list, max_length=ROUTE_POINTS_MAX)
+    soc_now: float = Field(ge=0, le=100, allow_inf_nan=False)
+    # 내비 도착 예상 잔량(%)과 남은 거리(m). 둘 다 있어야 충전소별 잔량을 추정한다.
+    arrival_soc: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    remain_distance_m: float | None = Field(
+        default=None, gt=0, le=MAX_ROUTE_M * 3, allow_inf_nan=False
+    )
+    min_kw: float = Field(default=50, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
+    corridor_m: int = Field(default=3000, ge=500, le=10_000)
+    reserve_soc: float = Field(default=15, ge=0, le=100, allow_inf_nan=False)
+    # Vehicle SDK의 충전 후 평균 전비(getSinceChargeEvEfficiency, km/kWh)와 배터리 용량(Wh).
+    # 도착 예상 잔량이나 남은 거리가 없을 때 이 둘로 잔량을 추정한다.
+    efficiency_km_per_kwh: float | None = Field(default=None, gt=0, le=20, allow_inf_nan=False)
+    battery_capacity_wh: float | None = Field(
+        default=None, ge=MIN_BATTERY_CAPACITY_WH, le=MAX_BATTERY_KWH * 1000, allow_inf_nan=False
+    )
+
+    def points(self) -> list[tuple[float, float]]:
+        return [
+            (point.lat, point.lng)
+            for point in [self.origin, *self.route_points, self.destination]
+        ]
+
+    @model_validator(mode="after")
+    def _route_is_computable(self) -> CarRouteChargersRequest:
+        points = self.points()
+        for a, b in pairwise(points):
+            if abs(a[1] - b[1]) > 180:
+                raise ValueError("경로가 날짜변경선을 지나면 계산할 수 없습니다.")
+        if route_length_m(points) > MAX_ROUTE_M:
+            raise ValueError(f"경로 길이는 {MAX_ROUTE_M // 1000:,}km를 넘을 수 없습니다.")
+        return self
+
+
+class RouteChargerOut(BaseModel):
+    station_id: str
+    # 공공 API 이름을 40자로 자른 것
+    name: str
+    lat: float
+    lng: float
+    # 출발(origin)부터 경로 근사를 따라간 거리, 경로에서 벗어난 거리 (m, 반올림)
+    along_m: int
+    offset_m: int
+    # 현재 위치에서 그 충전소까지 가는 거리 추정(m). along_m에 도로 비율(남은 거리 ÷
+    # 꺾은선 길이, 남은 거리가 없으면 1)을 곱하고 offset_m을 더한다. 문장과 잔량 추정이
+    # 같은 값을 쓴다.
+    distance_m: int
+    # 지금 충전대기이면서 min_kw 이상인 충전기 수
+    available_count: int
+    max_kw: float | None
+    # 잔량 추정 (soc_now, arrival_soc, remain_distance_m가 다 있을 때만)
+    est_soc: float | None = None
+    reachable: bool | None = None
+    # 0으로 자르기 전 추정 잔량이 0 이하: 이 충전소까지 가기 전에 배터리가 바닥날 수 있다.
+    # 추정하지 않았으면 null
+    runs_out: bool | None = None
+
+
+class CarRouteChargersResponse(BaseModel):
+    # arrival_soc < reserve_soc. arrival_soc가 없으면 null
+    need_charge: bool | None
+    chargers: list[RouteChargerOut]
+    speech: str
+    # 추천 충전소를 경유지로 넣거나, 추천 충전소까지 못 갈 수 있으면 운전자에게 묻는다
+    actions: list[Annotated[AddWaypointAction | AskAction, Field(discriminator="type")]]
+    assumptions: list[str]
+    coverage_note: str | None = None
+    # 경로 근사(꺾은선) 길이 (m)
+    route_m: int

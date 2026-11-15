@@ -18,7 +18,7 @@ import math
 from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from ...domain.geo import bounding_box, haversine_m
@@ -170,6 +170,40 @@ def charger_summary(row: ChargerCache) -> tuple[int, float | None]:
     )
     outputs = [kw for kw in (_as_kw(charger.get("capacity_kw")) for charger in chargers) if kw]
     return available, max(outputs) if outputs else None
+
+
+def matching_count(row: ChargerCache, *, available_only: bool, min_kw: float | None) -> int:
+    """이 충전소에서 조건(지금 충전대기, 출력 ``min_kw`` 이상)을 한 대가 모두 맞는 충전기 수.
+
+    ``find_nearby``와 같은 판정(``_ChargerFilter``)이다. 경로 위 충전소 찾기(BE-7)가 쓴다.
+    """
+    wanted = _ChargerFilter(charger_type=None, available_only=available_only, min_kw=min_kw)
+    return sum(1 for charger in _chargers(row) if wanted.matches(charger))
+
+
+def rows_in_boxes(
+    session: DbSession, boxes: list[tuple[float, float, float, float]], *, limit: int | None = None
+) -> list[ChargerCache]:
+    """사각형들 ``(min_lat, min_lng, max_lat, max_lng)`` 중 하나라도 안에 있는 캐시 행.
+
+    인덱스를 타는 범위 비교의 OR이다. 좌표가 없는 행은 빠진다. ``limit``이 있으면 행이
+    들어 있는 첫 사각형의 순서대로 그 수만큼만 읽는다(사각형을 경로 순서로 주면 앞쪽
+    구간부터).
+    """
+    if not boxes:
+        return []
+    conditions = [
+        and_(
+            ChargerCache.lat.between(min_lat, max_lat),
+            ChargerCache.lng.between(min_lng, max_lng),
+        )
+        for min_lat, min_lng, max_lat, max_lng in boxes
+    ]
+    query = select(ChargerCache).where(or_(*conditions))
+    if limit is not None:
+        first_box = case(*[(c, i) for i, c in enumerate(conditions)], else_=len(conditions))
+        query = query.order_by(first_box, ChargerCache.station_id).limit(limit)
+    return list(session.scalars(query).all())
 
 
 @dataclass(frozen=True)

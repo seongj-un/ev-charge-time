@@ -43,20 +43,25 @@ from .car_leak_service import compute_leak_check
 from .car_plan_service import (
     compose_no_charge_speech,
     compute_car_plan,
+    spoken_distance,
     spoken_percent,
 )
+from .car_route_service import find_along_route
 from .car_savings import record_pending, summarize
 from .deps import get_public_prices
 from .months import month_bounds, month_of
 from .routes.chargers import MAX_RADIUS_M, cache_is_empty, charger_summary, find_nearby
 from .schemas import (
+    AddWaypointAction,
     AskAction,
     CarLeakCheckRequest,
     CarPlanRequest,
+    CarRouteChargersRequest,
     CarVoiceContext,
     CarVoiceRequest,
     CarVoiceResponse,
     CarVoiceTurn,
+    LatLng,
     NavigateAction,
     SetReservationAction,
 )
@@ -98,6 +103,8 @@ SYSTEM_PROMPT = """너는 전기차 충전 도우미 '와트잇'이다. 운전 �
 - 주변 충전기, 빈 충전기, 급속 충전기는 find_chargers.
 - 지금 충전하면 비싼지, 돈이 새는지는 leak_check.
 - 아낀 금액, 절약 리포트는 savings_summary.
+- 장거리 이동 중 가는 길에 충전할 곳, 목적지까지 배터리가 버티는지는
+  find_chargers_along_route. 목적지는 서버가 채운다.
 - 배터리 잔량, 배터리 용량, 위치는 서버가 채우므로 운전자에게 묻지 않는다.
 - 앞에서 말한 시각이나 금액을 다시 말할 때도 도구를 다시 불러 그 결과로 말한다.
 
@@ -183,6 +190,31 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "find_chargers_along_route",
+        "description": (
+            "현재 위치에서 목적지까지 가는 길 근처의 지금 비어 있는 충전소를 경로 순서대로 "
+            "최대 5곳 찾고, 도착 잔량이 모자라면 경유지로 넣을 곳을 고른다. 위치, 목적지, "
+            "잔량은 서버가 채운다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "min_kw": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 400,
+                    "description": "최소 출력 kW. 기본 50(급속).",
+                },
+                "corridor_m": {
+                    "type": "integer",
+                    "minimum": 500,
+                    "maximum": 10000,
+                    "description": "경로에서 벗어나도 되는 거리(m). 기본 3000.",
+                },
+            },
+        },
+    },
+    {
         "name": "savings_summary",
         "description": "와트잇 추천을 따라 이 차가 아낀 금액(이번 달, 올해, 전체)을 알려 준다.",
         "input_schema": {
@@ -223,6 +255,11 @@ class _LeakInput(BaseModel):
     depart_time: str | None = Field(default=None, pattern=_HHMM)
 
 
+class _RouteInput(BaseModel):
+    min_kw: float = Field(default=50, gt=0, le=400, allow_inf_nan=False)
+    corridor_m: int = Field(default=3000, ge=500, le=10_000)
+
+
 class _SummaryInput(BaseModel):
     month: str | None = Field(default=None, max_length=7)
 
@@ -234,7 +271,7 @@ class ToolOutcome:
     content: dict[str, Any]
     is_error: bool = False
     speech: str | None = None
-    action: SetReservationAction | NavigateAction | None = None
+    action: SetReservationAction | NavigateAction | AddWaypointAction | AskAction | None = None
     saving_id: str | None = None
 
 
@@ -271,6 +308,7 @@ class VoiceTools:
             "find_chargers": self._find,
             "leak_check": self._leak,
             "savings_summary": self._summary,
+            "find_chargers_along_route": self._along_route,
         }
         if name not in handler:
             return ToolOutcome({"error": "없는 도구입니다."}, is_error=True)
@@ -393,6 +431,7 @@ class VoiceTools:
             "count": len(stations),
             "radius_m": args.radius_m,
             "available_only": args.available_only,
+            "min_kw": args.min_kw,
             "stations": stations,
         }
         if not found:
@@ -463,6 +502,33 @@ class VoiceTools:
             saving_id = self._record(result.cause, result.leak_won, result.energy_kwh, "leak_check")
         return ToolOutcome(content, speech=result.speech, action=action, saving_id=saving_id)
 
+    def _along_route(self, raw: dict[str, Any]) -> ToolOutcome:
+        args = _RouteInput.model_validate(raw)
+        ctx = self.context
+        if ctx.lat is None or ctx.lng is None:
+            return ToolOutcome({"error": "차량 위치 정보가 없습니다."}, is_error=True)
+        if ctx.destination is None:
+            return ToolOutcome({"error": "내비 목적지가 없습니다."}, is_error=True)
+        request = CarRouteChargersRequest(
+            origin=LatLng(lat=ctx.lat, lng=ctx.lng),
+            destination=ctx.destination,
+            route_points=ctx.route_points,
+            soc_now=ctx.soc_now,
+            arrival_soc=ctx.arrival_soc,
+            remain_distance_m=ctx.remain_distance_m,
+            efficiency_km_per_kwh=ctx.efficiency_km_per_kwh,
+            battery_capacity_wh=ctx.battery_capacity_wh,
+            min_kw=args.min_kw,
+            corridor_m=args.corridor_m,
+        )
+        result = find_along_route(self.session, request)
+        content = result.model_dump(mode="json", exclude={"actions"})
+        # "기준 잔량 15% 아래예요", "50킬로와트 이상"도 근거가 있게 기준을 함께 준다.
+        content["reserve_soc"] = request.reserve_soc
+        content["min_kw"] = request.min_kw
+        action = result.actions[0] if result.actions else None
+        return ToolOutcome(content, speech=result.speech, action=action)
+
     def _summary(self, raw: dict[str, Any]) -> ToolOutcome:
         args = _SummaryInput.model_validate(raw)
         month = args.month or month_of(self.now)
@@ -494,13 +560,6 @@ def external_text(value: object) -> str:
     return text[:MAX_EXTERNAL_TEXT]
 
 
-def spoken_distance(meters: float) -> str:
-    """1,000m 미만은 10m 단위 "약 350미터", 이상은 "약 1.2킬로미터"."""
-    if meters < 1000:
-        return f"약 {max(10, round(meters / 10) * 10)}미터"
-    return f"약 {round(meters / 1000, 1):g}킬로미터"
-
-
 # ---------------------------------------------------------------------------
 # 숫자 검증 (단위별)
 # ---------------------------------------------------------------------------
@@ -511,6 +570,12 @@ def spoken_distance(meters: float) -> str:
 # - "N%": 잔량 값(``soc*``, context의 잔량)과 서버 문장의 "N%"
 # - "H시 M분"(12시간제, "반" 포함), "HH:MM": 예약·출발·도착 시각
 # - "A부터 B까지": 예약 구간이 있으면 A가 시작, B가 종료여야 한다
+# - "N킬로미터", "N미터"(km, m): 거리 필드(``*_m``, ``*_km``. 꺾은선 위치 ``along_m``은
+#   빼고, 경로 위 충전소는 문장과 같은 ``distance_m``)와 서버 문장의 거리. 반올림한
+#   모양(10m, 0.1km, 1km 단위)도 허용한다
+# - "N킬로와트", "N kW": 출력 필드(``*_kw``, context의 충전기 출력)와 서버 문장의 출력.
+#   "킬로와트"·"킬로와트시"는 거리("킬로")가 아니다
+# - 식별자(``*_id``)의 숫자는 어떤 근거에도 넣지 않는다
 # - 그 밖의 숫자: 도구 결과·context에 나온 숫자 전체. 날짜 문자열의 숫자는 뺀다
 #
 # 운전자 말(이번 text와 history의 driver 턴)의 숫자는 같은 규칙으로 근거에 더한다.
@@ -529,6 +594,12 @@ _CLOCK_RANGE_RE = re.compile(
 )
 _MONEY_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(만|천)?\s*원")
 _PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|퍼센트)")
+# "km/kWh"(전비), "km/h"(속도), "킬로와트(시)"는 거리가 아니다.
+_DISTANCE_RE = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*(킬로미터|킬로(?!와트)|km|미터|m)(?![A-Za-z/])"
+)
+# 출력. "킬로와트시"·"kWh"(에너지)는 출력이 아니라 그 밖의 숫자로 본다.
+_POWER_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(?:킬로와트(?!시)|kW(?!h))")
 _PERIOD_HOURS = {
     "새벽": set(range(7)),
     "오전": set(range(12)),
@@ -540,6 +611,8 @@ _PERIOD_HOURS = {
 }
 # 근거로 쓰지 않는 금액 필드. 충전 요금을 "아낀 돈"으로 말하는 혼동을 막는다.
 _MONEY_EXCLUDED_KEYS = {"cost_won"}
+# 거리 근거로 쓰지 않는 필드. 꺾은선 위치는 도로 거리와 달라 문장과 다른 숫자가 된다.
+_DISTANCE_EXCLUDED_KEYS = {"along_m"}
 
 Clock = tuple[int, int]
 
@@ -605,12 +678,26 @@ class NumberSources:
     percent: set[str] = field(default_factory=set)
     times: set[Clock] = field(default_factory=set)
     intervals: list[tuple[Clock, Clock]] = field(default_factory=list)
+    # 미터. 반올림한 모양까지 넣어 둔다.
+    distance: set[int] = field(default_factory=set)
+    power: set[str] = field(default_factory=set)
     plain: set[str] = field(default_factory=set)
+
+    def add_distance(self, meters: float) -> None:
+        exact = Decimal(str(meters))
+        for unit in (1, 10, 100, 1000):
+            rounded = (exact / unit).quantize(Decimal(1), rounding="ROUND_HALF_UP") * unit
+            self.distance.add(int(rounded))
 
     def add_number(self, value: float | int) -> None:
         normalized = _normalize(repr(value) if isinstance(value, float) else str(value))
         if normalized is not None:
             self.plain |= _spoken_forms(normalized)
+
+    def add_power(self, value: float | int) -> None:
+        normalized = _normalize(repr(value) if isinstance(value, float) else str(value))
+        if normalized is not None:
+            self.power |= _spoken_forms(normalized)
 
     def add_percent(self, value: float | int) -> None:
         normalized = _normalize(repr(value) if isinstance(value, float) else str(value))
@@ -640,6 +727,14 @@ class NumberSources:
             normalized = _normalize(match.group(1))
             if normalized is not None:
                 self.percent |= _spoken_forms(normalized)
+        for match in _DISTANCE_RE.finditer(text):
+            meters = _distance_value(match)
+            if meters is not None:
+                self.add_distance(meters)
+        for match in _POWER_RE.finditer(text):
+            normalized = _normalize(match.group(1))
+            if normalized is not None:
+                self.power |= _spoken_forms(normalized)
         for number in numbers_in(_DATE.sub(" ", text)):
             self.plain |= _spoken_forms(number)
 
@@ -654,13 +749,20 @@ class NumberSources:
         elif isinstance(value, list):
             for child in value:
                 self.add_tool_content(child, key)
-        elif isinstance(value, bool) or value is None:
+        elif isinstance(value, bool) or value is None or key == "id" or key.endswith("_id"):
             return
         elif isinstance(value, int | float):
             self.add_number(value)
+            if key.endswith("_m") and key not in _DISTANCE_EXCLUDED_KEYS:
+                self.add_distance(value)
+            elif key.endswith("_km"):
+                self.add_distance(value * 1000)
+            if key.endswith("_kw"):
+                self.add_power(value)
             if key.endswith("_won") and key not in _MONEY_EXCLUDED_KEYS:
                 self.money.add(int(value))
-            if key.startswith("soc"):
+            # soc_now, soc_target, est_soc, arrival_soc, reserve_soc …
+            if "soc" in key:
                 self.add_percent(value)
         elif isinstance(value, str):
             if key in ("speech", "error"):
@@ -670,6 +772,14 @@ class NumberSources:
                 without_clock = _CLOCK.sub(" ", _DATE.sub(" ", value))
                 for number in numbers_in(without_clock):
                     self.plain.add(number)
+
+
+def _distance_value(match: re.Match[str]) -> Decimal | None:
+    normalized = _normalize(match.group(1))
+    if normalized is None:
+        return None
+    unit = match.group(2)
+    return Decimal(normalized) * (1000 if unit in ("킬로미터", "킬로", "km") else 1)
 
 
 def _won_value(match: re.Match[str]) -> int | None:
@@ -689,9 +799,12 @@ def number_sources(
     sources.add_percent(ctx.soc_now)
     if ctx.arrival_soc is not None:
         sources.add_percent(ctx.arrival_soc)
+    if ctx.remain_distance_m is not None:
+        sources.add_distance(ctx.remain_distance_m)
     sources.add_number(ctx.battery_capacity_wh)
     sources.add_number(ctx.battery_capacity_wh / 1000)
     sources.add_number(ctx.charger_kw)
+    sources.add_power(ctx.charger_kw)
     for text in driver_texts:
         sources.add_spoken(text, times=True)
     return sources
@@ -728,6 +841,16 @@ def unsupported_numbers(speech: str, sources: NumberSources) -> list[str]:
         rest = _mask(rest, *match.span())
     for match in _PERCENT_RE.finditer(rest):
         if _normalize(match.group(1)) not in sources.percent:
+            problems.append(match.group(0))
+        rest = _mask(rest, *match.span())
+    for match in _POWER_RE.finditer(rest):
+        if _normalize(match.group(1)) not in sources.power:
+            problems.append(match.group(0))
+        rest = _mask(rest, *match.span())
+    for match in _DISTANCE_RE.finditer(rest):
+        meters = _distance_value(match)
+        exact = meters is not None and meters == meters.to_integral_value()
+        if not exact or int(meters) not in sources.distance:
             problems.append(match.group(0))
         rest = _mask(rest, *match.span())
     problems += sorted(numbers_in(rest) - sources.plain)
@@ -917,7 +1040,7 @@ def _respond(
     payload: CarVoiceRequest,
     outcomes: list[ToolOutcome],
 ) -> CarVoiceResponse:
-    actions: dict[str, SetReservationAction | NavigateAction | AskAction] = {}
+    actions: dict[str, SetReservationAction | NavigateAction | AskAction | AddWaypointAction] = {}
     saving_id = None
     tool_speech = None
     for outcome in outcomes:

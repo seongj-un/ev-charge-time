@@ -1,6 +1,10 @@
 import logging
+import math
+from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DataError, IntegrityError
 
@@ -17,12 +21,35 @@ CONFIG_ERROR_DETAILS = {
 CONFIG_ERROR_FALLBACK = "서버 설정을 읽지 못했습니다."
 
 
+def _finite(value: Any) -> Any:
+    """JSON에 못 싣는 float(NaN, Infinity)를 문자열로 바꾼다. 나머지는 그대로.
+
+    파이썬 JSON 파서는 비표준 ``NaN``, ``Infinity``를 숫자로 받는다. 스키마 검증은 이
+    값을 422로 거절하지만, 기본 핸들러는 오류 본문의 ``input``에 그 값을 그대로 담다가
+    직렬화에 실패해 500이 된다.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return "NaN" if math.isnan(value) else ("Infinity" if value > 0 else "-Infinity")
+    if isinstance(value, dict):
+        return {key: _finite(child) for key, child in value.items()}
+    if isinstance(value, list | tuple):
+        return [_finite(child) for child in value]
+    return value
+
+
 def register_error_handlers(app: FastAPI) -> None:
     """도메인 예외를 HTTP로 옮긴다.
 
     도메인은 HTTP를 모르고, 라우터는 예외를 잡지 않는다. 변환 규칙이
     한 곳에만 있어야 응답 형식이 엔드포인트마다 갈라지지 않는다.
     """
+
+    @app.exception_handler(RequestValidationError)
+    def _request_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # FastAPI 기본 핸들러와 같은 모양({"detail": [...]})이고, 비유한 float만 문자열로 바꾼다.
+        return JSONResponse(
+            status_code=422, content={"detail": _finite(jsonable_encoder(exc.errors()))}
+        )
 
     @app.exception_handler(TariffConfigError)
     def _tariff_config_error(request: Request, exc: TariffConfigError) -> JSONResponse:
