@@ -17,8 +17,8 @@
   테스트가 실패하므로, 앱은 이 파일을 기준으로 맞추면 된다.
 
 SDK 이름은 Pleos SDK 소스(Vehicle, NaviHelper, navidata, FusedLocation)에서 확인한 것만 적었다.
-소스에서 `@hide`로 표시된 API는 따로 표시했다. 공개 API가 아닐 수 있으니 실제 차나 에뮬레이터에서
-먼저 확인한다.
+Pleos SDK에서 `@hide`이면서 `@Deprecated`인 API(배터리 용량, 기어)는 Deprecated 메시지가 가리키는
+Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래 "표준 Car API로 읽는 값").
 
 ## 1. 언제 무엇을 부르나
 
@@ -61,7 +61,7 @@ SDK 이름은 Pleos SDK 소스(Vehicle, NaviHelper, navidata, FusedLocation)에�
 | SDK 값 | 단위(소스 주석) | 요청 필드 | 주의 |
 | --- | --- | --- | --- |
 | `EvBattery.getEvBatteryStateOfCharge` / `registerEvBatteryStateOfCharge` | % | `soc_now` | 권한 `pleos.car.permission.CAR_ENERGY` |
-| `EvBattery.getEvBatteryCapacity` | Wh | `battery_capacity_wh` | **소스에서 `@hide`.** 공개 API가 아닐 수 있다. 쓸 수 없으면 차종별 용량(Wh)을 앱에 둔다. 단위가 Wh인지 실제 값으로 확인 필요(77,400처럼 나와야 한다. 77.4가 오면 kWh라 1,000을 곱한다). 권한 `CAR_INFO` |
+| 표준 Car API `INFO_EV_BATTERY_CAPACITY` (아래) | Wh | `battery_capacity_wh` | Pleos `EvBattery.getEvBatteryCapacity`는 `@hide`·`@Deprecated`("use the Google INFO_EV_BATTERY_CAPACITY property")라 쓰지 않는다 |
 | `EvBattery.getSinceChargeEvEfficiency` / `registerSinceChargeEvEfficiency` | km/kWh | `efficiency_km_per_kwh` | 0.5~20만 받는다. 충전 직후 등 값이 이상하면 보내지 않는다(선택 필드) |
 | `EvBattery.getEvChargeSwitchState` | Boolean | voice `context.charging`, 확정 시점 판단 | 소스 설명은 "current EV battery charging state" |
 | `RouteStateInfo.remainDestinationChargingInt` (`getRouteStateInfo` → `onRouteStateInfo`) | Int, 소스에 단위 없음("battery or fuel level") | `arrival_soc` | **% 인지 확인 필요.** 아래 `estimatedSocAtDest`가 %로 명시돼 있어 그쪽을 먼저 쓴다 |
@@ -71,8 +71,30 @@ SDK 이름은 Pleos SDK 소스(Vehicle, NaviHelper, navidata, FusedLocation)에�
 | `DestinationInfo.latitude`, `longitude` | 도 | `destination.lat`, `destination.lng` | |
 | `CurrentLocationInfo.latitude`, `longitude` (`getCurrentLocationInfo` → `onCurrentLocationInfo`) | 도 | `origin`, voice `context.lat`/`lng`, `GET /api/chargers`의 `lat`/`lng` | 경로가 없을 때는 `FusedLocation.getLastKnownLocation` → `LocationData.latitude/longitude`(권한 `FUSED_LOCATION`, dangerous) |
 | `TripInfo.summary.routePoints` (`RoutePointInfo.latitude`, `longitude`) | 도 | `route_points`(최대 50개, 순서대로) | 경유지와 목적지만 온다(경로 모양 점이 아님). 목적지 점은 빼고 남은 경유지만 보낸다 |
-| `Vehicle.getGear` → `Gear.registerGearSelection` / `getCurrentGearSelectionState` (`VehicleGear.GEAR_PARK`) | | `departures`의 `departed_at`(P에서 다른 기어로 바뀐 시각) | **소스에서 `@hide`.** 공개 API가 아닐 수 있다. 쓸 수 없으면 출발 기록은 비고, 출발 시각 학습은 운전자가 말한 시각만으로 돈다 |
+| 표준 Car API `GEAR_SELECTION` (아래) | `VehicleGear` | `departures`의 `departed_at`(P에서 다른 기어로 바뀐 시각) | Pleos `Gear.getCurrentGearSelectionState`·`registerGearSelection`은 `@hide`·`@Deprecated`("use the Google GEAR_SELECTION property")라 쓰지 않는다 |
 | STT 결과 문자열 | | voice `text`(500자 이하) | Pleos SDK 소스에는 STT/TTS API가 없다. 안드로이드 기본 음성 인식·TTS를 쓴다 |
+
+### 표준 Car API로 읽는 값 (`CarPropertyManager`)
+
+`Car.createCar(context)`로 연결한 뒤 `car.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager`를
+쓴다. 두 속성 모두 전역 속성이라 area ID는 `0`이다. 읽기 메서드는 몇 초 걸릴 수 있어 메인 스레드가
+아닌 곳에서 부른다(공식 문서).
+
+| 속성 (`VehiclePropertyIds`) | 타입·단위 | 변경 방식 | 권한 | 쓰는 곳 |
+| --- | --- | --- | --- | --- |
+| [`INFO_EV_BATTERY_CAPACITY`](https://developer.android.com/reference/android/car/VehiclePropertyIds#INFO_EV_BATTERY_CAPACITY) | Float, Wh(`VehicleUnit.WATT_HOUR`), 새 차 기준 공칭 사용 가능 용량 | STATIC(한 번 읽으면 됨) | [`android.car.permission.CAR_INFO`](https://developer.android.com/reference/android/car/Car#PERMISSION_CAR_INFO) (normal) | `getFloatProperty(INFO_EV_BATTERY_CAPACITY, 0)`를 반올림한 정수 → `battery_capacity_wh` |
+| [`GEAR_SELECTION`](https://developer.android.com/reference/android/car/VehiclePropertyIds#GEAR_SELECTION) | Integer, [`VehicleGear`](https://developer.android.com/reference/android/car/VehicleGear) 값(`GEAR_PARK` = 4) | ONCHANGE | [`android.car.permission.CAR_POWERTRAIN`](https://developer.android.com/reference/android/car/Car#PERMISSION_POWERTRAIN) (normal) | [`subscribePropertyEvents`](https://developer.android.com/reference/android/car/hardware/property/CarPropertyManager)로 구독. 직전 값이 `GEAR_PARK`이고 새 값이 다른 기어면 그 시각을 `departed_at`으로 `POST /api/car/departures` |
+
+- 단위·권한·상수 값은 위 링크의 Android 공식 문서에서 확인했다(2026-11-15).
+- `INFO_EV_BATTERY_CAPACITY`는 새 차 기준 공칭 용량이다(공식 문서). 노화와 온도를 반영한 실시간
+  용량은 `EV_CURRENT_BATTERY_CAPACITY`로 따로 있다. 이 가이드는 `INFO_EV_BATTERY_CAPACITY`를 쓴다.
+- 공식 문서는 `registerCallback(callback, propertyId, updateRateHz)`를 deprecated로 두고
+  `subscribePropertyEvents(propertyId, updateRateHz, callback)`를 권한다. 어느 Car API 버전부터
+  `subscribePropertyEvents`가 있는지는 문서에서 찾지 못했다(**확인 필요**). 차에 없으면
+  `registerCallback`을 쓴다. `updateRateHz`는 연속 속성에만 의미가 있어 ONCHANGE인 `GEAR_SELECTION`에는
+  영향이 없다.
+- 기어 이벤트는 시동이 켜진 동안만 받는다. 시동 직후 첫 값이 이미 D라면(P 해제를 놓침) 그 시각을
+  보내지 않는다. 한 번 놓친 출발은 운전자가 말한 시각으로 학습이 이어진다.
 
 내비 값 받는 법: `NaviHelper.addListener(NaviHelperEventListener)`로 리스너를 걸고 `getRouteStateInfo`,
 `getDestinationInfo`, `getCurrentLocationInfo`, `requestTrip`을 부르면 같은 이름의 `on...` 콜백으로
@@ -143,8 +165,8 @@ SDK 이름은 Pleos SDK 소스(Vehicle, NaviHelper, navidata, FusedLocation)에�
 
 ## 6. 실제 차에서 확인할 것
 
-- `getEvBatteryCapacity`, `getGear`(기어 API)가 `@hide`다. 쓸 수 있는지, 아니면 대안(차종별 용량
-  표, 출발 기록 없이 운영)으로 갈지 정한다.
+- `CarPropertyManager`의 `INFO_EV_BATTERY_CAPACITY`, `GEAR_SELECTION`이 이 차에서 지원되는지
+  (`getPropertyList()`에 있는지)와 차의 Car API 레벨.
 - `remainDestinationChargingInt`의 단위(%인지), `DestinationInfo.remainDistance`·`remainTime`이
   목적지까지 남은 값인지.
 - 밤사이 충전 확인: 주차 때 잔량과 다음 시동 때 잔량 비교로 충분한지.

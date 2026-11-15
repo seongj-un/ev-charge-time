@@ -36,7 +36,7 @@
 | 필드 | 타입 | 필수 | 기본 | 규칙 |
 | --- | --- | --- | --- | --- |
 | `soc_now` | number | 예 | | 0 이상 100 미만 (%). 현재 잔량 또는 내비가 준 도착 시 예상 잔량 |
-| `battery_capacity_wh` | number | 예 | | 1,000 이상 1,000,000 이하 (Wh). Pleos Vehicle SDK `getEvBatteryCapacity` 값 그대로. 서버가 kWh로 바꾼다 |
+| `battery_capacity_wh` | number | 예 | | 1,000 이상 1,000,000 이하 (Wh). Android 표준 Car API `INFO_EV_BATTERY_CAPACITY`(Wh) 값을 정수로(Pleos `getEvBatteryCapacity`는 `@Deprecated`, [car-app-guide.md](car-app-guide.md)). 서버가 kWh로 바꾼다 |
 | `soc_target` | number | | 80 | 0 초과 100 이하 (%) |
 | `charger_kw` | number | | 7.0 | 0 초과 1000 이하 (kW) |
 | `plug_in_at` | datetime | | 서버 현재 시각 | 충전기를 꽂을 수 있는 시각 = 도착 예정 시각. 이미 지났으면 서버 현재 시각으로 당긴다 |
