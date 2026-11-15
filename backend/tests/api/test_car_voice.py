@@ -923,3 +923,73 @@ def test_along_route_tool_passes_route_points_from_context(client, fake, db_sess
     assert without_points["is_error"] is True
     assert "경로 지점을 더 보내 주세요" in without_points["content"]["error"]
     assert [c["station_id"] for c in with_points["content"]["chargers"]] == ["R1"]
+
+
+def _route_sources(client, fake, db_session, station_id="174012"):
+    _station(db_session, station_id, 35.09, name="빛가람 휴게소", kw=100.0)
+    fake.replies = [use("find_chargers_along_route"), say("placeholder")]
+    ask(client, register(client), "충전할 곳", context=ROUTE_CONTEXT)
+    content = tool_results(fake, 1)[0]["content"]
+    outcome = voice.ToolOutcome(content, speech=content["speech"])
+    sources = voice.number_sources(
+        [outcome], voice.CarVoiceContext.model_validate(ROUTE_CONTEXT), []
+    )
+    return content, sources
+
+
+@pytest.mark.parametrize(
+    "made_up",
+    [
+        "35킬로미터",  # 위도
+        "100킬로미터",  # 충전기 출력 kW
+        "174012킬로미터",  # station_id
+        "174012",  # station_id 숫자만
+        "8km",  # arrival_soc
+        "50킬로미터",  # min_kw
+    ],
+)
+def test_distances_must_come_from_distance_fields(client, fake, db_session, made_up):
+    _content, sources = _route_sources(client, fake, db_session)
+
+    assert voice.unsupported_numbers(f"빛가람 휴게소까지 {made_up} 남았어요.", sources) == [
+        made_up
+    ]
+
+
+def test_real_distances_pass_in_rounded_spoken_forms(client, fake, db_session):
+    content, sources = _route_sources(client, fake, db_session)
+    item = content["chargers"][0]
+    road_km = item["distance_m"] / 1000
+    route_km = content["route_m"] / 1000
+
+    for sentence in [
+        content["speech"],
+        f"빛가람 휴게소까지 약 {road_km:.1f}킬로미터예요.",
+        f"빛가람 휴게소까지 약 {round(road_km)}km예요.",
+        f"남은 경로는 약 {round(route_km)}킬로미터예요.",
+        "목적지까지 60킬로미터 남았어요.",  # context.remain_distance_m
+        "도착하면 기준 잔량 15% 아래예요.",
+    ]:
+        assert voice.unsupported_numbers(sentence, sources) == [], sentence
+
+    # 꺾은선 위치(along_m)는 도로 거리와 달라 근거가 아니다
+    along_km = item["along_m"] / 1000
+    assert round(along_km, 1) != round(road_km, 1)
+    assert voice.unsupported_numbers(f"약 {along_km:.1f}킬로미터 앞이에요.", sources) == [
+        f"{along_km:.1f}킬로미터"
+    ]
+
+
+def test_find_chargers_distances_are_distance_sources(client, fake, db_session):
+    _station(db_session, "N1", HERE[0] + 0.01, name="가까운 충전소", kw=50.0)
+    fake.replies = [use("find_chargers", {"radius_m": 3000}), say("placeholder")]
+    ask(client, register(client), "근처 충전소", context=CONTEXT)
+    content = tool_results(fake, 1)[0]["content"]
+    sources = voice.number_sources(
+        [voice.ToolOutcome(content)], voice.CarVoiceContext.model_validate(CONTEXT), []
+    )
+    km = content["stations"][0]["distance_km"]
+
+    assert voice.unsupported_numbers(f"{km:g}킬로미터 거리예요.", sources) == []
+    assert voice.unsupported_numbers("3킬로미터 안에 있어요.", sources) == []
+    assert voice.unsupported_numbers("50킬로미터 거리예요.", sources) == ["50킬로미터"]

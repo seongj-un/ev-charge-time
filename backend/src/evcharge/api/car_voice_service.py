@@ -508,20 +508,20 @@ class VoiceTools:
             return ToolOutcome({"error": "차량 위치 정보가 없습니다."}, is_error=True)
         if ctx.destination is None:
             return ToolOutcome({"error": "내비 목적지가 없습니다."}, is_error=True)
-        result = find_along_route(
-            self.session,
-            CarRouteChargersRequest(
-                origin=LatLng(lat=ctx.lat, lng=ctx.lng),
-                destination=ctx.destination,
-                route_points=ctx.route_points,
-                soc_now=ctx.soc_now,
-                arrival_soc=ctx.arrival_soc,
-                remain_distance_m=ctx.remain_distance_m,
-                min_kw=args.min_kw,
-                corridor_m=args.corridor_m,
-            ),
+        request = CarRouteChargersRequest(
+            origin=LatLng(lat=ctx.lat, lng=ctx.lng),
+            destination=ctx.destination,
+            route_points=ctx.route_points,
+            soc_now=ctx.soc_now,
+            arrival_soc=ctx.arrival_soc,
+            remain_distance_m=ctx.remain_distance_m,
+            min_kw=args.min_kw,
+            corridor_m=args.corridor_m,
         )
+        result = find_along_route(self.session, request)
         content = result.model_dump(mode="json", exclude={"actions"})
+        # "기준 잔량 15% 아래예요"도 근거가 있게 기준을 함께 준다.
+        content["reserve_soc"] = request.reserve_soc
         action = result.actions[0] if result.actions else None
         return ToolOutcome(content, speech=result.speech, action=action)
 
@@ -566,6 +566,10 @@ def external_text(value: object) -> str:
 # - "N%": 잔량 값(``soc*``, context의 잔량)과 서버 문장의 "N%"
 # - "H시 M분"(12시간제, "반" 포함), "HH:MM": 예약·출발·도착 시각
 # - "A부터 B까지": 예약 구간이 있으면 A가 시작, B가 종료여야 한다
+# - "N킬로미터", "N미터"(km, m): 거리 필드(``*_m``, ``*_km``. 꺾은선 위치 ``along_m``은
+#   빼고, 경로 위 충전소는 문장과 같은 ``distance_m``)와 서버 문장의 거리. 반올림한
+#   모양(10m, 0.1km, 1km 단위)도 허용한다
+# - 식별자(``*_id``)의 숫자는 어떤 근거에도 넣지 않는다
 # - 그 밖의 숫자: 도구 결과·context에 나온 숫자 전체. 날짜 문자열의 숫자는 뺀다
 #
 # 운전자 말(이번 text와 history의 driver 턴)의 숫자는 같은 규칙으로 근거에 더한다.
@@ -584,6 +588,7 @@ _CLOCK_RANGE_RE = re.compile(
 )
 _MONEY_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(만|천)?\s*원")
 _PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|퍼센트)")
+_DISTANCE_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(킬로미터|킬로|km|미터|m)(?![A-Za-z])")
 _PERIOD_HOURS = {
     "새벽": set(range(7)),
     "오전": set(range(12)),
@@ -595,6 +600,8 @@ _PERIOD_HOURS = {
 }
 # 근거로 쓰지 않는 금액 필드. 충전 요금을 "아낀 돈"으로 말하는 혼동을 막는다.
 _MONEY_EXCLUDED_KEYS = {"cost_won"}
+# 거리 근거로 쓰지 않는 필드. 꺾은선 위치는 도로 거리와 달라 문장과 다른 숫자가 된다.
+_DISTANCE_EXCLUDED_KEYS = {"along_m"}
 
 Clock = tuple[int, int]
 
@@ -660,7 +667,15 @@ class NumberSources:
     percent: set[str] = field(default_factory=set)
     times: set[Clock] = field(default_factory=set)
     intervals: list[tuple[Clock, Clock]] = field(default_factory=list)
+    # 미터. 반올림한 모양까지 넣어 둔다.
+    distance: set[int] = field(default_factory=set)
     plain: set[str] = field(default_factory=set)
+
+    def add_distance(self, meters: float) -> None:
+        exact = Decimal(str(meters))
+        for unit in (1, 10, 100, 1000):
+            rounded = (exact / unit).quantize(Decimal(1), rounding="ROUND_HALF_UP") * unit
+            self.distance.add(int(rounded))
 
     def add_number(self, value: float | int) -> None:
         normalized = _normalize(repr(value) if isinstance(value, float) else str(value))
@@ -695,6 +710,10 @@ class NumberSources:
             normalized = _normalize(match.group(1))
             if normalized is not None:
                 self.percent |= _spoken_forms(normalized)
+        for match in _DISTANCE_RE.finditer(text):
+            meters = _distance_value(match)
+            if meters is not None:
+                self.add_distance(meters)
         for number in numbers_in(_DATE.sub(" ", text)):
             self.plain |= _spoken_forms(number)
 
@@ -709,10 +728,14 @@ class NumberSources:
         elif isinstance(value, list):
             for child in value:
                 self.add_tool_content(child, key)
-        elif isinstance(value, bool) or value is None:
+        elif isinstance(value, bool) or value is None or key == "id" or key.endswith("_id"):
             return
         elif isinstance(value, int | float):
             self.add_number(value)
+            if key.endswith("_m") and key not in _DISTANCE_EXCLUDED_KEYS:
+                self.add_distance(value)
+            elif key.endswith("_km"):
+                self.add_distance(value * 1000)
             if key.endswith("_won") and key not in _MONEY_EXCLUDED_KEYS:
                 self.money.add(int(value))
             # soc_now, soc_target, est_soc, arrival_soc, reserve_soc …
@@ -726,6 +749,14 @@ class NumberSources:
                 without_clock = _CLOCK.sub(" ", _DATE.sub(" ", value))
                 for number in numbers_in(without_clock):
                     self.plain.add(number)
+
+
+def _distance_value(match: re.Match[str]) -> Decimal | None:
+    normalized = _normalize(match.group(1))
+    if normalized is None:
+        return None
+    unit = match.group(2)
+    return Decimal(normalized) * (1000 if unit in ("킬로미터", "킬로", "km") else 1)
 
 
 def _won_value(match: re.Match[str]) -> int | None:
@@ -745,6 +776,8 @@ def number_sources(
     sources.add_percent(ctx.soc_now)
     if ctx.arrival_soc is not None:
         sources.add_percent(ctx.arrival_soc)
+    if ctx.remain_distance_m is not None:
+        sources.add_distance(ctx.remain_distance_m)
     sources.add_number(ctx.battery_capacity_wh)
     sources.add_number(ctx.battery_capacity_wh / 1000)
     sources.add_number(ctx.charger_kw)
@@ -784,6 +817,12 @@ def unsupported_numbers(speech: str, sources: NumberSources) -> list[str]:
         rest = _mask(rest, *match.span())
     for match in _PERCENT_RE.finditer(rest):
         if _normalize(match.group(1)) not in sources.percent:
+            problems.append(match.group(0))
+        rest = _mask(rest, *match.span())
+    for match in _DISTANCE_RE.finditer(rest):
+        meters = _distance_value(match)
+        exact = meters is not None and meters == meters.to_integral_value()
+        if not exact or int(meters) not in sources.distance:
             problems.append(match.group(0))
         rest = _mask(rest, *match.span())
     problems += sorted(numbers_in(rest) - sources.plain)
