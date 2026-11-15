@@ -70,14 +70,10 @@ FIELD_LABELS: dict[str, str] = {
     "public_base_price": "공공 급속 충전 단가(원/kWh)",
 }
 
-# 공공 급속은 충전사업자마다 단가가 달라 하나의 공식 값이 없다. 방식이
-# public_fast면 이 항목도 있어야 계산할 수 있다.
-PUBLIC_FAST_PRICE = "public_base_price"
-
 MODE_LABELS: dict[str, str] = {
     "self_low": "자가 충전(저압)",
     "self_high": "자가 충전(고압)",
-    "public_fast": "공공 급속 충전",
+    "public_fast": "공공 충전",
 }
 
 
@@ -240,15 +236,13 @@ def answer(
 
     result, request = build_recommendation(request)
     if result is None:
-        # 차량 기본값까지 병합했는데도 배터리 용량·충전기 출력이 비었거나,
-        # (기본 차량에서 온) 공공 급속 방식인데 단가가 없다.
+        # 차량 기본값까지 병합했는데도 배터리 용량·충전기 출력이 비었다.
+        # (공공 충전 단가는 충전기 출력으로 정해지므로 단가를 따로 묻지 않는다.)
         missing = [
             name
             for name in ("battery_kwh", "charger_kw")
             if getattr(request, name, None) is None
         ]
-        if request.mode == "public_fast" and request.public_base_price is None:
-            missing.append(PUBLIC_FAST_PRICE)
         return ChatResponse(answer=_ask_back(missing), recommendation=None, missing_fields=missing)
 
     return ChatResponse(
@@ -443,8 +437,6 @@ def _missing_fields(
         if has_default_vehicle and name in ("battery_kwh", "charger_kw"):
             continue
         missing.append(name)
-    if conditions.mode == "public_fast" and conditions.public_base_price is None:
-        missing.append(PUBLIC_FAST_PRICE)
 
     if missing:
         return missing

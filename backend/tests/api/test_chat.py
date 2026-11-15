@@ -641,7 +641,8 @@ def test_a_public_fast_price_in_the_question_reaches_the_calculation(
     assert body["recommendation"]["best"]["cost_won"] == 35 * 350
 
 
-def test_public_fast_without_a_price_is_asked_back(client, db_session, fake_llm):
+def test_public_fast_without_a_price_uses_the_output_tier(client, db_session, fake_llm):
+    """단가를 말하지 않아도 충전기 출력으로 기후에너지환경부 공공 단가를 고른다(BE-16)."""
     _login(client, db_session)
     fake_llm.payload = {**FULL_EXTRACTION, "mode": "public_fast", "public_base_price": None}
 
@@ -649,15 +650,13 @@ def test_public_fast_without_a_price_is_asked_back(client, db_session, fake_llm)
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["recommendation"] is None
-    assert body["missing_fields"] == ["public_base_price"]
-    assert "단가" in body["answer"]
+    assert body["missing_fields"] == []
+    # 10월 7일(수) 18시~ — 할인 없는 평일, 7kW는 30kW 미만 구간 295.0원 × 35kWh
+    assert body["recommendation"]["best"]["cost_won"] == round(35 * 295.0)
 
 
-def test_a_missing_price_is_asked_together_with_other_missing_fields(
-    client, db_session, fake_llm
-):
-    """한 번에 모아서 묻는다 — 답하자마자 또 다른 걸 되물으면 대화가 늘어진다."""
+def test_a_public_fast_question_asks_only_for_what_is_missing(client, db_session, fake_llm):
+    """단가는 되묻지 않는다 — 빠진 다른 항목만 묻는다."""
     _login(client, db_session)
     fake_llm.payload = {
         **FULL_EXTRACTION,
@@ -668,11 +667,11 @@ def test_a_missing_price_is_asked_together_with_other_missing_fields(
 
     body = _ask(client).json()
 
-    assert body["missing_fields"] == ["soc_target", "public_base_price"]
+    assert body["missing_fields"] == ["soc_target"]
 
 
-def test_a_public_fast_default_vehicle_asks_for_the_price(client, db_session, fake_llm):
-    """방식은 기본 차량에서 왔고 질문에는 단가가 없다 → 단가를 되묻는다."""
+def test_a_public_fast_default_vehicle_uses_its_charger_output(client, db_session, fake_llm):
+    """방식과 출력(50kW)은 기본 차량에서 왔고 질문에는 단가가 없다 → 50~100kW 구간 단가."""
     user = _login(client, db_session)
     db_session.add(
         Vehicle(
@@ -686,20 +685,27 @@ def test_a_public_fast_default_vehicle_asks_for_the_price(client, db_session, fa
         )
     )
     db_session.commit()
-    fake_llm.payload = {**FULL_EXTRACTION, "mode": None, "public_base_price": None}
+    fake_llm.payload = {
+        **FULL_EXTRACTION,
+        "mode": None,
+        "public_base_price": None,
+        "battery_kwh": None,
+        "charger_kw": None,
+    }
 
     response = _ask(client)
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["recommendation"] is None
-    assert body["missing_fields"] == ["public_base_price"]
+    assert body["missing_fields"] == []
+    assert body["recommendation"]["best"]["cost_won"] == round(35 * 325.6)
 
 
-def test_an_absurd_public_fast_price_is_dropped_and_asked_back(client, db_session, fake_llm):
+def test_an_absurd_public_fast_price_is_dropped_for_the_tier_price(client, db_session, fake_llm):
     _login(client, db_session)
     fake_llm.payload = {**FULL_EXTRACTION, "mode": "public_fast", "public_base_price": 1e300}
 
     body = _ask(client).json()
 
-    assert body["missing_fields"] == ["public_base_price"]
+    assert body["missing_fields"] == []
+    assert body["recommendation"]["best"]["cost_won"] == round(35 * 295.0)
