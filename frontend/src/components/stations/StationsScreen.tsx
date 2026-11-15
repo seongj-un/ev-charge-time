@@ -479,7 +479,8 @@ export function StationsScreen() {
             ) : stations.length === 0 ? (
               /*
                * "충전소가 없다"와 "이 지역은 아직 수집하지 않았다"는 다른 말이다.
-               * 지금 캐시는 대전만 담고 있어서, 서울에서 열면 빈 목록이
+               * 캐시는 수집 지역(기본 대전, 운영에서 더 넣을 수 있다)만 담고 있어서,
+               * 서울에서 열면 빈 목록이
                * 온다 — 그걸 "주변에 없다"고 하면 거짓말이 된다. 어느 쪽인지
                * 프론트가 알 수 없으므로 둘 다 말하고 지역을 고를 길을 준다.
                *
@@ -490,7 +491,7 @@ export function StationsScreen() {
               <div className="rounded-card border border-line bg-surface px-5 py-8 text-center">
                 <p className="text-ink-2">이 근처에서 충전소를 찾지 못했어요</p>
                 <p className="mt-2 text-sm text-ink-2">
-                  지금은 대전 지역 충전소만 수집돼 있어요. 아래 지역에서 찾아보세요.
+                  충전소는 수집하는 지역(대전 등)에서만 찾을 수 있어요. 아래 지역에서 찾아보세요.
                 </p>
                 <div
                   role="group"

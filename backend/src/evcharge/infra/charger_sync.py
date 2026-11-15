@@ -171,7 +171,7 @@ def sync_states(
     *,
     recover_daily_max: int | None = None,
 ) -> StatusSyncResult:
-    """상태만 갱신. 전체 재수집보다 훨씬 싸다(zcode=12, period=10에 964건).
+    """상태만 갱신. 전체 재수집보다 훨씬 싸다(전남광주 zcode=12 실측, period=10에 964건).
 
     이름이 ``sync_status``가 아닌 이유: 이 함수가 갱신하는 것은 충전소 문서의
     ``status`` 필드이지 이 함수의 상태가 아니다. 캐시에 없는 충전소·충전기는

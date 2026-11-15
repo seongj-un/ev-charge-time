@@ -68,7 +68,7 @@ class ChargerApiClient:
     def fetch_status_rows(self, zcode: str, period: int) -> list[dict]:
         """``getChargerStatus`` — 상태만. ``period``(1~10분) 안에 바뀐 것만 온다.
 
-        전체 재수집보다 훨씬 싸다(zcode=12, period=10에 964건).
+        전체 재수집보다 훨씬 싸다(전남광주 zcode=12 실측, period=10에 964건).
         """
         return self._fetch_all_pages("getChargerStatus", {"zcode": zcode, "period": period})
 

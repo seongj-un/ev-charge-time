@@ -470,7 +470,7 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
     renderScreen(routes({ body: [] }));
 
     expect(await screen.findByText("이 근처에서 충전소를 찾지 못했어요")).toBeInTheDocument();
-    expect(screen.getByText(/대전 지역 충전소만 수집/)).toBeInTheDocument();
+    expect(screen.getByText(/수집하는 지역\(대전 등\)에서만 찾을 수 있어요/)).toBeInTheDocument();
   });
 
   /*
