@@ -48,7 +48,7 @@ from .car_plan_service import (
     spoken_distance,
     spoken_percent,
 )
-from .car_route_service import find_along_route, stale_sentence
+from .car_route_service import find_along_route, stale_sentence, station_address
 from .car_savings import record_pending, summarize
 from .car_target_service import compute_charge_target
 from .deps import get_public_prices
@@ -525,6 +525,8 @@ class VoiceTools:
             name=str((row.data or {}).get("name") or ""),
             lat=row.lat,
             lng=row.lng,
+            # 주소는 동작에만 준다. Claude에 가는 stations에는 넣지 않는다(BE-13).
+            address=station_address(row.data),
         )
         return ToolOutcome(content, speech=speech, action=action)
 
@@ -598,6 +600,9 @@ class VoiceTools:
         for charger, found in zip(content["chargers"], result.chargers, strict=True):
             # 시각은 오프셋 없이 KST로 준다(+09:00의 숫자가 시각 근거에 섞이지 않게).
             charger["synced_at"] = f"{found.synced_at.astimezone(KST):%Y-%m-%d %H:%M}"
+            # 주소는 앱 동작용이다. 번지 숫자가 숫자 근거가 되거나 바깥 글이 프롬프트에
+            # 들어가지 않게 Claude에는 주지 않는다(BE-13).
+            del charger["address"]
         # "기준 잔량 15% 아래예요", "50킬로와트 이상"도 근거가 있게 기준을 함께 준다.
         content["reserve_soc"] = request.reserve_soc
         content["min_kw"] = request.min_kw

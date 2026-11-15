@@ -72,6 +72,21 @@ def short_name(value: object) -> str:
     return " ".join(str(value or "").split())[:MAX_NAME]
 
 
+# 주소는 내비(Pleos NaviHelper)에 그대로 넘기는 값이라 자르지 않는 것이 원칙이지만, 공공
+# API에서 온 글이라 상한은 둔다. 실제 주소(도로명 + 상세)는 이보다 훨씬 짧다.
+MAX_ADDRESS = 200
+
+
+def station_address(data: dict | None) -> str | None:
+    """캐시 행의 주소(수집기가 addr와 addrDetail을 합친 값). 줄바꿈을 펴고, 없으면 None.
+
+    앱 동작과 화면에만 쓴다. Claude에게 주는 도구 결과에는 넣지 않는다(주소의 번지
+    숫자가 숫자 검증 근거가 되고, 바깥 글이 프롬프트로 들어간다).
+    """
+    text = " ".join(str((data or {}).get("address") or "").split())[:MAX_ADDRESS]
+    return text or None
+
+
 RUNS_OUT_QUESTION = "더 가까운 충전소를 찾아볼까요?"
 # 경로에서 이만큼 이상 벗어난 충전소는 문장에 벗어난 거리를 함께 말한다.
 OFFSET_SPOKEN_M = 500
@@ -170,6 +185,7 @@ def find_along_route(
             RouteChargerOut(
                 station_id=row.station_id,
                 name=short_name((row.data or {}).get("name")),
+                address=station_address(row.data),
                 lat=row.lat,
                 lng=row.lng,
                 along_m=round(along),
@@ -231,6 +247,7 @@ def find_along_route(
                     name=recommended.name,
                     lat=recommended.lat,
                     lng=recommended.lng,
+                    address=recommended.address,
                 )
             )
     return CarRouteChargersResponse(

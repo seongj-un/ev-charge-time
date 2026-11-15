@@ -376,9 +376,10 @@ IP가 다시 발급할 때 재사용되어 따로 정리하지 않는다.
 - `{"type": "set_reservation", "start_hhmm", "end_hhmm"}`: 차량 기본 예약 충전에 넣을 값.
   `plan_charge`나 집 충전 `leak_check`가 예약 값을 냈을 때. 앱은 충전을 켜고 끄지 않고, 운전자가
   넣도록 보여 준다.
-- `{"type": "navigate", "station_id", "name", "lat", "lng"}`: `find_chargers`가 찾은 가장 가까운
-  충전소.
-- `{"type": "add_waypoint", "station_id", "name", "lat", "lng"}`: `find_chargers_along_route`가 고른
+- `{"type": "navigate", "station_id", "name", "lat", "lng", "address"}`: `find_chargers`가 찾은 가장
+  가까운 충전소. `address`는 충전소 주소(공공데이터 `addr` + `addrDetail`을 수집 때 합친 값, 줄바꿈을
+  펴고 200자까지)이고, 없으면 null이다. Pleos `RouteInfo.address`에 넣는다.
+- `{"type": "add_waypoint", "station_id", "name", "lat", "lng", "address"}`: `find_chargers_along_route`가 고른
   경유지 추천(아래 "경로 위 충전소 찾기"와 같은 규칙). 추천 충전소까지 가기 전에 바닥날 수 있으면
   대신 `ask` "더 가까운 충전소를 찾아볼까요?"를 준다.
 - `{"type": "ask", "question"}`: 와트잇이 질문으로 끝냈다. 앱은 읽은 뒤 바로 마이크를 연다.
@@ -424,7 +425,7 @@ Claude가 넣는 값은 운전자의 의도뿐이고, 차량 값(잔량, 용량,
 | 도구 | Claude 입력 | 서버가 하는 일 |
 | --- | --- | --- |
 | `plan_charge` | `depart_time` "HH:MM"(필수), `soc_target` 1~100(기본 80) | `car/plan` 계산. 꽂는 시각은 `arrival_at`(없으면 지금), 출발은 꽂은 뒤 처음 오는 그 시각, 시작 잔량은 `arrival_soc` 또는 `soc_now`. 절감액은 도착하자마자 충전하는 경우와 비교한다. 충전 요금(`cost_won`)은 Claude에 넘기지 않는다 |
-| `find_chargers` | `available_only`(기본 true), `min_kw`, `radius_m` 500~20,000(기본 3,000) | `GET /api/chargers`와 같은 검색, 가까운 순 최대 3곳. 충전소 이름은 줄바꿈을 펴고 40자로 잘라 넘긴다(공공 API에서 온 글). `navigate` 동작에는 원래 이름. 충전소마다 `synced_at`·`status_age_min`·`stale`. 빈 충전기를 찾았고(`available_only`) 가장 가까운 곳이 `stale`이면 서버 문장 끝에 "충전기 상태는 N분 전 정보예요.", 오래된 상태 때문에 비었으면 "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요." |
+| `find_chargers` | `available_only`(기본 true), `min_kw`, `radius_m` 500~20,000(기본 3,000) | `GET /api/chargers`와 같은 검색, 가까운 순 최대 3곳. 충전소 이름은 줄바꿈을 펴고 40자로 잘라 넘긴다(공공 API에서 온 글). `navigate` 동작에는 원래 이름과 `address`. 주소는 Claude에 넘기지 않는다(번지 숫자가 숫자 근거가 되지 않게, 바깥 글이 프롬프트에 들어가지 않게). `find_chargers_along_route`의 충전소 목록에서도 `address`를 빼고 넘긴다. 충전소마다 `synced_at`·`status_age_min`·`stale`. 빈 충전기를 찾았고(`available_only`) 가장 가까운 곳이 `stale`이면 서버 문장 끝에 "충전기 상태는 N분 전 정보예요.", 오래된 상태 때문에 비었으면 "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요." |
 | `leak_check` | `payment`, `charger_speed`, `depart_time` | `car/leak-check` 계산. 장소는 `context.place` |
 | `find_chargers_along_route` | `min_kw`(기본 50), `corridor_m` 500~10,000(기본 3,000) | `POST /api/car/chargers/along-route`와 같은 함수. 출발은 `context`의 위치, 목적지·경로 지점·잔량·남은 거리·전비·배터리 용량도 `context`에서. 결과에 `reserve_soc`(15)와 `min_kw`를 함께 준다 |
 | `recommend_charge_target` | `next_trip_km` 0 초과 3,000 이하(선택) | `car/charge-target` 계산. 용량·전비·잔량은 `context`에서. `next_trip_km`는 운전자 말(이번 `text`와 `history`의 `driver` 턴)에 그 거리가 있을 때만 쓴다(숫자 검증의 거리 규칙과 같고, 반올림한 모양도 맞는 것으로 본다). 없으면 버리고 평소 기준으로 계산하며, 버린 거리는 결과에 넣지 않는다(넣으면 숫자 검증의 근거가 된다). 결과에 `next_trip_km`, `daily_soc`(80), `reserve_soc`(20)를 함께 준다. 잔량 문장의 기준: `context.arrival_soc`(내비 도착 예상)가 있으면 그 값으로 "도착하면 N%라 더 채우지 않아도 돼요", 주행 중(`remain_distance_m` 있음)인데 도착 잔량이 없으면 잔량 문장을 붙이지 않고, 주행 중이 아니면 `soc_now`로 "지금 N%라" |
@@ -840,9 +841,9 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `need_charge` | bool \| null | 도착 잔량 < `reserve_soc`. 도착 잔량은 `arrival_soc`, 없으면 전비로 추정한 값. 둘 다 없으면 null |
-| `chargers` | array | `{station_id, name, lat, lng, along_m, offset_m, distance_m, available_count, max_kw, est_soc, reachable, runs_out, synced_at, status_age_min, stale}`. 뒤 세 필드는 아래 "충전기 상태 신선도"와 같다. `distance_m`은 위 "잔량 추정"의 도로 기준 거리, `name`은 공공 API 이름을 줄바꿈을 펴고 40자로 자른 것, `available_count`는 지금 충전대기이면서 `min_kw` 이상인 충전기 수, `max_kw`는 그 충전소 충전기 중 최고 출력 |
+| `chargers` | array | `{station_id, name, address, lat, lng, along_m, offset_m, distance_m, available_count, max_kw, est_soc, reachable, runs_out, synced_at, status_age_min, stale}`. 뒤 세 필드는 아래 "충전기 상태 신선도"와 같다. `distance_m`은 위 "잔량 추정"의 도로 기준 거리, `name`은 공공 API 이름을 줄바꿈을 펴고 40자로 자른 것, `available_count`는 지금 충전대기이면서 `min_kw` 이상인 충전기 수, `max_kw`는 그 충전소 충전기 중 최고 출력. `address`는 충전소 주소(공공데이터 `addr` + `addrDetail`을 수집 때 합친 값, 줄바꿈을 펴고 200자까지). 캐시에 없거나 비었으면 null(BE-13) |
 | `speech` | string | TTS 문장 |
-| `actions` | array | 추천이 있고 `need_charge`가 false가 아니면 `[{"type": "add_waypoint", station_id, name, lat, lng}]`. 추천 충전소가 `runs_out`이면 경유지 대신 `[{"type": "ask", "question": "더 가까운 충전소를 찾아볼까요?"}]`. 충전이 필요 없다고 말할 때는 빈 배열 |
+| `actions` | array | 추천이 있고 `need_charge`가 false가 아니면 `[{"type": "add_waypoint", station_id, name, lat, lng, address}]`(`address`는 `chargers`의 같은 충전소 값). 추천 충전소가 `runs_out`이면 경유지 대신 `[{"type": "ask", "question": "더 가까운 충전소를 찾아볼까요?"}]`. 충전이 필요 없다고 말할 때는 빈 배열 |
 | `assumptions` | string[] | 직선 근사, 상태는 최근 수집 기준, (100km 넘는 구간이 있으면) 장거리 직선 근사 한계, (추정했으면) 내비 또는 전비 기준 거리 비례 추정 |
 | `coverage_note` | string \| null | 경로 근처에 충전소가 하나도 없으면 "이 구간은 충전소 정보가 없을 수 있어요(수집 지역 밖).", 상태가 60분 넘게 오래된 충전소를 빼서 비었으면(상태가 새것이었다면 남았을 곳이 있으면) "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요.", 있지만 조건에 맞는 곳이 없으면 "경로 근처 충전소 N곳 중 지금 비어 있는 50kW 이상 충전기가 없어요.", 후보 행 상한에 걸리면 뒤에 "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요." |
 | `route_m` | int | 정리된 남은 꺾은선 길이 m |
@@ -919,6 +920,9 @@ GET /api/chargers?lat=35.0175&lng=126.7905&radius_m=10000&available_only=true&mi
 응답 필드는 `StationOut` 그대로다 (`station_id`, `name`, `address`, `lat`, `lng`,
 `distance_m`, `operator`, `available_hours`, `is_favorite`(게스트는 null), `chargers[]`:
 `charger_id`, `type`, `capacity_kw`, `status`, `status_updated_at`).
+`address`는 이 엔드포인트가 처음부터 내던 필드라 그대로 string이고, 주소가 없으면 빈 문자열이다(웹
+화면이 쓰는 기존 계약). 차량 응답(`add_waypoint`·`navigate` 동작, 경로 위 충전소)의 `address`는 같은
+값을 줄바꿈을 펴서 주고, 없으면 null이다.
 
 ### 충전기 상태 신선도
 

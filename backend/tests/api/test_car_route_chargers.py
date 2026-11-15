@@ -24,8 +24,10 @@ def charger(status="2", kw=100.0, charger_id="01"):
     return {"charger_id": charger_id, "type": "04", "capacity_kw": kw, "status": status}
 
 
-def station(db_session, station_id, lat, lng=126.8, *, name=None, chargers=None):
+def station(db_session, station_id, lat, lng=126.8, *, name=None, chargers=None, address=None):
     data = {"name": name or f"{station_id} 충전소", "chargers": chargers or [charger()]}
+    if address is not None:
+        data["address"] = address
     db_session.add(ChargerCache(station_id=station_id, data=data, lat=lat, lng=lng))
     db_session.commit()
 
@@ -37,7 +39,14 @@ def post(client, **body):
 @pytest.fixture
 def stations(db_session):
     # 경로 옆 10km 지점, 동쪽 1km: 100kW 빈 충전기
-    station(db_session, "A", 35.09, 126.8 + KM_EAST, chargers=[charger(kw=100.0)])
+    station(
+        db_session,
+        "A",
+        35.09,
+        126.8 + KM_EAST,
+        chargers=[charger(kw=100.0)],
+        address="전라남도 나주시 빛가람로 1 주차장 B1",
+    )
     # 30km 지점, 서쪽 2km: 50kW 빈 충전기 2대 + 7kW 빈 충전기
     station(
         db_session,
@@ -152,8 +161,13 @@ def test_need_charge_speech_recommends_the_first_reachable_charger(client, stati
             "name": "A 충전소",
             "lat": 35.09,
             "lng": 126.8 + KM_EAST,
+            "address": "전라남도 나주시 빛가람로 1 주차장 B1",
         }
     ]
+    # 목록의 주소와 경유지 동작의 주소가 같다. 주소가 없는 충전소는 null(BE-13)
+    by_id = {c["station_id"]: c for c in body["chargers"]}
+    assert by_id["A"]["address"] == body["actions"][0]["address"]
+    assert by_id["B"]["address"] is None
 
 
 def test_skips_unreachable_chargers_for_the_recommendation(client, stations):
@@ -568,7 +582,7 @@ def test_a_nearer_reachable_station_is_recommended_instead(client, db_session):
     assert [c["runs_out"] for c in body["chargers"]] == [False, True]
     assert body["actions"][0] == {
         "type": "add_waypoint", "station_id": "NEAR", "name": "NEAR 충전소", "lat": 35.18,
-        "lng": 126.8,
+        "lng": 126.8, "address": None,
     }
     assert body["speech"].endswith("경유지로 넣을까요?")
 
@@ -676,3 +690,19 @@ def test_empty_for_other_reasons_keeps_the_old_note(client, db_session, fixed_no
         "경로 근처 충전소 1곳 중 지금 비어 있는 50kW 이상 충전기가 없어요."
     )
     assert body["speech"].endswith("경로 근처에 지금 비어 있는 급속충전기를 찾지 못했어요.")
+
+
+def test_address_is_flattened_capped_and_null_when_blank(client, db_session):
+    """공공 API 주소는 줄바꿈을 펴고 200자로 자른다. 비었거나 공백뿐이면 null(BE-13)."""
+    station(db_session, "LINES", 35.05, address="전라남도 나주시\n빛가람로   1\t상가동")
+    station(db_session, "BLANK", 35.06, address="  \n ")
+    station(db_session, "LONG", 35.07, address="가" * 250)
+
+    body = post(client).json()
+
+    by_id = {c["station_id"]: c["address"] for c in body["chargers"]}
+    assert by_id == {
+        "LINES": "전라남도 나주시 빛가람로 1 상가동",
+        "BLANK": None,
+        "LONG": "가" * 200,
+    }

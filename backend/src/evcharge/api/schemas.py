@@ -580,6 +580,10 @@ class AddWaypointAction(BaseModel):
     name: str
     lat: float
     lng: float
+    # 충전소 주소(공공데이터 addr + addrDetail, BE-13). Pleos RouteInfo·RequestWaypointInfo의
+    # address에 넣는다. 캐시에 주소가 없으면 null(앱은 좌표와 이름으로 시도한다).
+    # 응답에 늘 있다(값이 없으면 null). 만드는 곳이 반드시 채우게 기본값을 두지 않는다.
+    address: str | None
 
 
 VOICE_TEXT_MAX = 500
@@ -667,6 +671,9 @@ class NavigateAction(BaseModel):
     name: str
     lat: float
     lng: float
+    # AddWaypointAction.address와 같다(BE-13)
+    # 응답에 늘 있다(값이 없으면 null). 만드는 곳이 반드시 채우게 기본값을 두지 않는다.
+    address: str | None
 
 
 class AskAction(BaseModel):
@@ -745,6 +752,9 @@ class RouteChargerOut(BaseModel):
     station_id: str
     # 공공 API 이름을 40자로 자른 것
     name: str
+    # 충전소 주소(BE-13). 없으면 null. 경유지 동작(add_waypoint)의 address와 같은 값
+    # 응답에 늘 있다(값이 없으면 null). 만드는 곳이 반드시 채우게 기본값을 두지 않는다.
+    address: str | None
     lat: float
     lng: float
     # 출발(origin)부터 경로 근사를 따라간 거리, 경로에서 벗어난 거리 (m, 반올림)
