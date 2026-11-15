@@ -1,8 +1,8 @@
 """차량 앱 API 계약 스냅숏 (BE-12).
 
 `/api/car/*`와 `/api/chargers*`의 OpenAPI에서 경로, 쿼리, 요청·응답 필드(타입, 필수 여부,
-Literal 값)를 펴서 `snapshots/car_api_contract.json`과 비교한다. 앱(Kotlin)은 이 모양에 맞춰
-만들어지므로, 바뀌면 이 테스트가 실패해 의도한 변경인지 확인하게 한다.
+Literal 값, 범위·길이·개수 제약, 기본값)를 펴서 `snapshots/car_api_contract.json`과 비교한다.
+앱(Kotlin)은 이 모양에 맞춰 만들어지므로, 바뀌면 이 테스트가 실패해 의도한 변경인지 확인하게 한다.
 
 의도한 변경이면 스냅숏을 다시 만든다(그리고 PR 본문과 docs/car-api.md에 적는다):
 
@@ -86,6 +86,8 @@ def _flatten(
     if variants:
         real = [_resolve(v, components) for v in variants if v.get("type") != "null"]
         nullable = nullable or len(real) < len(variants)
+        if len(real) == 1 and "default" in schema and "default" not in real[0]:
+            real = [{**real[0], "default": schema["default"]}]
         if len(real) == 1:
             _flatten(
                 real[0],
@@ -119,7 +121,7 @@ def _flatten(
             _flatten(child, key, out, components, required=name in needed, depth=depth + 1)
         return
     if schema.get("type") == "array":
-        out[prefix or "."] = _mark("array", required, nullable)
+        out[prefix or "."] = _mark("array" + _limits(schema), required, nullable)
         _flatten(
             schema.get("items", {}), f"{prefix}[]", out, components, required=True, depth=depth + 1
         )
@@ -150,7 +152,32 @@ def _leaf(schema: dict[str, Any], components: dict[str, Any], *, required: bool)
         text += f"={json.dumps(schema['const'], ensure_ascii=False)}"
     if "enum" in schema:
         text += "∈" + json.dumps(schema["enum"], ensure_ascii=False)
-    return _mark(text, required, False)
+    return _mark(text + _limits(schema), required, False)
+
+
+# 앱이 맞춰야 하는 범위·길이·개수 제약과 기본값. 바뀌면 같은 값을 보내도 422가 나거나(좁아짐)
+# 생략했을 때 뜻이 달라진다(기본값).
+LIMIT_KEYS = (
+    "minimum",
+    "exclusiveMinimum",
+    "maximum",
+    "exclusiveMaximum",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "minItems",
+    "maxItems",
+    "default",
+)
+
+
+def _limits(schema: dict[str, Any]) -> str:
+    parts = [
+        f"{key}={json.dumps(schema[key], ensure_ascii=False)}"
+        for key in LIMIT_KEYS
+        if key in schema
+    ]
+    return f" [{', '.join(parts)}]" if parts else ""
 
 
 def _mark(text: str, required: bool, nullable: bool) -> str:
@@ -206,3 +233,12 @@ def test_the_diff_names_what_changed():
         "- 사라짐: POST /api/car/plan / request / gone",
         "~ 바뀜: POST /api/car/plan / request / soc_now: 'number' → 'integer'",
     ]
+
+
+def test_limits_and_defaults_are_part_of_the_contract():
+    contract_now = contract()
+    voice = contract_now["POST /api/car/voice"]["request"]
+    assert "maxItems=6" in voice["history"]
+    plan = contract_now["POST /api/car/plan"]["request"]
+    assert plan["soc_now"] == "number [minimum=0.0, exclusiveMaximum=100.0]"
+    assert "default=80" in plan["soc_target"]

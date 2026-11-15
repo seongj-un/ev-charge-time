@@ -46,12 +46,12 @@
  },
  "GET /api/chargers": {
   "parameters": {
-   "query:available_only": "boolean (optional)",
-   "query:charger_type": "string (optional) | null",
-   "query:lat": "number",
-   "query:lng": "number",
-   "query:min_kw": "number (optional) | null",
-   "query:radius_m": "integer (optional)"
+   "query:available_only": "boolean [default=false] (optional)",
+   "query:charger_type": "string [maxLength=32] (optional) | null",
+   "query:lat": "number [minimum=-90, maximum=90]",
+   "query:lng": "number [minimum=-180, maximum=180]",
+   "query:min_kw": "number [exclusiveMinimum=0, maximum=1000] (optional) | null",
+   "query:radius_m": "integer [exclusiveMinimum=0, maximum=20000, default=2000] (optional)"
   },
   "responses": {
    "200": {
@@ -92,11 +92,11 @@
  },
  "POST /api/car/briefing": {
   "request": {
-   "battery_capacity_wh": "number",
-   "charger_kw": "number (optional)",
-   "mode": "string∈[\"self_low\", \"self_high\"] (optional)",
+   "battery_capacity_wh": "number [minimum=1000.0, maximum=1000000.0]",
+   "charger_kw": "number [exclusiveMinimum=0.0, maximum=1000.0, default=7.0] (optional)",
+   "mode": "string∈[\"self_low\", \"self_high\"] [default=\"self_low\"] (optional)",
    "place": "string∈[\"home\", \"public\"] (optional) | null",
-   "soc_now": "number"
+   "soc_now": "number [minimum=0.0, maximum=100.0]"
   },
   "responses": {
    "200": {
@@ -104,7 +104,7 @@
     "actions[]": "object",
     "actions[].end_hhmm": "string",
     "actions[].start_hhmm": "string",
-    "actions[].type": "string=\"set_reservation\" (optional)",
+    "actions[].type": "string=\"set_reservation\" [default=\"set_reservation\"] (optional)",
     "assumptions": "array",
     "assumptions[]": "string",
     "price": "object",
@@ -145,10 +145,10 @@
  },
  "POST /api/car/charge-target": {
   "request": {
-   "battery_capacity_wh": "number",
-   "efficiency_km_per_kwh": "number (optional) | null",
-   "next_trip_km": "number (optional) | null",
-   "soc_now": "number (optional) | null"
+   "battery_capacity_wh": "number [minimum=1000.0, maximum=1000000.0]",
+   "efficiency_km_per_kwh": "number [minimum=0.5, maximum=20.0] (optional) | null",
+   "next_trip_km": "number [exclusiveMinimum=0.0, maximum=3000.0] (optional) | null",
+   "soc_now": "number [minimum=0.0, maximum=100.0] (optional) | null"
   },
   "responses": {
    "200": {
@@ -165,24 +165,24 @@
  },
  "POST /api/car/chargers/along-route": {
   "request": {
-   "arrival_soc": "number (optional) | null",
-   "battery_capacity_wh": "number (optional) | null",
-   "corridor_m": "integer (optional)",
+   "arrival_soc": "number [minimum=0.0, maximum=100.0] (optional) | null",
+   "battery_capacity_wh": "number [minimum=1000.0, maximum=1000000.0] (optional) | null",
+   "corridor_m": "integer [minimum=500.0, maximum=10000.0, default=3000] (optional)",
    "destination": "object",
-   "destination.lat": "number",
-   "destination.lng": "number",
-   "efficiency_km_per_kwh": "number (optional) | null",
-   "min_kw": "number (optional)",
+   "destination.lat": "number [minimum=-85.0, maximum=85.0]",
+   "destination.lng": "number [minimum=-180.0, maximum=180.0]",
+   "efficiency_km_per_kwh": "number [minimum=0.5, maximum=20.0] (optional) | null",
+   "min_kw": "number [exclusiveMinimum=0.0, maximum=1000.0, default=50] (optional)",
    "origin": "object",
-   "origin.lat": "number",
-   "origin.lng": "number",
-   "remain_distance_m": "number (optional) | null",
-   "reserve_soc": "number (optional)",
-   "route_points": "array (optional)",
+   "origin.lat": "number [minimum=-85.0, maximum=85.0]",
+   "origin.lng": "number [minimum=-180.0, maximum=180.0]",
+   "remain_distance_m": "number [exclusiveMinimum=0.0, maximum=3000000.0] (optional) | null",
+   "reserve_soc": "number [minimum=0.0, maximum=100.0, default=15] (optional)",
+   "route_points": "array [maxItems=50] (optional)",
    "route_points[]": "object",
-   "route_points[].lat": "number",
-   "route_points[].lng": "number",
-   "soc_now": "number"
+   "route_points[].lat": "number [minimum=-85.0, maximum=85.0]",
+   "route_points[].lng": "number [minimum=-180.0, maximum=180.0]",
+   "soc_now": "number [minimum=0.0, maximum=100.0]"
   },
   "responses": {
    "200": {
@@ -193,10 +193,10 @@
     "actions[]<add_waypoint>.lng": "number",
     "actions[]<add_waypoint>.name": "string",
     "actions[]<add_waypoint>.station_id": "string",
-    "actions[]<add_waypoint>.type": "string=\"add_waypoint\" (optional)",
+    "actions[]<add_waypoint>.type": "string=\"add_waypoint\" [default=\"add_waypoint\"] (optional)",
     "actions[]<ask>": "object",
     "actions[]<ask>.question": "string",
-    "actions[]<ask>.type": "string=\"ask\" (optional)",
+    "actions[]<ask>.type": "string=\"ask\" [default=\"ask\"] (optional)",
     "assumptions": "array",
     "assumptions[]": "string",
     "chargers": "array",
@@ -227,7 +227,7 @@
  "POST /api/car/departures": {
   "request": {
    "departed_at": "string(date-time)",
-   "source": "string=\"observed\" (optional)"
+   "source": "string=\"observed\" [default=\"observed\"] (optional)"
   },
   "responses": {
    "201": {
@@ -249,15 +249,15 @@
  },
  "POST /api/car/leak-check": {
   "request": {
-   "battery_capacity_wh": "number",
-   "charger_kw": "number (optional)",
+   "battery_capacity_wh": "number [minimum=1000.0, maximum=1000000.0]",
+   "charger_kw": "number [exclusiveMinimum=0.0, maximum=1000.0, default=7.0] (optional)",
    "charger_speed": "string∈[\"slow\", \"fast\"] (optional) | null",
    "depart_at": "string(date-time) (optional) | null",
-   "mode": "string∈[\"self_low\", \"self_high\", \"public_fast\"] (optional)",
+   "mode": "string∈[\"self_low\", \"self_high\", \"public_fast\"] [default=\"self_low\"] (optional)",
    "payment": "string∈[\"member\", \"roaming\", \"nonmember\"] (optional) | null",
-   "place": "string∈[\"home\", \"public\"] (optional)",
-   "soc_now": "number",
-   "soc_target": "number (optional)"
+   "place": "string∈[\"home\", \"public\"] [default=\"home\"] (optional)",
+   "soc_now": "number [minimum=0.0, exclusiveMaximum=100.0]",
+   "soc_target": "number [exclusiveMinimum=0.0, maximum=100.0, default=80] (optional)"
   },
   "responses": {
    "200": {
@@ -288,13 +288,13 @@
  },
  "POST /api/car/plan": {
   "request": {
-   "battery_capacity_wh": "number",
-   "charger_kw": "number (optional)",
+   "battery_capacity_wh": "number [minimum=1000.0, maximum=1000000.0]",
+   "charger_kw": "number [exclusiveMinimum=0.0, maximum=1000.0, default=7.0] (optional)",
    "depart_at": "string(date-time)",
-   "mode": "string∈[\"self_low\", \"self_high\", \"public_fast\"] (optional)",
+   "mode": "string∈[\"self_low\", \"self_high\", \"public_fast\"] [default=\"self_low\"] (optional)",
    "plug_in_at": "string(date-time) (optional) | null",
-   "soc_now": "number",
-   "soc_target": "number (optional)"
+   "soc_now": "number [minimum=0.0, exclusiveMaximum=100.0]",
+   "soc_target": "number [exclusiveMinimum=0.0, maximum=100.0, default=80] (optional)"
   },
   "responses": {
    "200": {
@@ -348,28 +348,28 @@
   "request": {
    "context": "object",
    "context.arrival_at": "string(date-time) (optional) | null",
-   "context.arrival_soc": "number (optional) | null",
-   "context.battery_capacity_wh": "number",
-   "context.charger_kw": "number (optional)",
+   "context.arrival_soc": "number [minimum=0.0, maximum=100.0] (optional) | null",
+   "context.battery_capacity_wh": "number [minimum=1000.0, maximum=1000000.0]",
+   "context.charger_kw": "number [exclusiveMinimum=0.0, maximum=1000.0, default=7.0] (optional)",
    "context.charging": "boolean (optional) | null",
    "context.destination": "object (optional) | null",
-   "context.destination.lat": "number",
-   "context.destination.lng": "number",
-   "context.efficiency_km_per_kwh": "number (optional) | null",
-   "context.lat": "number (optional) | null",
-   "context.lng": "number (optional) | null",
+   "context.destination.lat": "number [minimum=-85.0, maximum=85.0]",
+   "context.destination.lng": "number [minimum=-180.0, maximum=180.0]",
+   "context.efficiency_km_per_kwh": "number [minimum=0.5, maximum=20.0] (optional) | null",
+   "context.lat": "number [minimum=-90.0, maximum=90.0] (optional) | null",
+   "context.lng": "number [minimum=-180.0, maximum=180.0] (optional) | null",
    "context.place": "string∈[\"home\", \"public\"] (optional) | null",
-   "context.remain_distance_m": "number (optional) | null",
-   "context.route_points": "array (optional)",
+   "context.remain_distance_m": "number [exclusiveMinimum=0.0, maximum=3000000.0] (optional) | null",
+   "context.route_points": "array [maxItems=50] (optional)",
    "context.route_points[]": "object",
-   "context.route_points[].lat": "number",
-   "context.route_points[].lng": "number",
-   "context.soc_now": "number",
-   "history": "array (optional)",
+   "context.route_points[].lat": "number [minimum=-85.0, maximum=85.0]",
+   "context.route_points[].lng": "number [minimum=-180.0, maximum=180.0]",
+   "context.soc_now": "number [minimum=0.0, maximum=100.0]",
+   "history": "array [maxItems=6] (optional)",
    "history[]": "object",
    "history[].role": "string∈[\"driver\", \"wattit\"]",
-   "history[].text": "string",
-   "text": "string (optional) | null",
+   "history[].text": "string [minLength=1, maxLength=500]",
+   "text": "string [minLength=1, maxLength=500] (optional) | null",
    "trigger": "string=\"arrival_briefing\" (optional) | null"
   },
   "responses": {
@@ -381,20 +381,20 @@
     "actions[]<add_waypoint>.lng": "number",
     "actions[]<add_waypoint>.name": "string",
     "actions[]<add_waypoint>.station_id": "string",
-    "actions[]<add_waypoint>.type": "string=\"add_waypoint\" (optional)",
+    "actions[]<add_waypoint>.type": "string=\"add_waypoint\" [default=\"add_waypoint\"] (optional)",
     "actions[]<ask>": "object",
     "actions[]<ask>.question": "string",
-    "actions[]<ask>.type": "string=\"ask\" (optional)",
+    "actions[]<ask>.type": "string=\"ask\" [default=\"ask\"] (optional)",
     "actions[]<navigate>": "object",
     "actions[]<navigate>.lat": "number",
     "actions[]<navigate>.lng": "number",
     "actions[]<navigate>.name": "string",
     "actions[]<navigate>.station_id": "string",
-    "actions[]<navigate>.type": "string=\"navigate\" (optional)",
+    "actions[]<navigate>.type": "string=\"navigate\" [default=\"navigate\"] (optional)",
     "actions[]<set_reservation>": "object",
     "actions[]<set_reservation>.end_hhmm": "string",
     "actions[]<set_reservation>.start_hhmm": "string",
-    "actions[]<set_reservation>.type": "string=\"set_reservation\" (optional)",
+    "actions[]<set_reservation>.type": "string=\"set_reservation\" [default=\"set_reservation\"] (optional)",
     "fallback": "boolean",
     "saving_id": "string (optional) | null",
     "speech": "string"

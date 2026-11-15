@@ -12,9 +12,9 @@
 - **주행 중에는 화면 대신 말(TTS).** 응답의 `speech`는 그대로 읽으면 되는 문장이다. 숫자는 전부
   서버 계산값이니 앱이 숫자를 다시 만들거나 반올림하지 않는다.
 - **게스트로 쓴다.** 로그인 없이 기기 토큰 하나로 개인 기록(절감, 출발 시각)을 묶는다.
-- 계약 보호: `/api/car/*`와 `/api/chargers*`의 필드 목록은
-  `backend/tests/api/snapshots/car_api_contract.json`에 스냅숏으로 있다. 서버가 필드를 바꾸면
-  테스트가 실패하므로, 앱은 이 파일을 기준으로 맞추면 된다.
+- 계약 보호: `/api/car/*`와 `/api/chargers*`의 필드 목록(타입, 필수 여부, Literal 값, 범위·길이·개수
+  제약, 기본값)은 `backend/tests/api/snapshots/car_api_contract.json`에 스냅숏으로 있다. 서버가 이것을
+  바꾸면 테스트가 실패하므로, 앱은 이 파일을 기준으로 맞추면 된다. 스냅숏이 지키지 못하는 것은 4절 끝.
 
 SDK 이름은 Pleos SDK 소스(Vehicle, NaviHelper, navidata, FusedLocation)에서 확인한 것만 적었다.
 Pleos SDK에서 `@hide`이면서 `@Deprecated`인 API(배터리 용량, 기어)는 Deprecated 메시지가 가리키는
@@ -167,8 +167,9 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 | 503 | 충전소 캐시를 아직 수집하지 않음 | "충전소 정보를 준비 중"으로 안내하고 잠시 뒤 다시 부른다 |
 | 500 | 서버 설정 오류 | 일반 오류 문장. 주행 중이면 말하지 않는다 |
 
-- OpenAPI(`/docs`)에는 401·429·501이 음성에만 적혀 있다. 다른 API의 오류 코드는 위 표와
-  `car-api.md`의 각 절이 기준이다.
+- 스냅숏 테스트가 지키지 못하는 것: 오류 본문(음성 429·501의 `speech`, 422의 `detail` 문장),
+  헤더(`X-Status-Note`, `Retry-After`), 음성 밖 API의 오류 코드(OpenAPI(`/docs`)에는 401·429·501이
+  음성에만 적혀 있다). 이것들은 위 표와 `car-api.md`의 각 절이 기준이다.
 - 계산 API(`car/plan`, `car/leak-check`, `car/briefing`)는 토큰이 틀려도 계산은 그대로 준다
   (`saving_id`만 null). 이때는 다시 발급하지 않아도 된다. `car/charge-target`은 토큰을 받지 않고
   `saving_id`도 없다.
