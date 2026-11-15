@@ -400,7 +400,7 @@ Claude가 넣는 값은 운전자의 의도뿐이고, 차량 값(잔량, 용량,
 | `plan_charge` | `depart_time` "HH:MM"(필수), `soc_target` 1~100(기본 80) | `car/plan` 계산. 꽂는 시각은 `arrival_at`(없으면 지금), 출발은 꽂은 뒤 처음 오는 그 시각, 시작 잔량은 `arrival_soc` 또는 `soc_now`. 절감액은 도착하자마자 충전하는 경우와 비교한다. 충전 요금(`cost_won`)은 Claude에 넘기지 않는다 |
 | `find_chargers` | `available_only`(기본 true), `min_kw`, `radius_m` 500~20,000(기본 3,000) | `GET /api/chargers`와 같은 검색, 가까운 순 최대 3곳. 충전소 이름은 줄바꿈을 펴고 40자로 잘라 넘긴다(공공 API에서 온 글). `navigate` 동작에는 원래 이름 |
 | `leak_check` | `payment`, `charger_speed`, `depart_time` | `car/leak-check` 계산. 장소는 `context.place` |
-| `find_chargers_along_route` | `min_kw`(기본 50), `corridor_m` 500~10,000(기본 3,000) | `POST /api/car/chargers/along-route`와 같은 함수. 출발은 `context`의 위치, 목적지·경로 지점·잔량·남은 거리·전비·배터리 용량도 `context`에서. 결과에 `reserve_soc`(15)를 함께 준다 |
+| `find_chargers_along_route` | `min_kw`(기본 50), `corridor_m` 500~10,000(기본 3,000) | `POST /api/car/chargers/along-route`와 같은 함수. 출발은 `context`의 위치, 목적지·경로 지점·잔량·남은 거리·전비·배터리 용량도 `context`에서. 결과에 `reserve_soc`(15)와 `min_kw`를 함께 준다 |
 | `savings_summary` | `month` "YYYY-MM"(기본 이번 달) | 이 기기의 절약 리포트 |
 
 ### 숫자 검증과 서버 문장
@@ -416,6 +416,7 @@ Claude 답의 숫자를 **단위별로** 근거와 비교한다. 하나라도 �
 | "밤 10시", "새벽 3시 19분", "7시 반", "22:00" | 예약 시작·종료, 출발, 도착 시각. 12시간제와 "오전·오후·새벽·아침·낮·저녁·밤"을 해석한다 |
 | "A부터 B까지" (한국어 시각이나 HH:MM) | 예약 구간이 있으면 A가 시작, B가 종료여야 한다(뒤바뀌면 실패) |
 | "N킬로미터", "N킬로", "N km", "N미터", "N m" | 거리 필드(도구 결과의 `*_m`, `*_km`: `distance_m`, `offset_m`, `route_m`, `radius_m`, `distance_km` 등, `context.remain_distance_m`)와 서버 문장의 거리. 10m, 0.1km, 1km 단위로 반올림한 모양도 허용한다. 꺾은선 위치 `along_m`은 도로 거리와 달라 근거가 아니다. "km/kWh", "km/h"는 거리로 보지 않는다 |
+| "N킬로와트", "N kW" | 출력 필드(도구 결과의 `*_kw`: `max_kw`, `min_kw` 등, `context.charger_kw`)와 서버 문장의 출력. "킬로와트"·"킬로와트시"는 거리 "킬로"로 읽지 않는다. "킬로와트시"·"kWh"는 그 밖의 숫자로 본다 |
 | 그 밖의 숫자 | 도구 결과·`context`에 나온 숫자. 날짜 문자열의 숫자("2026-11-17"의 2026, 11, 17)와 식별자(`station_id` 등 `*_id`)의 숫자는 넣지 않는다 |
 
 - 운전자 말(이번 `text`와 `history`의 `driver` 턴)의 숫자는 같은 규칙으로 근거에 더한다. `wattit`
@@ -542,8 +543,10 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
 ### 잔량 추정
 
 충전소까지의 거리 `distance_m` = `along_m` × 도로 비율 + `offset_m`. 도로 비율은
-`remain_distance_m` / `route_m`이고, `remain_distance_m`가 없으면 1이다. 꺾은선은 도로보다 짧아서
-비율로 늘린다(목적지에서 추정이 `arrival_soc`와 같아진다). 문장의 거리도 이 값이다.
+`remain_distance_m` / `route_m`이고, `remain_distance_m`가 없으면 도로 계수 1.25다(`assumptions`에
+"내비 남은 거리가 없어 도로 거리를 직선거리의 1.25배(도로 계수)로 잡았어요."). 꺾은선은 도로보다
+짧아서 늘린다(내비 값이 있으면 목적지에서 추정이 `arrival_soc`와 같아진다). 문장의 거리도 이
+값이다.
 
 소모율은 아래 순서로 정하고, 둘 다 안 되면 추정하지 않는다(`est_soc`, `reachable` null).
 
@@ -553,13 +556,15 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
    (1m에 1 / (전비 × 1000) kWh).
 
 - `est_soc` = `soc_now` − 소모율 × `distance_m` (소수 첫째 자리, 0 아래는 0)
+- 도착 잔량: `arrival_soc`가 있으면 그 값. 없고 전비로 추정했으면 `soc_now` − 소모율 ×
+  (`route_m` × 도로 비율)로 추정해 `need_charge`에 쓰고, 문장 앞에 "전비로 추정하면"을 붙인다.
 - `reachable` = `est_soc` ≥ `reserve_soc`
 
 ### 응답 200
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| `need_charge` | bool \| null | `arrival_soc` < `reserve_soc`. `arrival_soc`가 없으면 null |
+| `need_charge` | bool \| null | 도착 잔량 < `reserve_soc`. 도착 잔량은 `arrival_soc`, 없으면 전비로 추정한 값. 둘 다 없으면 null |
 | `chargers` | array | `{station_id, name, lat, lng, along_m, offset_m, distance_m, available_count, max_kw, est_soc, reachable}`. `distance_m`은 위 "잔량 추정"의 도로 기준 거리, `name`은 공공 API 이름을 줄바꿈을 펴고 40자로 자른 것, `available_count`는 지금 충전대기이면서 `min_kw` 이상인 충전기 수, `max_kw`는 그 충전소 충전기 중 최고 출력 |
 | `speech` | string | TTS 문장 |
 | `actions` | array | 추천이 있고 `need_charge`가 false가 아니면 `[{"type": "add_waypoint", station_id, name, lat, lng}]`. 충전이 필요 없다고 말할 때는 빈 배열 |
@@ -577,6 +582,8 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
   12.5%까지 내려갈 수 있어요."를 질문 앞에 붙인다.
 - 충전 불필요: "도착할 때 배터리가 35% 남아요. 충전 없이 가셔도 돼요." (`chargers`는 그대로 주고,
   `actions`는 비운다)
+- 도착 잔량을 전비로 추정했으면: "전비로 추정하면 도착할 때 배터리가 42%예요. …" /
+  "전비로 추정하면 도착할 때 배터리가 42% 남아요. 충전 없이 가셔도 돼요."
 - 잔량을 모름: "약 42.3킬로미터 앞 ○○휴게소에 비어 있는 급속충전기가 2대 있어요. 경유지로 넣을까요?"
 - 추천 없음: "(충전 필요면 첫 문장) 경로 근처에 지금 비어 있는 급속충전기를 찾지 못했어요."
 
