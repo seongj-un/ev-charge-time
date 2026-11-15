@@ -5,6 +5,7 @@
 기기 토큰 없이 부르면 DB를 쓰지 않는다. 절감 기록(아래 "절감 리포트" 절)과 음성 대화
 (`car/voice`)는 기기 토큰이 필요하다.
 주변 충전소는 기존 `GET /api/chargers`를 그대로 쓴다 (맨 아래 절).
+앱이 언제 무엇을 부르고 Pleos SDK의 어떤 값을 넣는지는 [`car-app-guide.md`](car-app-guide.md).
 
 핵심 원칙
 
@@ -35,7 +36,7 @@
 | 필드 | 타입 | 필수 | 기본 | 규칙 |
 | --- | --- | --- | --- | --- |
 | `soc_now` | number | 예 | | 0 이상 100 미만 (%). 현재 잔량 또는 내비가 준 도착 시 예상 잔량 |
-| `battery_capacity_wh` | number | 예 | | 1,000 이상 1,000,000 이하 (Wh). Pleos Vehicle SDK `getEvBatteryCapacity` 값 그대로. 서버가 kWh로 바꾼다 |
+| `battery_capacity_wh` | number | 예 | | 1,000 이상 1,000,000 이하 (Wh). Android 표준 Car API `INFO_EV_BATTERY_CAPACITY`(Wh) 값을 정수로(Pleos `getEvBatteryCapacity`는 `@Deprecated`, [car-app-guide.md](car-app-guide.md)). 서버가 kWh로 바꾼다 |
 | `soc_target` | number | | 80 | 0 초과 100 이하 (%) |
 | `charger_kw` | number | | 7.0 | 0 초과 1000 이하 (kW) |
 | `plug_in_at` | datetime | | 서버 현재 시각 | 충전기를 꽂을 수 있는 시각 = 도착 예정 시각. 이미 지났으면 서버 현재 시각으로 당긴다 |
@@ -235,8 +236,11 @@ home에서는 `payment`·`charger_speed`를, public에서는 `depart_at`·`mode`
    - 토큰이 없으면 지금과 같은 응답이다(`saving_id: null`). DB를 열지 않는다.
    - 토큰이 틀려도 계산은 그대로 돌려주고 기록만 하지 않는다(`saving_id: null`).
    - 기록 중 DB 오류가 나도 계산은 그대로 나간다(`saving_id: null`, 서버 로그에 경고).
-3. 앱이 추천을 실제로 따른 것을 보면(예약 시각에 충전 시작을 Vehicle SDK로 확인, 운전자가
-   회원 결제로 바꿨다고 확인) `POST /api/car/savings/{saving_id}/confirm`으로 **확정**한다.
+3. 앱이 추천을 실제로 따른 것을 보면 `POST /api/car/savings/{saving_id}/confirm`으로 **확정**한다.
+   - 예약 충전: 시동이 꺼진 동안 앱은 돌지 않으므로 예약 충전이 시작되는 순간은 볼 수 없다. 앱은
+     주차할 때 잔량을 저장해 두고, 다음 시동 ON에 잔량이 그보다 올라 있으면(예약대로 충전됐다고
+     보고) 확정한다.
+   - 결제 방식: 운전자가 회원 결제로 바꿨다고 확인하면 확정한다.
 4. `GET /api/car/savings/summary`가 확정된 기록만 더한다.
 
 규칙
@@ -355,7 +359,7 @@ IP가 다시 발급할 때 재사용되어 따로 정리하지 않는다.
 | `route_points` | `{lat, lng}[]` | | 내비 경유지(남은 것, 순서대로), 최대 50개. 없으면 현재 위치에서 목적지까지 직선 근사 |
 | `efficiency_km_per_kwh` | number | | Vehicle SDK 충전 후 평균 전비(km/kWh), 0.5 이상 20 이하. 도착 예상 잔량이나 남은 거리가 없을 때 경로 위 충전소 잔량 추정에 쓴다 |
 | `charger_kw` | number | | 충전기 출력, 기본 7.0 |
-| `charging` | bool | | 지금 충전 중인지 (Claude에게 상황으로만 알린다) |
+| `charging` | bool | | 지금 실제로 충전 중인지 (Claude에게 상황으로만 알린다). 충전 스위치 설정값이 아니라 실제 충전 상태(표준 Car API `EV_CHARGE_STATE`)를 넣고, 모르면 보내지 않는다. [car-app-guide.md](car-app-guide.md) 2절 |
 | `place` | string | | `"home"`·`"public"`. `leak_check`가 쓴다(없으면 home) |
 
 ### 응답 200

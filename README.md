@@ -52,6 +52,9 @@ uv run uvicorn evcharge.main:app --reload
 `/api/car/*`는 차량용 앱(Pleos Connect, 현대자동차그룹 공모전)이 부르는 API다. 로그인 없이
 쓰고, 서버는 가장 싼 충전 구간과 차량 기본 예약 충전에 넣을 시각만 계산한다 — 충전을 직접
 켜고 끄지 않는다. 필드, 반올림 규칙, 오류는 [docs/car-api.md](docs/car-api.md)에 있다.
+앱(Kotlin, Pleos SDK) 개발자는 [docs/car-app-guide.md](docs/car-app-guide.md)부터 본다: 언제 무엇을
+부르나, SDK 값과 요청 필드 대응, `actions` 처리, 토큰과 오류. 앱 계약(경로·필드 목록)은
+`backend/tests/api/snapshots/car_api_contract.json` 스냅숏 테스트가 지킨다.
 
 `POST /api/car/leak-check`는 충전 중에 돈이 새고 있는지 알려 준다. 집·회사 완속은
 지금 바로 충전과 출발 전 최저 구간의 차이를, 공공 충전기는 로밍가·비회원가와 회원가의
