@@ -6,7 +6,7 @@ import copy
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -1090,3 +1090,85 @@ def test_plan_charge_records_the_spoken_departure(client, fake, db_session):
     assert [(r.departed_at, r.source, r.device_id) for r in rows] == [
         (datetime(2026, 11, 17, 7, 30, tzinfo=KST), "stated", device_of(db_session, headers).id)
     ]
+
+
+def seed_departures(client, headers, minutes: list[int]) -> None:
+    """11월 9~13일(월~금) 아침 출발 기록. 지금은 11월 16일(월) 18시라 제안 대상은 내일(화)."""
+    for day, minute in zip((9, 10, 11, 12, 13), minutes, strict=False):
+        at = datetime(2026, 11, day, 7, 0, tzinfo=KST) + timedelta(minutes=minute)
+        response = client.post(
+            "/api/car/departures", json={"departed_at": at.isoformat()}, headers=headers
+        )
+        assert response.status_code == 201
+
+
+@pytest.mark.parametrize(
+    ("minutes", "question"),
+    [
+        ([28, 31, 33, 40, 22], "내일도 오전 7시 30분에 출발하세요?"),
+        ([28, 31, 33], "내일 오전 7시 30분쯤 출발하세요?"),
+        ([30, 30], "내일 몇 시에 출발하세요?"),
+    ],
+)
+def test_arrival_briefing_asks_about_the_usual_departure(client, minutes, question):
+    client.app.dependency_overrides[anthropic_api_key] = lambda: ""
+    headers = register(client)
+    seed_departures(client, headers, minutes)
+
+    body = ask(
+        client, headers, None, trigger="arrival_briefing", context={**CONTEXT, "arrival_soc": 32}
+    ).json()
+
+    assert body["speech"] == f"집에 도착하면 배터리가 32% 남아요. {question}"
+    assert body["actions"] == [{"type": "ask", "question": question}]
+
+
+def test_usual_departure_goes_into_the_system_context_and_number_check(client, fake):
+    headers = register(client)
+    seed_departures(client, headers, [28, 31, 33, 40, 22])
+    fake.replies = [say("평소처럼 내일 7시 반에 출발하시면 되겠어요.")]
+
+    body = ask(client, headers, "내일도 그 시간이야?").json()
+
+    assert "usual_departure: 내일 07:30 (confidence high, 기록 5건)" in fake.calls[0]["system"]
+    assert "plan_charge(depart_time='07:30')" in fake.calls[0]["system"]
+    assert body["fallback"] is False
+    assert body["speech"] == "평소처럼 내일 7시 반에 출발하시면 되겠어요."
+
+
+def test_a_different_time_than_the_usual_one_is_still_rejected(client, fake):
+    headers = register(client)
+    seed_departures(client, headers, [28, 31, 33, 40, 22])
+    fake.replies = [say("평소처럼 내일 8시에 출발하시면 되겠어요.")]
+
+    body = ask(client, headers, "내일도 그 시간이야?").json()
+
+    assert body["fallback"] is True
+
+
+def test_without_records_there_is_no_usual_departure_line(client, fake):
+    fake.replies = [say("몇 시에 출발하세요?")]
+
+    ask(client, register(client), "충전 계획 알려 줘")
+
+    assert "usual_departure" not in fake.calls[0]["system"]
+
+
+def test_yes_to_the_usual_time_plans_and_records_it(client, fake, db_session):
+    from evcharge.infra.models import CarDeparture
+
+    headers = register(client)
+    seed_departures(client, headers, [28, 31, 33, 40, 22])
+    fake.replies = [use("plan_charge", {"depart_time": "07:30"}), say("예약해 두었어요.")]
+
+    ask(
+        client,
+        headers,
+        "응",
+        history=[{"role": "wattit", "text": "내일도 오전 7시 30분에 출발하세요?"}],
+        trigger="arrival_briefing",
+    )
+
+    assert tool_results(fake, 1)[0]["content"]["depart_at"] == "2026-11-17 07:30"
+    stated = list(db_session.scalars(select(CarDeparture).where(CarDeparture.source == "stated")))
+    assert [r.departed_at for r in stated] == [datetime(2026, 11, 17, 7, 30, tzinfo=KST)]

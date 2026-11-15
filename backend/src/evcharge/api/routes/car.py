@@ -11,14 +11,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session as DbSession
 
+from ...domain.departures import DepartureSuggestion
+from ...domain.errors import DomainError
 from ...domain.pricing import KST
 from ...infra.claude import AnthropicClaudeClient, ClaudeClient
 from ...infra.db import get_session
+from ...infra.models import CarDevice
 from ...settings import get_settings
 from ..car_departures import (
     DepartureLimitError,
     check_observed_time,
     delete_departures,
+    next_usual_departure,
     raise_limit,
     record_departure,
     suggestion_for,
@@ -295,8 +299,9 @@ def car_voice(
     session.commit()  # last_seen_at
     now = now_kst()
     check_arrival_at(payload.context, now)
+    usual = _usual_departure(session, device, now)
     if payload.text is None:
-        return arrival_briefing(payload.context)
+        return arrival_briefing(payload.context, usual, now)
     if not api_key:
         return _spoken_error(501, VOICE_NOT_READY)
     try:
@@ -307,4 +312,15 @@ def car_voice(
             exc.speech,
             {"Retry-After": str(exc.retry_after), "X-RateLimit-Scope": exc.scope},
         )
-    return converse(client, payload, session=session, device=device, now=now)
+    return converse(client, payload, session=session, device=device, now=now, usual=usual)
+
+
+def _usual_departure(
+    session: DbSession, device: CarDevice, now: datetime
+) -> DepartureSuggestion | None:
+    """평소 출발 시각 제안(high/low). 계산할 수 없으면 None이고 대화는 지금처럼 간다."""
+    try:
+        holidays = get_holidays()
+    except DomainError:
+        return None
+    return next_usual_departure(session, device, now, holidays)
