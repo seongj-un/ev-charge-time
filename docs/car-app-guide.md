@@ -32,7 +32,7 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 | 장거리 주행, 경로가 있을 때 | `POST /api/car/chargers/along-route` | | 잔량이 모자라면 `speech`를 읽고 `add_waypoint`/`ask`를 처리 |
 | 주변 빈 충전기 | `GET /api/chargers?available_only=true` | | 결과가 비고 `X-Status-Note` 헤더가 있으면 그 문장을 읽는다(`decodeURIComponent`) |
 | "몇 %까지 채우나" | `POST /api/car/charge-target` | | `soc_target`을 차 설정이나 `car/plan`의 `soc_target`으로. 주행 중에는 `soc_now`를 보내지 않는다 |
-| 집 출발(그날 첫 P 해제) | `POST /api/car/departures` | 필수 | **하루(KST 날짜)의 첫 P 해제만** 보낸다(아래 "출발 기록 규칙"). 오프라인이면 쌓아 두었다가 나중에 보내도 된다(90일 안) |
+| 집 출발(그날 첫 P 해제) | `POST /api/car/departures` | 필수 | **하루(KST 날짜)의 첫 P 해제만** 보낸다(아래 "출발 기록 규칙"). 오프라인이면 쌓아 두었다가 나중에 보내도 된다(90일 안). 단 서버는 **기록한 날(서버 시각, KST) 기준 하루 10건**까지 받고 11번째부터 429(`Retry-After`)라, 밀린 기록은 하루 10건씩 나눠 보낸다 |
 | 다음 시동 ON, 밤사이 충전된 것을 확인했을 때 | `POST /api/car/savings/{saving_id}/confirm` | 필수 | 같은 밤 충전은 `saving_id` 하나만 확정(아래) |
 | 절약 리포트 화면 | `GET /api/car/savings/summary?month=YYYY-MM` | 필수 | `speech`, `month_won`, `year_won`. `note`(서버 계산값이라는 안내)도 함께 보여 준다 |
 | 설정 > 출발 기록 지우기 | `DELETE /api/car/departures` | 필수 | 이 기기의 출발 기록 전부 삭제 |
@@ -83,7 +83,7 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 | `DestinationInfo.remainTime` | 초 | voice `context.arrival_at` = 지금 + remainTime | 지금부터 24시간 안이어야 한다. `remainDistance`와 같은 주석이라 목적지까지인지 확인 필요 |
 | `DestinationInfo.latitude`, `longitude` | 도 | `destination.lat`, `destination.lng` | |
 | `CurrentLocationInfo.latitude`, `longitude` (`getCurrentLocationInfo` → `onCurrentLocationInfo`) | 도 | `origin`, voice `context.lat`/`lng`, `GET /api/chargers`의 `lat`/`lng` | 경로가 없을 때는 `FusedLocation.getLastKnownLocation` → `LocationData.latitude/longitude`(권한 `FUSED_LOCATION`, dangerous) |
-| `TripInfo.summary.routePoints` (`RoutePointInfo.latitude`, `longitude`) | 도 | `route_points`(최대 50개, 순서대로) | 경유지와 목적지만 온다(경로 모양 점이 아님). 목적지 점은 빼고 남은 경유지만 보낸다 |
+| `TripInfo.summary.routePoints` (`RoutePointInfo.latitude`, `longitude`) | 도 | `route_points`(최대 50개, 순서대로) | 경유지와 목적지만 온다(경로 모양 점이 아님). `RoutePointInfo.pointType == RoutePointType.WAYPOINT`인 점만 보낸다(`RoutePointType`에는 `ORIGIN`, `DESTINATION`도 있다) |
 | 표준 Car API `GEAR_SELECTION` (아래) | `VehicleGear` | `departures`의 `departed_at`(P에서 다른 기어로 바뀐 시각) | Pleos `Gear.getCurrentGearSelectionState`·`registerGearSelection`은 `@hide`·`@Deprecated`("use the Google GEAR_SELECTION property")라 쓰지 않는다 |
 | STT 결과 문자열 | | voice `text`(500자 이하) | Pleos SDK 소스에는 STT/TTS API가 없다. 안드로이드 기본 음성 인식·TTS를 쓴다 |
 
@@ -95,7 +95,7 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 
 | 속성 (`VehiclePropertyIds`) | 타입·단위 | 변경 방식 | 권한 | 쓰는 곳 |
 | --- | --- | --- | --- | --- |
-| [`INFO_EV_BATTERY_CAPACITY`](https://developer.android.com/reference/android/car/VehiclePropertyIds#INFO_EV_BATTERY_CAPACITY) | Float, Wh(`VehicleUnit.WATT_HOUR`), 새 차 기준 공칭 사용 가능 용량 | STATIC(한 번 읽으면 됨) | [`android.car.permission.CAR_INFO`](https://developer.android.com/reference/android/car/Car#PERMISSION_CAR_INFO) (normal) | `getFloatProperty(INFO_EV_BATTERY_CAPACITY, 0)`를 반올림한 정수 → `battery_capacity_wh` |
+| [`INFO_EV_BATTERY_CAPACITY`](https://developer.android.com/reference/android/car/VehiclePropertyIds#INFO_EV_BATTERY_CAPACITY) | Float, Wh(`VehicleUnit.WATT_HOUR`), 새 차 기준 공칭 사용 가능 용량 | STATIC(한 번 읽으면 됨) | [`android.car.permission.CAR_INFO`](https://developer.android.com/reference/android/car/Car#PERMISSION_CAR_INFO) (normal) | `getFloatProperty(INFO_EV_BATTERY_CAPACITY, 0)`를 반올림한 정수 → `battery_capacity_wh`. **0이면 보내지 않는다**: pre-U 클라이언트는 지원하지 않는 속성에 0을 돌려준다(공식 문서). 서버는 1,000 Wh 미만을 422로 막는다 |
 | [`EV_CHARGE_STATE`](https://developer.android.com/reference/android/car/VehiclePropertyIds#EV_CHARGE_STATE) | Integer, [`EvChargeState`](https://developer.android.com/reference/android/car/hardware/property/EvChargeState) 값(`STATE_CHARGING` = 1, `STATE_FULLY_CHARGED` = 2, `STATE_NOT_CHARGING` = 3 등) | ONCHANGE | [`android.car.permission.CAR_ENERGY`](https://developer.android.com/reference/android/car/Car#PERMISSION_ENERGY) (**dangerous**, 런타임 요청 필요) | 음성 요청 때 `getIntProperty(EV_CHARGE_STATE, 0)`. `STATE_CHARGING`이면 `context.charging = true`, `STATE_NOT_CHARGING`·`STATE_FULLY_CHARGED`면 false, 그 밖(`STATE_UNKNOWN`, `STATE_ERROR`)이면 보내지 않는다 |
 | [`GEAR_SELECTION`](https://developer.android.com/reference/android/car/VehiclePropertyIds#GEAR_SELECTION) | Integer, [`VehicleGear`](https://developer.android.com/reference/android/car/VehicleGear) 값(`GEAR_PARK` = 4) | ONCHANGE | [`android.car.permission.CAR_POWERTRAIN`](https://developer.android.com/reference/android/car/Car#PERMISSION_POWERTRAIN) (normal) | [`subscribePropertyEvents`](https://developer.android.com/reference/android/car/hardware/property/CarPropertyManager)로 구독. 직전 값이 `GEAR_PARK`이고 새 값이 다른 기어이며 **그날 아직 보내지 않았을 때만** 그 시각을 `departed_at`으로 `POST /api/car/departures`(1절 "출발 기록 규칙") |
 
@@ -105,9 +105,11 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 - `INFO_EV_BATTERY_CAPACITY`는 새 차 기준 공칭 용량이다(공식 문서). 노화와 온도를 반영한 실시간
   용량은 `EV_CURRENT_BATTERY_CAPACITY`로 따로 있다. 이 가이드는 `INFO_EV_BATTERY_CAPACITY`를 쓴다.
 - 공식 문서는 `registerCallback(callback, propertyId, updateRateHz)`를 deprecated로 두고
-  `subscribePropertyEvents(propertyId, updateRateHz, callback)`를 권한다. 어느 Car API 버전부터
-  `subscribePropertyEvents`가 있는지는 문서에서 찾지 못했다(**확인 필요**). 차에 없으면
-  `registerCallback`을 쓴다. `updateRateHz`는 연속 속성에만 의미가 있어 ONCHANGE인 `GEAR_SELECTION`에는
+  `subscribePropertyEvents(propertyId, updateRateHz, callback)`를 권한다. 공식 문서에는 어느 버전부터
+  있는지 적혀 있지 않다. AOSP 소스(`packages/services/Car`의 `CarPropertyManager.java`)를 브랜치별로 보면
+  `android14-release`에는 없고 `android14-qpr3-release`, `android15-release`에 있으며
+  `@FlaggedApi(Flags.FLAG_VARIABLE_UPDATE_RATE)`가 붙어 있다. 차의 Car API 버전과 이 플래그가 켜져
+  있는지는 **확인 필요**. 없으면 `registerCallback`을 쓴다. `updateRateHz`는 연속 속성에만 의미가 있어 ONCHANGE인 `GEAR_SELECTION`에는
   영향이 없다.
 - 기어 이벤트는 시동이 켜진 동안만 받는다. 시동 직후 첫 값이 이미 D라면(P 해제를 놓침) 그 시각을
   보내지 않는다. 한 번 놓친 출발은 운전자가 말한 시각으로 학습이 이어진다.
@@ -167,8 +169,9 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 
 - OpenAPI(`/docs`)에는 401·429·501이 음성에만 적혀 있다. 다른 API의 오류 코드는 위 표와
   `car-api.md`의 각 절이 기준이다.
-- 계산 API(`car/plan`, `car/leak-check`, `car/briefing`, `car/charge-target`)는 토큰이 틀려도 계산은
-  그대로 준다(`saving_id`만 null). 이때는 다시 발급하지 않아도 된다.
+- 계산 API(`car/plan`, `car/leak-check`, `car/briefing`)는 토큰이 틀려도 계산은 그대로 준다
+  (`saving_id`만 null). 이때는 다시 발급하지 않아도 된다. `car/charge-target`은 토큰을 받지 않고
+  `saving_id`도 없다.
 
 ## 5. 하루 흐름 예
 
