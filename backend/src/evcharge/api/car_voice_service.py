@@ -686,12 +686,12 @@ def _mask(text: str, start: int, end: int) -> str:
     return text[:start] + " " * (end - start) + text[end:]
 
 
-# 평소 시각 질문에 대한 긍정. 낱말 전체가 맞아야 한다("어디", "네비"는 아님). "아니"가
-# 들어 있으면 긍정으로 보지 않는다.
+# 평소 시각 질문에 대한 동의. 답 전체가 동의 표현일 때만 인정한다("응 근데 8시에 나가",
+# "어 근데 좀 늦게"는 동의가 아니다). "어"(망설임)와 "그럼"("그러면")은 넣지 않는다.
 _AFFIRM_RE = re.compile(
-    r"^\s*(?:(?:응|웅)+|어|네|예|그래|맞아|좋아|ㅇㅇ|오케이|그렇지|그럼)요?(?![가-힣])"
+    r"\s*(?:응+|웅+|네+|예|그래|맞아|좋아|ㅇㅇ|오케이|그렇지)요?"
+    r"(?:[\s,]*(?:맞아|좋아|그래)요?)?[\s.!~]*"
 )
-_DENY_RE = re.compile(r"아니|말고|싫어|안\s*돼")
 
 
 def driver_stated_times(
@@ -702,7 +702,7 @@ def driver_stated_times(
     - 이번 말과 앞선 운전자 턴에 나온 시각("7시 반" → 07:30, 19:30). 숫자 검증의 운전자
       시각 근거와 같은 규칙이다.
     - 직전 와트잇 턴이 서버가 만든 평소 시각 질문("내일도 오전 7시 30분에 출발하세요?")이고
-      운전자가 "응", "맞아"처럼 답했으면 그 평소 시각.
+      운전자의 답 전체가 "응", "네 맞아요"처럼 동의 표현이면 그 평소 시각.
 
     LLM 출력은 계산 인자로는 쓰되 사람의 진술로 저장하지 않는다. 시스템 컨텍스트의 평소
     시각을 Claude가 스스로 넣은 경우까지 기록하면 제안이 자기 자신을 근거로 굳는다.
@@ -718,8 +718,9 @@ def driver_stated_times(
         if (
             last.role == "wattit"
             and last.text.strip().endswith(suggestion_question(usual, now))
-            and _AFFIRM_RE.match(answer)
-            and not _DENY_RE.search(answer)
+            and _AFFIRM_RE.fullmatch(answer)
+            # 답에 운전자 자신의 시각이 있으면 그 시각만 후보다(위에서 이미 넣었다).
+            and not _TIME_RE.search(answer)
         ):
             at = usual.depart_at.astimezone(KST)
             times.add((at.hour, at.minute))

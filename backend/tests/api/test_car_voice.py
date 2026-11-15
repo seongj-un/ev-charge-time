@@ -1196,6 +1196,13 @@ def stated_rows(db_session) -> list[datetime]:
         # 평소 시각 질문에 아니라고 했는데 Claude가 평소 시각을 넣었다
         ("아니 좀 늦게", USUAL_QUESTION, "07:30"),
         ("어 아니다, 좀 늦게 나가", USUAL_QUESTION, "07:30"),
+        # 첫 낱말만 동의처럼 들리는 답
+        ("어 근데 좀 늦게 나가", USUAL_QUESTION, "07:30"),
+        ("응 근데 8시에 나가", USUAL_QUESTION, "07:30"),
+        ("그럼 언제 꽂아?", USUAL_QUESTION, "07:30"),
+        ("어", USUAL_QUESTION, "07:30"),
+        ("그럼.", USUAL_QUESTION, "07:30"),
+        ("응 근데 좀 늦게 나가", USUAL_QUESTION, "07:30"),
         # "어디"는 긍정이 아니다
         ("어디서 충전해?", USUAL_QUESTION, "07:30"),
         # 운전자가 말한 시각과 다른 시각
@@ -1214,6 +1221,28 @@ def test_times_the_driver_did_not_say_are_planned_but_not_recorded(
     assert tool_results(fake, 1)[0]["content"]["depart_at"].endswith(depart_time)
     assert body["fallback"] is False
     assert stated_rows(db_session) == []
+
+
+@pytest.mark.parametrize("answer", ["응", "네 맞아요", "응응", "좋아요", "응, 그래.", "맞아!"])
+def test_a_whole_answer_of_agreement_records_the_usual_time(client, fake, db_session, answer):
+    headers = register(client)
+    seed_departures(client, headers, [28, 31, 33, 40, 22])
+    fake.replies = [use("plan_charge", {"depart_time": "07:30"}), say("예약해 두었어요.")]
+
+    ask(client, headers, answer, history=USUAL_QUESTION)
+
+    assert stated_rows(db_session) == [datetime(2026, 11, 17, 7, 30, tzinfo=KST)]
+
+
+def test_own_time_in_the_answer_wins_over_the_usual_time(client, fake, db_session):
+    """"응 근데 8시에 나가": Claude가 8시로 계획하면 8시만 남고 평소 07:30은 남지 않는다."""
+    headers = register(client)
+    seed_departures(client, headers, [28, 31, 33, 40, 22])
+    fake.replies = [use("plan_charge", {"depart_time": "08:00"}), say("예약해 두었어요.")]
+
+    ask(client, headers, "응 근데 8시에 나가", history=USUAL_QUESTION)
+
+    assert stated_rows(db_session) == [datetime(2026, 11, 17, 8, 0, tzinfo=KST)]
 
 
 @pytest.mark.parametrize(
