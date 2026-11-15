@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy import func, select
@@ -24,7 +24,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession
 
 from ..domain.pricing import KST
-from .models import ChargerCache
+from .models import ChargerCache, ChargerSyncState
+
+STATUS_KIND = "status"
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +124,11 @@ def build_station_records(rows: Iterable[dict]) -> list[StationRecord]:
 def sync_stations(
     session: DbSession, api: ChargerApi, zcodes: Sequence[str]
 ) -> StationSyncResult:
-    """전체 수집. 충전소 상세를 받아 캐시를 통째로 upsert한다."""
+    """전체 수집. 충전소 상세를 받아 캐시를 통째로 upsert한다.
+
+    성공하면 모든 충전소 상태를 수집 시작 시각까지 확인한 것이다(``ChargerSyncState``).
+    """
+    started = _clock(session)
     rows: list[dict] = []
     for zcode in zcodes:
         fetched = api.fetch_station_rows(zcode)
@@ -131,6 +137,7 @@ def sync_stations(
 
     records = build_station_records(rows)
     _upsert(session, records)
+    _confirm(session, started, window=None)
     session.commit()
 
     chargers = sum(len(record.data["chargers"]) for record in records)
@@ -152,6 +159,7 @@ def sync_states(
     만들지 않는다 — 상태 응답에는 종류·용량·주소가 없어서 ``StationOut``을
     채울 수 없다. 그건 전체 수집의 몫이다.
     """
+    started = _clock(session)
     rows: list[dict] = []
     for zcode in zcodes:
         fetched = api.fetch_status_rows(zcode, period)
@@ -201,6 +209,7 @@ def sync_states(
                 updated_stations += 1
                 updated_chargers += touched
 
+    _confirm(session, started, window=timedelta(minutes=period))
     session.commit()
     return StatusSyncResult(
         api_rows=len(rows),
@@ -213,6 +222,33 @@ def sync_states(
 # ---------------------------------------------------------------------------
 # 내부
 # ---------------------------------------------------------------------------
+
+
+def _clock(session: DbSession) -> datetime:
+    """공공 API를 부르기 직전의 DB 시각. 그 뒤의 변경은 이번 수집이 보증하지 않는다."""
+    return session.scalar(select(func.clock_timestamp()))
+
+
+def _confirm(session: DbSession, started: datetime, *, window: timedelta | None) -> None:
+    """확인 시각을 ``started``로 앞당긴다. ``window``는 상태 수집이 받은 변경 기간이다.
+
+    상태 수집은 ``started - window``가 지난 확인 시각 이전일 때만(수집 창이 이어질 때만)
+    앞당긴다. 수집이 끊겼던 동안의 변경은 놓쳤으므로, 바뀌지 않은 충전소를 확인했다고
+    말할 수 없다. 확인 시각이 아직 없으면 상태 수집은 기준을 만들 수 없다(전체 수집이 만든다).
+    전체 수집(``window=None``)은 모든 충전소를 새로 받으므로 언제나 앞당긴다.
+    """
+    state = session.get(ChargerSyncState, STATUS_KIND, with_for_update=True)
+    if state is None:
+        if window is None:
+            session.add(ChargerSyncState(kind=STATUS_KIND, confirmed_at=started))
+        return
+    if window is not None and started - window > state.confirmed_at:
+        logger.warning(
+            "상태 수집이 끊겼던 구간이 있어 확인 시각을 앞당기지 않습니다 (마지막 확인 %s)",
+            state.confirmed_at.isoformat(),
+        )
+        return
+    state.confirmed_at = max(state.confirmed_at, started)
 
 
 def _upsert(session: DbSession, records: Sequence[StationRecord]) -> None:

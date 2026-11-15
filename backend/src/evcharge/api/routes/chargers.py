@@ -30,8 +30,9 @@ from sqlalchemy.orm import Session as DbSession
 
 from ...domain.geo import bounding_box, haversine_m
 from ...domain.pricing import KST
+from ...infra.charger_sync import STATUS_KIND
 from ...infra.db import get_session
-from ...infra.models import ChargerCache, FavoriteStation, User
+from ...infra.models import ChargerCache, ChargerSyncState, FavoriteStation, User
 from ...settings import get_settings
 from ..auth_deps import optional_user
 from ..schemas import MAX_CHARGER_KW, ChargerFreshnessOut, ChargerOut, StationOut
@@ -62,12 +63,19 @@ def now_kst() -> datetime:
 class FreshnessLimits:
     stale_min: int
     max_age_min: int
+    # 모든 충전소 상태를 여기까지 확인한 시각(``charger_sync_state``). 없으면 None
+    confirmed_at: datetime | None = None
 
     @classmethod
-    def current(cls) -> FreshnessLimits:
+    def current(cls, session: DbSession) -> FreshnessLimits:
         """요청마다 한 번 읽는다(설정은 캐시되지 않아 행마다 읽으면 느리다)."""
         settings = get_settings()
-        return cls(settings.charger_status_stale_min, settings.charger_status_max_age_min)
+        confirmed = session.scalar(
+            select(ChargerSyncState.confirmed_at).where(ChargerSyncState.kind == STATUS_KIND)
+        )
+        return cls(
+            settings.charger_status_stale_min, settings.charger_status_max_age_min, confirmed
+        )
 
 
 @dataclass(frozen=True)
@@ -82,7 +90,11 @@ class StatusAge:
 
 
 def status_age(row: ChargerCache, now: datetime, limits: FreshnessLimits) -> StatusAge:
-    synced = row.updated_at.astimezone(KST)
+    """상태 시각은 ``max(행의 updated_at, 확인 시각)``이다(``ChargerSyncState`` 설명)."""
+    synced = row.updated_at
+    if limits.confirmed_at is not None:
+        synced = max(synced, limits.confirmed_at)
+    synced = synced.astimezone(KST)
     age = max(0, math.floor((now - synced).total_seconds() / 60))
     return StatusAge(synced, age, age > limits.stale_min, age <= limits.max_age_min)
 
@@ -141,7 +153,7 @@ def list_chargers(
         )
 
     now = now_kst()
-    limits = FreshnessLimits.current()
+    limits = FreshnessLimits.current(session)
     query = {
         "lat": lat,
         "lng": lng,
@@ -184,20 +196,27 @@ def list_chargers(
 
 @router.get("/chargers/freshness", response_model=ChargerFreshnessOut)
 def charger_freshness(session: DbSession = Depends(get_session)) -> ChargerFreshnessOut:
-    """수집된 충전소(좌표 있는 행)의 상태 수집 시각 범위와 stale 수. 집계 쿼리 한 번이다.
+    """수집된 충전소(좌표 있는 행)의 상태 시각 범위와 stale 수. 집계 쿼리 한 번이다.
 
     운영 확인용 공개 API다. 위치나 개인정보는 없다. 캐시가 비면 시각은 null, 수는 0이다.
     """
     now = now_kst()
-    limits = FreshnessLimits.current()
+    limits = FreshnessLimits.current(session)
     # stale은 지난 분(내림)이 stale_min을 넘는 것, 즉 stale_min + 1분 이상 지난 행이다.
     stale_before = now - timedelta(minutes=limits.stale_min + 1)
+    # 행별 상태 시각 = greatest(updated_at, 확인 시각). PostgreSQL greatest는 NULL을 무시한다.
+    confirmed = (
+        select(ChargerSyncState.confirmed_at)
+        .where(ChargerSyncState.kind == STATUS_KIND)
+        .scalar_subquery()
+    )
+    synced = func.greatest(ChargerCache.updated_at, confirmed)
     latest, oldest, count, stale = session.execute(
         select(
-            func.max(ChargerCache.updated_at),
-            func.min(ChargerCache.updated_at),
+            func.max(synced),
+            func.min(synced),
             func.count(),
-            func.count().filter(ChargerCache.updated_at <= stale_before),
+            func.count().filter(synced <= stale_before),
         ).where(ChargerCache.lat.is_not(None))
     ).one()
     return ChargerFreshnessOut(

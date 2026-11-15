@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from evcharge.infra.charger_sync import build_station_records, sync_states, sync_stations
 from evcharge.infra.models import ChargerCache
 
@@ -225,3 +227,69 @@ def test_sync_states_ignores_a_charger_id_the_cache_has_never_seen(db_session):
     assert [c["charger_id"] for c in db_session.get(ChargerCache, "ME174085").data["chargers"]] == [
         "01"
     ]
+
+
+# ---------------------------------------------------------------------------
+# 상태 확인 시각 (BE-10)
+# ---------------------------------------------------------------------------
+
+
+def _confirmed(db_session):
+    from evcharge.infra.models import ChargerSyncState
+
+    db_session.expire_all()
+    state = db_session.get(ChargerSyncState, "status")
+    return None if state is None else state.confirmed_at
+
+
+def _set_confirmed(db_session, minutes_ago: int) -> None:
+    from sqlalchemy import text
+
+    db_session.execute(
+        text(
+            "INSERT INTO charger_sync_state (kind, confirmed_at) VALUES ('status', "
+            "clock_timestamp() - make_interval(mins => :m)) ON CONFLICT (kind) DO UPDATE "
+            "SET confirmed_at = excluded.confirmed_at"
+        ),
+        {"m": minutes_ago},
+    )
+
+
+def test_full_sync_sets_the_confirmed_time(db_session):
+    from datetime import datetime, timedelta
+
+    sync_stations(db_session, FakeChargerApi(info_rows=[info_row()]), ["12"])
+
+    confirmed = _confirmed(db_session)
+    assert confirmed is not None
+    assert abs(datetime.now(confirmed.tzinfo) - confirmed) < timedelta(minutes=1)
+
+
+def test_status_sync_without_a_starting_point_confirms_nothing(db_session):
+    sync_states(db_session, FakeChargerApi(), ["12"], period=10)
+
+    assert _confirmed(db_session) is None
+
+
+@pytest.mark.parametrize(("last_minutes_ago", "advances"), [(5, True), (9, True), (11, False)])
+def test_status_sync_advances_only_over_a_continuous_window(db_session, last_minutes_ago, advances):
+    _set_confirmed(db_session, last_minutes_ago)
+    before = _confirmed(db_session)
+
+    sync_states(db_session, FakeChargerApi(), ["12"], period=10)
+
+    assert (_confirmed(db_session) > before) is advances
+
+
+def test_a_failed_status_sync_confirms_nothing(db_session):
+    _set_confirmed(db_session, 5)
+    before = _confirmed(db_session)
+
+    class Broken(FakeChargerApi):
+        def fetch_status_rows(self, zcode, period):
+            raise RuntimeError("api down")
+
+    with pytest.raises(RuntimeError):
+        sync_states(db_session, Broken(), ["12"], period=10)
+
+    assert _confirmed(db_session) == before

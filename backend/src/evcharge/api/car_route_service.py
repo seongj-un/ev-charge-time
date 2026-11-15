@@ -129,7 +129,7 @@ def find_along_route(
     if not near and cache_is_empty(session):
         raise HTTPException(status_code=503, detail=NOT_COLLECTED)
 
-    limits = FreshnessLimits.current()
+    limits = FreshnessLimits.current(session)
     ages = {row.station_id: status_age(row, now, limits) for _, _, row in near}
     matching = [
         (along, offset, row, count)

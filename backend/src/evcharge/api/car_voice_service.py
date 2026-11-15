@@ -419,7 +419,7 @@ class VoiceTools:
         ctx = self.context
         if ctx.lat is None or ctx.lng is None:
             return ToolOutcome({"error": "차량 위치 정보가 없습니다."}, is_error=True)
-        limits = FreshnessLimits.current()
+        limits = FreshnessLimits.current(self.session)
         query = {
             "lat": ctx.lat,
             "lng": ctx.lng,

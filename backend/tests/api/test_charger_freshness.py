@@ -10,7 +10,7 @@ import pytest
 from evcharge.api.routes import chargers as chargers_route
 from evcharge.api.routes.chargers import STATUS_UNKNOWN_NOTE, charger_api_key
 from evcharge.domain.pricing import KST
-from evcharge.infra.models import ChargerCache
+from evcharge.infra.models import ChargerCache, ChargerSyncState
 
 NOW = datetime(2026, 11, 16, 18, 0, tzinfo=KST)
 HERE = (35.0175, 126.7905)
@@ -178,3 +178,54 @@ def test_freshness_is_one_query(client, db_session, monkeypatch):
         event.remove(engine, "before_cursor_execute", count)
 
     assert len([s for s in statements if "charger_cache" in s]) == 1
+
+
+# ── 상태 확인 시각 (charger_sync_state) ─────────────────────────────────────
+
+
+def confirm(db_session, minutes_ago):
+    db_session.add(
+        ChargerSyncState(kind="status", confirmed_at=NOW - timedelta(minutes=minutes_ago))
+    )
+    db_session.commit()
+
+
+def test_unchanged_station_is_as_fresh_as_the_last_continuous_status_sync(client, db_session):
+    # 하루 전 전체 수집 뒤 상태가 그대로인 충전소. 상태 수집은 5분 전까지 이어졌다.
+    station(db_session, "IDLE", 600)
+    confirm(db_session, 5)
+
+    body = get(client, available_only="true").json()
+
+    assert [s["station_id"] for s in body] == ["IDLE"]
+    assert (body[0]["status_age_min"], body[0]["stale"]) == (5, False)
+    assert body[0]["synced_at"] == (NOW - timedelta(minutes=5)).isoformat()
+
+
+def test_a_newer_row_wins_over_the_confirmed_time(client, db_session):
+    station(db_session, "CHANGED", 2)
+    confirm(db_session, 30)
+
+    assert get(client).json()[0]["status_age_min"] == 2
+
+
+def test_old_confirmed_time_still_hides_old_status(client, db_session):
+    station(db_session, "IDLE", 600)
+    confirm(db_session, 61)
+
+    response = get(client, available_only="true")
+
+    assert response.json() == []
+    assert "X-Status-Note" in response.headers
+
+
+def test_freshness_summary_uses_the_confirmed_time(client, db_session):
+    station(db_session, "IDLE", 600)
+    station(db_session, "CHANGED", 2, lat_offset=0.001)
+    confirm(db_session, 25)
+
+    body = client.get("/api/chargers/freshness").json()
+
+    assert body["latest_synced_at"] == (NOW - timedelta(minutes=2)).isoformat()
+    assert body["oldest_synced_at"] == (NOW - timedelta(minutes=25)).isoformat()
+    assert (body["station_count"], body["stale_count"]) == (2, 1)

@@ -523,7 +523,7 @@ def test_find_nearby_matches_the_route_order_and_filters(client, db_session):
     _cache(db_session, "NEAR", NEAR, chargers=[_charger(status="3", capacity_kw=7.0)])
     _cache(db_session, "HERE", HERE, chargers=[_charger(status="2", capacity_kw=7.0)])
 
-    clock = {"now": chargers_route.now_kst(), "limits": FreshnessLimits.current()}
+    clock = {"now": chargers_route.now_kst(), "limits": FreshnessLimits.current(db_session)}
     every = find_nearby(db_session, lat=HERE[0], lng=HERE[1], radius_m=5_000, **clock)
     free_fast = find_nearby(
         db_session,
