@@ -420,7 +420,7 @@ Claude가 넣는 값은 운전자의 의도뿐이고, 차량 값(잔량, 용량,
 | 도구 | Claude 입력 | 서버가 하는 일 |
 | --- | --- | --- |
 | `plan_charge` | `depart_time` "HH:MM"(필수), `soc_target` 1~100(기본 80) | `car/plan` 계산. 꽂는 시각은 `arrival_at`(없으면 지금), 출발은 꽂은 뒤 처음 오는 그 시각, 시작 잔량은 `arrival_soc` 또는 `soc_now`. 절감액은 도착하자마자 충전하는 경우와 비교한다. 충전 요금(`cost_won`)은 Claude에 넘기지 않는다 |
-| `find_chargers` | `available_only`(기본 true), `min_kw`, `radius_m` 500~20,000(기본 3,000) | `GET /api/chargers`와 같은 검색, 가까운 순 최대 3곳. 충전소 이름은 줄바꿈을 펴고 40자로 잘라 넘긴다(공공 API에서 온 글). `navigate` 동작에는 원래 이름 |
+| `find_chargers` | `available_only`(기본 true), `min_kw`, `radius_m` 500~20,000(기본 3,000) | `GET /api/chargers`와 같은 검색, 가까운 순 최대 3곳. 충전소 이름은 줄바꿈을 펴고 40자로 잘라 넘긴다(공공 API에서 온 글). `navigate` 동작에는 원래 이름. 충전소마다 `synced_at`·`status_age_min`·`stale`. 빈 충전기를 찾았고(`available_only`) 가장 가까운 곳이 `stale`이면 서버 문장 끝에 "충전기 상태는 N분 전 정보예요.", 오래된 상태 때문에 비었으면 "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요." |
 | `leak_check` | `payment`, `charger_speed`, `depart_time` | `car/leak-check` 계산. 장소는 `context.place` |
 | `find_chargers_along_route` | `min_kw`(기본 50), `corridor_m` 500~10,000(기본 3,000) | `POST /api/car/chargers/along-route`와 같은 함수. 출발은 `context`의 위치, 목적지·경로 지점·잔량·남은 거리·전비·배터리 용량도 `context`에서. 결과에 `reserve_soc`(15)와 `min_kw`를 함께 준다 |
 | `savings_summary` | `month` "YYYY-MM"(기본 이번 달) | 이 기기의 절약 리포트 |
@@ -438,6 +438,7 @@ Claude 답의 숫자를 **단위별로** 근거와 비교한다. 하나라도 �
 | "밤 10시", "새벽 3시 19분", "7시 반", "22:00" | 예약 시작·종료, 출발, 도착 시각. 12시간제와 "오전·오후·새벽·아침·낮·저녁·밤"을 해석한다 |
 | "A부터 B까지" (한국어 시각이나 HH:MM) | 예약 구간이 있으면 A가 시작, B가 종료여야 한다(뒤바뀌면 실패) |
 | "N킬로미터", "N킬로", "N km", "N미터", "N m" | 거리 필드(도구 결과의 `*_m`, `*_km`: `distance_m`, `offset_m`, `route_m`, `radius_m`, `distance_km` 등, `context.remain_distance_m`)와 서버 문장의 거리. 10m, 0.1km, 1km 단위로 반올림한 모양도 허용한다. 꺾은선 위치 `along_m`은 도로 거리와 달라 근거가 아니다. "km/kWh", "km/h"는 거리로 보지 않는다 |
+| "N분 전" | 충전기 상태 나이(도구 결과의 `*_min`: `status_age_min`)와 서버 문장의 "N분 전". 다른 숫자와 같아도 이 근거에 없으면 실패한다. "7시 30분"은 시각 규칙이 먼저 읽는다 |
 | "N킬로와트", "N kW" | 출력 필드(도구 결과의 `*_kw`: `max_kw`, `min_kw` 등, `context.charger_kw`)와 서버 문장의 출력. "킬로와트"·"킬로와트시"는 거리 "킬로"로 읽지 않는다. "킬로와트시"·"kWh"는 그 밖의 숫자로 본다 |
 | 그 밖의 숫자 | 도구 결과·`context`에 나온 숫자. 날짜 문자열의 숫자("2026-11-17"의 2026, 11, 17)와 식별자(`station_id` 등 `*_id`)의 숫자는 넣지 않는다 |
 
@@ -776,11 +777,11 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `need_charge` | bool \| null | 도착 잔량 < `reserve_soc`. 도착 잔량은 `arrival_soc`, 없으면 전비로 추정한 값. 둘 다 없으면 null |
-| `chargers` | array | `{station_id, name, lat, lng, along_m, offset_m, distance_m, available_count, max_kw, est_soc, reachable, runs_out}`. `distance_m`은 위 "잔량 추정"의 도로 기준 거리, `name`은 공공 API 이름을 줄바꿈을 펴고 40자로 자른 것, `available_count`는 지금 충전대기이면서 `min_kw` 이상인 충전기 수, `max_kw`는 그 충전소 충전기 중 최고 출력 |
+| `chargers` | array | `{station_id, name, lat, lng, along_m, offset_m, distance_m, available_count, max_kw, est_soc, reachable, runs_out, synced_at, status_age_min, stale}`. 뒤 세 필드는 아래 "충전기 상태 신선도"와 같다. `distance_m`은 위 "잔량 추정"의 도로 기준 거리, `name`은 공공 API 이름을 줄바꿈을 펴고 40자로 자른 것, `available_count`는 지금 충전대기이면서 `min_kw` 이상인 충전기 수, `max_kw`는 그 충전소 충전기 중 최고 출력 |
 | `speech` | string | TTS 문장 |
 | `actions` | array | 추천이 있고 `need_charge`가 false가 아니면 `[{"type": "add_waypoint", station_id, name, lat, lng}]`. 추천 충전소가 `runs_out`이면 경유지 대신 `[{"type": "ask", "question": "더 가까운 충전소를 찾아볼까요?"}]`. 충전이 필요 없다고 말할 때는 빈 배열 |
 | `assumptions` | string[] | 직선 근사, 상태는 최근 수집 기준, (100km 넘는 구간이 있으면) 장거리 직선 근사 한계, (추정했으면) 내비 또는 전비 기준 거리 비례 추정 |
-| `coverage_note` | string \| null | 경로 근처에 충전소가 하나도 없으면 "이 구간은 충전소 정보가 없을 수 있어요(수집 지역 밖).", 있지만 조건에 맞는 곳이 없으면 "경로 근처 충전소 N곳 중 지금 비어 있는 50kW 이상 충전기가 없어요.", 후보 행 상한에 걸리면 뒤에 "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요." |
+| `coverage_note` | string \| null | 경로 근처에 충전소가 하나도 없으면 "이 구간은 충전소 정보가 없을 수 있어요(수집 지역 밖).", 상태가 60분 넘게 오래된 충전소를 빼서 비었으면(상태가 새것이었다면 남았을 곳이 있으면) "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요.", 있지만 조건에 맞는 곳이 없으면 "경로 근처 충전소 N곳 중 지금 비어 있는 50kW 이상 충전기가 없어요.", 후보 행 상한에 걸리면 뒤에 "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요." |
 | `route_m` | int | 정리된 남은 꺾은선 길이 m |
 
 추천(동작과 문장): 목록(경로 순서)은 그대로 두고, `reachable`이 false가 아닌 첫 충전소 → 없으면
@@ -793,7 +794,8 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
   급속충전기가 2대 있어요. 경유지로 넣을까요?" 추천이 `reachable: false`면 "가는 동안 배터리가
   12.5%까지 내려갈 수 있어요."를 질문 앞에 붙인다. 추천이 `runs_out`이면 "… 있어요. 이 충전소까지
   가기 전에 배터리가 바닥날 수 있어요. 더 가까운 충전소를 찾아볼까요?"로 끝낸다("0%까지"라고 하지
-  않는다).
+  않는다). 추천 충전소가 `stale`이면 "…대 있어요." 바로 뒤에 "충전기 상태는 N분 전 정보예요."를
+  붙인다(N = `status_age_min`). 질문은 운전자가 바로 답하도록 맨 끝에 둔다.
 - 충전 불필요: "도착할 때 배터리가 35% 남아요. 충전 없이 가셔도 돼요." (`chargers`는 그대로 주고,
   `actions`는 비운다)
 - 도착 잔량을 전비로 추정했으면: "전비로 추정하면 도착할 때 배터리가 42%예요. …" /
@@ -825,6 +827,8 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
 | `available_only` | bool | false | true면 상태 코드 `2`(충전대기)인 충전기가 있는 충전소만 |
 | `min_kw` | number | | 0 초과 1000 이하. NaN, Infinity는 422. 출력이 이 값 이상인 충전기가 있는 충전소만 |
 
+`available_only`는 상태가 60분 이하인 충전소만 센다(아래 "충전기 상태 신선도").
+
 - 세 조건(`charger_type`, `available_only`, `min_kw`)을 여러 개 주면 **같은 충전기 한 대가**
   모두 맞아야 한다. 예: `available_only=true&min_kw=50`은 "50kW 이상이면서 충전대기인
   충전기가 한 대 이상"인 충전소다. 빈 7kW와 충전 중인 100kW만 있는 충전소는 빠진다.
@@ -843,7 +847,7 @@ GET /api/chargers?lat=35.0175&lng=126.7905&radius_m=10000&available_only=true&mi
 
 | 상태 | 언제 |
 | --- | --- |
-| 200 `[]` | 캐시는 있는데 조건에 맞는 충전소가 없음 |
+| 200 `[]` | 캐시는 있는데 조건에 맞는 충전소가 없음. 오래된 상태 때문에 비었으면 헤더 `X-Status-Note` |
 | 422 | 쿼리 범위·타입 오류 (FastAPI 검증 오류 `{"detail": [...]}`) |
 | 501 | 서버에 `CHARGER_API_KEY`가 없음 |
 | 503 | 캐시를 아직 수집하지 않음 |
@@ -851,3 +855,54 @@ GET /api/chargers?lat=35.0175&lng=126.7905&radius_m=10000&available_only=true&mi
 응답 필드는 `StationOut` 그대로다 (`station_id`, `name`, `address`, `lat`, `lng`,
 `distance_m`, `operator`, `available_hours`, `is_favorite`(게스트는 null), `chargers[]`:
 `charger_id`, `type`, `capacity_kw`, `status`, `status_updated_at`).
+
+### 충전기 상태 신선도
+
+"비어 있어요"가 오래된 정보면 헛걸음이 된다. 그래서 상태가 몇 분 전 것인지 응답과 말에 넣는다.
+
+- **상태 시각(`synced_at`)** = `max(charger_cache.updated_at, 상태 확인 시각)`.
+  - 상태 수집(`--states --period 10`, 5분마다)은 최근 10분 안에 상태가 **바뀐** 충전소 행만
+    고친다. 그래서 상태가 그대로인 충전소는 `updated_at`이 하루 한 번 전체 수집 시각에 머문다.
+  - 상태 확인 시각(`charger_sync_state`)은 "모든 충전소의 상태를 여기까지 확인했다"는 시각이다.
+    - 전체 수집이 성공하면 그 수집의 시작 시각으로 정한다.
+    - 상태 수집은 수집 창이 지난 확인 시각까지 이어질 때만(시작 - period ≤ 확인 시각) 앞당긴다.
+      수집이 멈췄던 동안의 변경은 놓쳤을 수 있어서, 그 뒤로는 다음 전체 수집 전까지 앞당기지
+      않는다.
+  - 확인 시각이 아직 없으면(배포 직후, 전체 수집 전) `updated_at`만 쓴다.
+- **`status_age_min`**: 상태 시각부터 지난 분(내림). 상태 시각이 서버 시계보다 뒤면 0.
+- **`stale`**: `status_age_min > CHARGER_STATUS_STALE_MIN`(기본 20).
+- **상태 미확인**: `status_age_min > CHARGER_STATUS_MAX_AGE_MIN`(기본 60).
+  - 이런 충전소의 "충전대기"는 비어 있음으로 세지 않는다. 그래서 `available_only`와 경로 위
+    추천에서 빠진다.
+  - 그 때문에 결과가 비면 "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요."라고 알린다.
+    상태가 새것이었어도 비었을 경우에는 기존 문구를 그대로 쓴다.
+- **필드가 붙는 곳**: `GET /api/chargers`의 각 충전소, 경로 위 충전소, 음성 `find_chargers`와
+  `find_chargers_along_route`의 도구 결과. 음성 도구 결과의 `synced_at`은 오프셋 없는
+  KST(`"2026-11-16 17:25"`)다. "+09:00"의 숫자가 시각 근거에 섞이지 않게 하려는 것이다.
+
+`GET /api/chargers` 충전소에 더해지는 필드:
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `synced_at` | string (KST ISO 8601) | 상태 시각 |
+| `status_age_min` | int | 상태 시각부터 지난 분 |
+| `stale` | bool | `status_age_min` > 20 |
+
+- `available_only=false`인 기본 목록은 필드가 더해지는 것 말고는 그대로다. 오래된 충전소도 나오고,
+  상태 코드는 원문대로 보여 주며 `stale`로 표시한다.
+- `status_note`는 응답 본문이 목록이라 필드로 더할 수 없다. 그래서 헤더
+  `X-Status-Note`에 UTF-8 퍼센트 인코딩으로 넣는다(`decodeURIComponent`로 읽는다). 헤더는
+  `available_only=true`로 비었고, 그 이유가 오래된 상태일 때만 붙는다.
+
+### `GET /api/chargers/freshness` 수집 상태 확인
+
+운영 확인용 공개 API다. 좌표가 있는 캐시 행만 집계하고, 집계 쿼리는 한 번이다. 위치나 개인정보는
+없다.
+
+```json
+{"latest_synced_at": "2026-11-16T17:58:00+09:00", "oldest_synced_at": "2026-11-16T17:35:00+09:00", "station_count": 8112, "stale_count": 0}
+```
+
+- 시각은 위의 상태 시각 기준이다.
+- 캐시가 비어 있으면 시각은 null, 수는 0이다(503 아님).
+
