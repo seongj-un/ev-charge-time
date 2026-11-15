@@ -24,6 +24,7 @@ from ..car_departures import (
     suggestion_for,
     to_suggestion_out,
     try_record_stated,
+    usual_departure_for,
 )
 from ..car_devices import (
     client_ip,
@@ -97,11 +98,18 @@ def car_leak_check(payload: CarLeakCheckRequest, request: Request) -> CarLeakChe
     기기 토큰이 있고 ``leaking=true``면 대기 절감 기록을 만들고 ``saving_id``를 붙인다.
     """
     now = now_kst()
+    # 출발 시각이 없으면 평소 출발 시각(high)을 가정에 쓴다. 토큰이 없으면 DB를 열지 않는다.
+    usual = (
+        usual_departure_for(request, now)
+        if payload.place == "home" and payload.depart_at is None
+        else None
+    )
     result = compute_leak_check(
         payload,
         now,
         min_won=get_settings().car_leak_min_won,
         load_prices=get_public_prices,
+        usual=usual,
     )
     if payload.place == "home" and payload.depart_at is not None:
         # 받은 출발 시각만 남긴다. 서버가 가정한 시각은 남기지 않는다.

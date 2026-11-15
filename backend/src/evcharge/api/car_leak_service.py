@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, time, timedelta
 
+from ..domain.departures import DepartureSuggestion
 from ..domain.errors import InsufficientTimeError
 from ..domain.pricing import KST, price_at
 from ..domain.public_prices import PublicPrices
@@ -69,11 +70,16 @@ def compute_leak_check(
     *,
     min_won: int,
     load_prices: Callable[[], PublicPrices],
+    usual: DepartureSuggestion | None = None,
 ) -> CarLeakCheckResponse:
-    """``load_prices``는 public일 때만 부른다. 단가 파일이 깨져도 home은 동작한다."""
+    """``load_prices``는 public일 때만 부른다. 단가 파일이 깨져도 home은 동작한다.
+
+    ``usual``: 이 기기의 평소 출발 시각 제안(BE-8, 신뢰도 high만). ``depart_at``이 없을 때
+    오전 8시 대신 가정한다.
+    """
     if payload.place == "public":
         return _public(payload, min_won=min_won, prices=load_prices())
-    return _home(payload, now.astimezone(KST), min_won=min_won)
+    return _home(payload, now.astimezone(KST), min_won=min_won, usual=usual)
 
 
 def is_leaking(leak_won: int, min_won: int) -> bool:
@@ -86,17 +92,31 @@ def is_leaking(leak_won: int, min_won: int) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _home(payload: CarLeakCheckRequest, now: datetime, *, min_won: int) -> CarLeakCheckResponse:
+def _home(
+    payload: CarLeakCheckRequest,
+    now: datetime,
+    *,
+    min_won: int,
+    usual: DepartureSuggestion | None = None,
+) -> CarLeakCheckResponse:
     energy_kwh = _energy_kwh(payload)
     assumptions: list[str] = []
     # 출발 시각을 받지 않았으면 가정한다. 이 가정은 운전자가 말한 것이 아니므로,
     # 가정에서 나온 문장은 전부 가정을 앞에 밝힌다. 가정한 출발을 늦춰 다시 계산하지
     # 않는다: 늦춘 출발로 "지금 충전을 멈추라"고 하면, 그날 아침 나가는 운전자는 충전이
     # 안 된 차로 출발한다. 편의(충전 실패 막기)가 돈보다 먼저다.
+    # 평소 출발 시각(high)이 있으면 오전 8시 대신 그 시각을 가정한다. 가정이라는 점은 같다.
     assumed = payload.depart_at is None
-    depart_at = payload.depart_at if payload.depart_at is not None else default_depart_at(now)
+    usual_at = usual.depart_at if assumed and usual is not None else None
+    if payload.depart_at is not None:
+        depart_at = payload.depart_at
+    else:
+        depart_at = usual_at if usual_at is not None else default_depart_at(now)
+    moment = spoken_moment(depart_at, now)
+    if usual_at is not None:
+        moment = f"평소처럼 {moment}"
     if assumed:
-        assumptions.append(_assumed_depart(depart_at))
+        assumptions.append(_assumed_depart(depart_at, usual if usual_at is not None else None))
     try:
         # 시각 검증(지난 출발 시각, 72시간 상한)도 여기서 같은 422로 난다.
         result = _plan(payload, depart_at, now)
@@ -105,7 +125,7 @@ def _home(payload: CarLeakCheckRequest, now: datetime, *, min_won: int) -> CarLe
         # 돈도 없다 — 422로 막는 대신 할 일(지금 계속 충전)을 말한다.
         if assumed:
             speech = (
-                f"{spoken_moment(depart_at, now)}에 출발하신다면 지금 바로 충전을 계속해야 해요. "
+                f"{moment}에 출발하신다면 지금 바로 충전을 계속해야 해요. "
                 "출발 시각을 알려 주시면 다시 계산해 드릴게요."
             )
         else:
@@ -138,7 +158,7 @@ def _home(payload: CarLeakCheckRequest, now: datetime, *, min_won: int) -> CarLe
     start = reservation.start_at if reservation is not None else plan.start
     cause = _time_leak_cause(now, payload)
     if assumed:
-        cause = f"{spoken_moment(depart_at, now)} 출발 기준으로, {cause}"
+        cause = f"{moment} 출발 기준으로, {cause}"
     sentences = [
         cause,
         f"{spoken_moment(start.astimezone(KST), now)}부터 충전하면 "
@@ -181,7 +201,13 @@ def _plan(payload: CarLeakCheckRequest, depart_at: datetime, now: datetime) -> C
     )
 
 
-def _assumed_depart(depart_at: datetime) -> str:
+def _assumed_depart(depart_at: datetime, usual: DepartureSuggestion | None = None) -> str:
+    if usual is not None:
+        local = depart_at.astimezone(KST)
+        return (
+            f"출발 시각 미입력: 평소 출발 시각({usual.basis_count}건 기준)으로 "
+            f"{local.month}월 {local.day}일 {spoken_clock(local)}(KST) 출발로 가정"
+        )
     return f"출발 시각 미입력: {depart_at.month}월 {depart_at.day}일 오전 8시(KST) 출발로 가정"
 
 

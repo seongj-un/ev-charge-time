@@ -431,3 +431,115 @@ def test_a_failed_stated_record_does_not_change_the_plan(client, db_session, mon
 
     assert response.status_code == 200
     assert {**response.json(), "saving_id": None} == plain
+
+
+# ── leak-check(home): depart_at이 없으면 평소 출발 시각(high)을 가정 ─────────
+
+# 목요일 18:00(겨울 평일 최대부하). 지금 충전하면 돈이 샌다.
+EVENING = kst(2026, 11, 19, 18, 0)
+USUAL_ASSUMPTION = (
+    "출발 시각 미입력: 평소 출발 시각(5건 기준)으로 11월 20일 오전 7시 30분(KST) 출발로 가정"
+)
+
+
+@pytest.fixture
+def evening(monkeypatch):
+    monkeypatch.setattr(car, "now_kst", lambda: EVENING)
+
+
+def test_leak_check_assumes_the_usual_departure_when_confident(client, evening):
+    headers = register(client)
+    seed(client, headers, [28, 31, 33, 40, 22])
+
+    body = client.post("/api/car/leak-check", json=HOME, headers=headers).json()
+
+    assert body["leaking"] is True
+    assert body["speech"].startswith("평소처럼 내일 오전 7시 30분 출발 기준으로, ")
+    assert USUAL_ASSUMPTION in body["assumptions"]
+    assert body["plan"]["end"] <= "2026-11-20T07:30:00+09:00"
+
+
+def test_leak_check_keeps_8am_when_the_suggestion_is_low(client, evening):
+    headers = register(client)
+    seed(client, headers, [28, 31, 33])
+    plain = client.post("/api/car/leak-check", json=HOME).json()
+
+    body = client.post("/api/car/leak-check", json=HOME, headers=headers).json()
+
+    assert body["speech"].startswith("내일 오전 8시 출발 기준으로, ")
+    assert {**body, "saving_id": None} == plain
+
+
+def test_leak_check_without_a_token_is_unchanged(client, evening):
+    other = register(client)
+    seed(client, other, [28, 31, 33, 40, 22])
+
+    body = client.post("/api/car/leak-check", json=HOME).json()
+
+    assert body["speech"].startswith("내일 오전 8시 출발 기준으로, ")
+    assert body["saving_id"] is None
+
+
+def test_given_depart_at_wins_over_the_usual_time(client, evening):
+    headers = register(client)
+    seed(client, headers, [28, 31, 33, 40, 22])
+
+    body = client.post(
+        "/api/car/leak-check", json={**HOME, "depart_at": "2026-11-20T09:00"}, headers=headers
+    ).json()
+
+    assert "평소" not in body["speech"]
+    assert not any("미입력" in a for a in body["assumptions"])
+
+
+def test_usual_departure_keeps_the_rule_of_never_stopping_a_short_charge(client, evening):
+    """PR #15 규칙: 가정한 출발까지 못 채우면 멈추라 하지 않고 지금 충전을 계속하라고 한다."""
+    headers = register(client)
+    seed(client, headers, [28, 31, 33, 40, 22])
+
+    body = client.post(
+        "/api/car/leak-check", json={**HOME, "soc_now": 5, "charger_kw": 3}, headers=headers
+    ).json()
+
+    assert body["leaking"] is False
+    assert body["speech"] == (
+        "평소처럼 내일 오전 7시 30분에 출발하신다면 지금 바로 충전을 계속해야 해요. "
+        "출발 시각을 알려 주시면 다시 계산해 드릴게요."
+    )
+
+
+def test_a_failing_suggestion_falls_back_to_8am(client, monkeypatch, evening):
+    from sqlalchemy.exc import OperationalError
+
+    from evcharge.api import car_departures
+
+    headers = register(client)
+    seed(client, headers, [28, 31, 33, 40, 22])
+
+    def broken(*args, **kwargs):
+        raise OperationalError("SELECT", {}, Exception("db down"))
+
+    monkeypatch.setattr(car_departures, "suggestion_for", broken)
+
+    response = client.post("/api/car/leak-check", json=HOME, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["speech"].startswith("내일 오전 8시 출발 기준으로, ")
+
+
+@pytest.mark.parametrize(
+    "now",
+    [
+        kst(2026, 11, 20, 1, 0),  # 새벽: 오늘(20일) 아침
+        kst(2026, 11, 19, 10, 0),  # 오늘(19일) 출발은 지났다: 내일
+        kst(2026, 11, 19, 13, 0),  # 오후: 내일
+    ],
+)
+def test_next_usual_departure_picks_the_next_morning(client, monkeypatch, now):
+    headers = register(client)
+    seed(client, headers, [28, 31, 33, 40, 22])
+    monkeypatch.setattr(car, "now_kst", lambda: now)
+
+    body = client.post("/api/car/leak-check", json=HOME, headers=headers).json()
+
+    assert USUAL_ASSUMPTION in body["assumptions"]

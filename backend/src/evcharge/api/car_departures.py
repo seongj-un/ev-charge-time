@@ -38,6 +38,7 @@ from ..infra.db import session_scope
 from ..infra.models import CarDeparture, CarDevice
 from .car_devices import bearer_token, find_device
 from .car_plan_service import spoken_clock
+from .deps import get_holidays
 from .schemas import CarDepartureSuggestion
 
 logger = logging.getLogger(__name__)
@@ -264,3 +265,25 @@ def to_suggestion_out(found: DepartureSuggestion, now: datetime) -> CarDeparture
         day_type=found.day_type,
         speech=suggestion_question(found, now),
     )
+
+
+def usual_departure_for(request: Request, now: datetime) -> DepartureSuggestion | None:
+    """계산 엔드포인트용 평소 출발 시각(신뢰도 high만). 토큰이 없으면 DB를 열지 않는다.
+
+    토큰이 틀리거나, 기록이 모자라거나, 계산할 수 없으면(공휴일 정보 없음, DB 오류)
+    None이다. 부르는 쪽은 그때 지금처럼(오전 8시 가정) 동작한다.
+    """
+    token = bearer_token(request)
+    if token is None:
+        return None
+    try:
+        with session_scope(request.app.dependency_overrides) as session:
+            device = find_device(session, token)
+            if device is None:
+                return None
+            found = next_usual_departure(session, device, now, get_holidays())
+            session.commit()  # last_seen_at
+    except (SQLAlchemyError, DomainError):
+        logger.warning("평소 출발 시각을 읽지 못했습니다", exc_info=True)
+        return None
+    return found if found is not None and found.confidence == "high" else None
