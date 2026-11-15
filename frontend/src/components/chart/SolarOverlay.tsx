@@ -87,7 +87,7 @@ export function SolarOverlay({ hours, columns, assumptions, className = "" }: Pr
 
       {notes.length > 0 ? (
         /*
-         * "전남 전체를 한 지점 예보로 대신함" 같은 한계는 사용자가 짐작할 수 없어 꼭 보인다.
+         * "대전 전체를 한 지점 예보로 대신함" 같은 한계는 사용자가 짐작할 수 없어 꼭 보인다.
          * 다만 서버가 주는 문장은 개발용 말(nx=57, predicted_mwh, 20261110 1400)이 섞여 있어
          * 사람 말로 옮겨 보이고, 원문은 접어 둔다 — "근거가 뭐냐"는 질문에 답할 수 있게.
          */
@@ -126,7 +126,9 @@ export function plainSolarNotes(assumptions: string[]): string[] {
     const issued = /단기예보 (\d{4})(\d{2})(\d{2}) (\d{2})(\d{2}) 발표/.exec(line);
     let plain: string | null;
     if (/격자/.test(line)) {
-      plain = "전남 전체를 한 지점의 기상청 예보로 대신한 참고값이에요.";
+      // 서버 문장이 "<지역> 전체를 … 격자 한 칸 …"으로 시작한다. 지역은 서버가 정하므로 거기서 읽는다.
+      const area = /^(\S+) 전체를/.exec(line)?.[1] ?? "이 지역";
+      plain = `${area} 전체를 한 지점의 기상청 예보로 대신한 참고값이에요.`;
     } else if (issued) {
       const [, , month, day, hour] = issued;
       plain = `기상청 ${Number(month)}월 ${Number(day)}일 ${Number(hour)}시 발표 예보를 썼어요.`;

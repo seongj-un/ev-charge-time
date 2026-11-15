@@ -2,7 +2,6 @@
 
 2026-04-16 시행 전기차 충전전력요금 기준으로 **가장 싸게 충전할 수 있는 시간**을
 추천하는 API.
-빛가람 AI·ICT 경진대회 출품작.
 
 명세: 노션 [기능 명세서](https://app.notion.com/p/3e2c8fd1afc981d0a00ef5fdcec314f1) ·
 [API 명세서](https://app.notion.com/p/3e2c8fd1afc981b38befc694478b0e72) ·
@@ -129,7 +128,7 @@ uv run uvicorn evcharge.main:app --reload
 
 ```bash
 cd backend
-uv run python -m evcharge.sync                    # 전체 수집 (4호출, 약 12초)
+uv run python -m evcharge.sync                    # 전체 수집 (대전 2호출)
 uv run python -m evcharge.sync --states           # 상태만 갱신 (1호출, 1초 미만)
 uv run python -m evcharge.sync --states --period 5   # 최근 5분 변경분만
 ```
@@ -137,11 +136,12 @@ uv run python -m evcharge.sync --states --period 5   # 최근 5분 변경분만
 - 먼저 `backend/.env`에 `CHARGER_API_KEY`를 넣어야 한다 (`.env.example` 참고).
   비어 있으면 아무것도 하지 않고 이유를 찍은 뒤 종료 코드 1로 끝나며,
   `GET /api/chargers`는 501을 유지한다.
-- 실측(2026-09-21, `zcode=12`): 32,835행 → **충전소 8,112곳**. 상태 갱신은
-  `period=10`에 954행.
+- 실측: 대전(2026-11-15, `zcode=30`) 15,062행, 9,999행씩 받으므로 전체 수집 2호출.
+  전남광주(2026-09-21, `zcode=12`) 32,835행 → 충전소 8,112곳, 상태 갱신 `period=10`에 954행.
 - 운영 서버에서는 cron이 돌린다 — [`deploy/kinetic-chargers.cron`](deploy/kinetic-chargers.cron).
-  상태는 5분마다(최근 10분 변경분), 전체는 하루 한 번이라 하루 약 292건으로 한도
-  안이다. 이게 없으면 상태가 마지막으로 손으로 받은 시각에 멈춘다 — 실제로 6일간
+  상태는 5분마다(최근 10분 변경분) zcode마다 1호출, 전체는 하루 한 번(회복용 포함 최대
+  `CHARGER_FULL_SYNC_DAILY_MAX`회)이라 하루 호출은 "zcode 수 × 288 + 전체 수집"이다.
+  대전만이면 288 + 2 = 290건, 대전·전남(`12,30`)이면 576 + 6 = 582건으로 한도 안이다. 이게 없으면 상태가 마지막으로 손으로 받은 시각에 멈춘다 — 실제로 6일간
   멈춰 있었다(2026-09-22 → 09-28).
 - 상태 신선도: 상태 수집은 바뀐 충전소 행만 고치므로, 수집이 끊기지 않고 이어진 시각을
   `charger_sync_state`에 남기고 충전소별 상태 시각을 `max(updated_at, 그 시각)`으로 본다

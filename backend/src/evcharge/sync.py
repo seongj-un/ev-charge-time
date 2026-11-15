@@ -1,6 +1,6 @@
 """충전소 캐시 수집 실행 진입점 (F-07).
 
-    uv run python -m evcharge.sync              # 전체 수집 (충전소 상세, 4호출)
+    uv run python -m evcharge.sync              # 전체 수집 (충전소 상세, 대전 2호출)
     uv run python -m evcharge.sync --states     # 상태만 갱신 (1~2호출, 훨씬 싸다)
     uv run python -m evcharge.sync --states --period 5
 

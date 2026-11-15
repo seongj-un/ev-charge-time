@@ -12,11 +12,11 @@ from evcharge.domain.public_text import clean_public_text
 @pytest.mark.parametrize(
     ("raw", "cleaned"),
     [
-        ("빛가람\x00충전소", "빛가람충전소"),  # NUL (Cc)
+        ("유성구\x00충전소", "유성구충전소"),  # NUL (Cc)
         ("\u202e소전충 람가빛", "소전충 람가빛"),  # RIGHT-TO-LEFT OVERRIDE (Cf)
-        ("빛가람\u200b충전소", "빛가람충전소"),  # ZERO WIDTH SPACE (Cf)
-        ("빛가람 \u2066충전소\u2069", "빛가람 충전소"),  # 방향 격리 (Cf)
-        ("빛가람 \u200b 충전소", "빛가람 충전소"),  # 뺀 자리에 공백이 겹치지 않는다
+        ("유성구\u200b충전소", "유성구충전소"),  # ZERO WIDTH SPACE (Cf)
+        ("유성구 \u2066충전소\u2069", "유성구 충전소"),  # 방향 격리 (Cf)
+        ("유성구 \u200b 충전소", "유성구 충전소"),  # 뺀 자리에 공백이 겹치지 않는다
         ("광주광역시 남구\n대촌로\t7", "광주광역시 남구 대촌로 7"),  # 줄바꿈·탭은 공백으로
         ("서울 강남구 테헤란로 1", "서울 강남구 테헤란로 1"),  # 한글은 그대로
         (
@@ -39,9 +39,9 @@ def test_nothing_left_is_empty_and_the_address_is_null(raw):
 
 
 def test_every_name_and_address_helper_strips_control_and_format_chars():
-    raw = "\u202e빛가람\x00 충전소\u200b"
-    assert short_name(raw) == "빛가람 충전소"
-    assert external_text(raw) == "빛가람 충전소"
-    assert station_address({"address": raw}) == "빛가람 충전소"
+    raw = "\u202e유성구\x00 충전소\u200b"
+    assert short_name(raw) == "유성구 충전소"
+    assert external_text(raw) == "유성구 충전소"
+    assert station_address({"address": raw}) == "유성구 충전소"
     # 길이는 정리한 뒤에 자른다: 서식 문자가 길이를 차지하지 않는다
     assert station_address({"address": "\u200b" * 50 + "가" * 250}) == "가" * MAX_ADDRESS

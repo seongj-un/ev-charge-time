@@ -9,7 +9,7 @@ import math
 
 from evcharge.domain.geo import EARTH_RADIUS_M, bounding_box, haversine_m
 
-# 나주 빛가람동 언저리. 대회 지역이라 실제로 쓰일 좌표대에서 검증한다.
+# 나주 근처의 임의 지점. 한국 위도대에서 검증하려는 것이라 지역은 상관없다.
 NAJU = (35.0175, 126.7905)
 
 # 위도 1도의 길이. 자오선은 대원이므로 반지름만으로 정해진다.

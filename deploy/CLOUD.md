@@ -145,7 +145,7 @@ docker compose -f docker-compose.prod.yml logs -f caddy    # 인증서 발급 �
 cd ~/kinetic
 sudo install -m 644 deploy/kinetic-chargers.cron /etc/cron.d/kinetic-chargers
 sudo install -m 644 deploy/kinetic-sync.logrotate /etc/logrotate.d/kinetic-sync
-# 처음 한 번은 전체를 받아 둡니다 (4호출, 약 12초)
+# 처음 한 번은 전체를 받아 둡니다 (zcode마다 1~4호출: 대전 30 = 2, 전남광주 12 = 4)
 docker compose -f docker-compose.prod.yml exec -T backend python -m evcharge.sync
 ```
 

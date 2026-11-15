@@ -143,12 +143,12 @@ describe("주변 충전소 — 위치", () => {
     const calls = renderScreen(routes(NOT_IMPLEMENTED));
 
     const picker = await screen.findByRole("combobox", { name: /지역/ });
-    const 목포 = AREAS.find((a) => a.id === "mokpo")!;
-    await user.selectOptions(picker, 목포.id);
+    const 유성 = AREAS.find((a) => a.id === "yuseong")!;
+    await user.selectOptions(picker, 유성.id);
 
     await waitFor(() => {
       const urls = callsTo(calls, "GET", "/api/chargers").map((c) => c.url);
-      expect(urls.some((u) => u.includes(`lat=${목포.lat}`))).toBe(true);
+      expect(urls.some((u) => u.includes(`lat=${유성.lat}`))).toBe(true);
     });
   });
 
@@ -186,25 +186,25 @@ describe("주변 충전소 — 위치", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(/위치를 얻지 못했어요/);
   });
 
-  /* 목포를 보다가 눌렀는데 실패했다고 빛가람으로 끌려가면 안 된다. */
+  /* 다른 지역을 보다가 눌렀는데 실패했다고 기본 지역으로 끌려가면 안 된다. */
   test("실패해도 보던 지역을 그대로 둔다", async () => {
     const user = userEvent.setup();
     stubGeolocation({ kind: "denied" });
     const calls = renderScreen(routes(NOT_IMPLEMENTED));
 
     const picker = await screen.findByRole("combobox", { name: /지역/ });
-    const 목포 = AREAS.find((a) => a.id === "mokpo")!;
-    await user.selectOptions(picker, 목포.id);
+    const 유성 = AREAS.find((a) => a.id === "yuseong")!;
+    await user.selectOptions(picker, 유성.id);
     await waitFor(() =>
       expect(
-        callsTo(calls, "GET", "/api/chargers").some((c) => c.url.includes(`lat=${목포.lat}`)),
+        callsTo(calls, "GET", "/api/chargers").some((c) => c.url.includes(`lat=${유성.lat}`)),
       ).toBe(true),
     );
 
     await user.click(screen.getByRole("button", { name: /내 위치/ }));
     await screen.findByRole("status");
 
-    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue(목포.id);
+    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue(유성.id);
   });
 
   test("위치를 얻으면 안내가 사라진다", async () => {
@@ -255,7 +255,7 @@ describe("주변 충전소 — 위치", () => {
   });
 
   /*
-   * 위치를 얻었다고 지역을 못 고르게 되면 막다른 길이다. 캐시는 전남·광주만
+   * 위치를 얻었다고 지역을 못 고르게 되면 막다른 길이다. 캐시는 대전만
    * 담고 있어서, 서울에서 위치를 허용한 사람은 빈 목록만 보고 갈 곳이 없었다.
    * 기본은 내 위치로 찾되, 지역은 언제든 바꿀 수 있어야 한다.
    */
@@ -269,18 +269,18 @@ describe("주변 충전소 — 위치", () => {
     expect(callsTo(calls, "GET", "/api/chargers")[0].url).toContain(`lat=${SEOUL.lat}`);
 
     const picker = screen.getByRole("combobox", { name: /지역/ });
-    // 내 위치로 찾는 중이라는 걸 고르개가 밝힌다 — 빛가람인 척하지 않는다.
+    // 내 위치로 찾는 중이라는 걸 고르개가 밝힌다 — 기본 지역인 척하지 않는다.
     expect(within(picker).getByRole("option", { selected: true })).toHaveTextContent(/내 위치/);
 
-    const 목포 = AREAS.find((a) => a.id === "mokpo")!;
-    await user.selectOptions(picker, 목포.id);
+    const 유성 = AREAS.find((a) => a.id === "yuseong")!;
+    await user.selectOptions(picker, 유성.id);
 
     await waitFor(() => {
       const urls = callsTo(calls, "GET", "/api/chargers").map((c) => c.url);
-      expect(urls.at(-1)).toContain(`lat=${목포.lat}`);
-      expect(urls.at(-1)).toContain(`lng=${목포.lng}`);
+      expect(urls.at(-1)).toContain(`lat=${유성.lat}`);
+      expect(urls.at(-1)).toContain(`lng=${유성.lng}`);
     });
-    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue(목포.id);
+    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue(유성.id);
   });
 
   test("지역을 골랐다가 내 위치로 돌아올 수 있다", async () => {
@@ -289,9 +289,9 @@ describe("주변 충전소 — 위치", () => {
     const calls = renderScreen(routes(NOT_IMPLEMENTED));
 
     await waitFor(() => expect(callsTo(calls, "GET", "/api/chargers")).toHaveLength(1));
-    await user.selectOptions(screen.getByRole("combobox", { name: /지역/ }), "mokpo");
+    await user.selectOptions(screen.getByRole("combobox", { name: /지역/ }), "yuseong");
     await waitFor(() =>
-      expect(callsTo(calls, "GET", "/api/chargers").at(-1)?.url).toContain("lat=34.8118"),
+      expect(callsTo(calls, "GET", "/api/chargers").at(-1)?.url).toContain("lat=36.3622"),
     );
     await user.click(screen.getByRole("button", { name: /내 위치/ }));
 
@@ -320,13 +320,13 @@ describe("주변 충전소 — 위치", () => {
     const calls = renderScreen(routes(NOT_IMPLEMENTED));
 
     const picker = await screen.findByRole("combobox", { name: /지역/ });
-    await user.selectOptions(picker, "mokpo");
+    await user.selectOptions(picker, "yuseong");
     await waitFor(() => expect(answer).not.toBeNull());
     await act(async () => {
       answer!({ coords: { latitude: SEOUL.lat, longitude: SEOUL.lng } });
     });
 
-    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue("mokpo");
+    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue("yuseong");
     const urls = callsTo(calls, "GET", "/api/chargers").map((c) => c.url);
     expect(urls.some((u) => u.includes(`lat=${SEOUL.lat}`))).toBe(false);
   });
@@ -461,7 +461,7 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
   });
 
   /*
-   * "없다"와 "아직 수집하지 않았다"는 다른 말이다. 캐시가 전남·광주만 담고
+   * "없다"와 "아직 수집하지 않았다"는 다른 말이다. 캐시가 대전만 담고
    * 있어서 서울에서 열면 빈 목록이 오는데, 그걸 "주변에 없다"고 하면 거짓말이
    * 된다. 프론트는 어느 쪽인지 알 수 없으므로 둘 다 말한다.
    */
@@ -470,7 +470,7 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
     renderScreen(routes({ body: [] }));
 
     expect(await screen.findByText("이 근처에서 충전소를 찾지 못했어요")).toBeInTheDocument();
-    expect(screen.getByText(/전남·광주 지역 충전소만 수집/)).toBeInTheDocument();
+    expect(screen.getByText(/수집하는 지역\(대전 등\)에서만 찾을 수 있어요/)).toBeInTheDocument();
   });
 
   /*
@@ -483,16 +483,16 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
     const calls = renderScreen(routes({ body: [] }));
 
     await screen.findByText("이 근처에서 충전소를 찾지 못했어요");
-    const 목포 = AREAS.find((a) => a.id === "mokpo")!;
+    const 유성 = AREAS.find((a) => a.id === "yuseong")!;
     const shortcuts = screen.getByRole("group", { name: /수집된 지역/ });
-    await user.click(within(shortcuts).getByRole("button", { name: 목포.name }));
+    await user.click(within(shortcuts).getByRole("button", { name: 유성.name }));
 
     await waitFor(() => {
       const urls = callsTo(calls, "GET", "/api/chargers").map((c) => c.url);
-      expect(urls.at(-1)).toContain(`lat=${목포.lat}`);
-      expect(urls.at(-1)).toContain(`lng=${목포.lng}`);
+      expect(urls.at(-1)).toContain(`lat=${유성.lat}`);
+      expect(urls.at(-1)).toContain(`lng=${유성.lng}`);
     });
-    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue(목포.id);
+    expect(screen.getByRole("combobox", { name: /지역/ })).toHaveValue(유성.id);
   });
 
   test("빈 목록의 지역 바로가기에 지금 보는 지역은 빼고 보여준다", async () => {
@@ -505,7 +505,7 @@ describe("주변 충전소 — 데이터가 오는 날", () => {
     expect(
       within(shortcuts).queryByRole("button", { name: DEFAULT_AREA.name }),
     ).not.toBeInTheDocument();
-    await user.click(within(shortcuts).getByRole("button", { name: "목포" }));
+    await user.click(within(shortcuts).getByRole("button", { name: "유성" }));
     await waitFor(() =>
       expect(
         within(screen.getByRole("group", { name: /수집된 지역/ })).getByRole("button", {

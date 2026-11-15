@@ -468,7 +468,7 @@ describe("조건이 바뀌었을 때", () => {
 function solarOf(day: string): SolarForecast {
   const peak = day === "2026-10-08" ? 0.8 : 0.4;
   return {
-    region: "전남",
+    region: "대전",
     day,
     model_version: "test",
     hours: Array.from({ length: 24 }, (_, hour) => ({
@@ -486,7 +486,7 @@ function solarOf(day: string): SolarForecast {
     base_time: "0500",
     installed_capacity_mw: null,
     capacity_source: null,
-    assumptions: ["전남 전체를 격자 한 칸으로 대신함"],
+    assumptions: ["대전 전체를 격자 한 칸으로 대신함"],
   };
 }
 
@@ -497,11 +497,11 @@ describe("태양광 막대", () => {
     render(withSession(QUERY));
     expect(await screen.findByText(/태양광 발전 예측/)).toBeInTheDocument();
 
-    expect(calls).toContain("/api/solar-forecast?region=%EC%A0%84%EB%82%A8&day=2026-10-07");
-    expect(calls).toContain("/api/solar-forecast?region=%EC%A0%84%EB%82%A8&day=2026-10-08");
+    expect(calls).toContain("/api/solar-forecast?region=%EB%8C%80%EC%A0%84&day=2026-10-07");
+    expect(calls).toContain("/api/solar-forecast?region=%EB%8C%80%EC%A0%84&day=2026-10-08");
     // 축 18시→다음날 7시: 7일 저녁은 0, 8일 7시는 80% — 둘째 날 예보를 썼다.
     expect(screen.getByRole("img", { name: /^7시.*80%/ })).toBeInTheDocument();
-    expect(screen.getByText("전남 전체를 격자 한 칸으로 대신함", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("대전 전체를 격자 한 칸으로 대신함", { exact: false })).toBeInTheDocument();
   });
 
   test("하루치만 예보가 있으면 그날만 그리고 비운 이유를 밝힌다", async () => {

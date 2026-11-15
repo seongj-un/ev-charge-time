@@ -104,6 +104,13 @@ describe("SolarOverlay", () => {
     expect(within(screen.getByRole("note")).getByText(/9월 21일 20시 발표/)).toBeInTheDocument();
   });
 
+  test("격자 줄은 서버가 말한 지역 이름을 그대로 쓴다", () => {
+    const [, area] = plainSolarNotes([
+      "대전 전체를 기상청 5km 격자 한 칸(nx=67, ny=100)의 예보로 대신합니다.",
+    ]);
+    expect(area).toBe("대전 전체를 한 지점의 기상청 예보로 대신한 참고값이에요.");
+  });
+
   test("개발용 낱말은 사람 말 줄에 나오지 않는다", () => {
     for (const line of plainSolarNotes(ASSUMPTIONS)) {
       expect(line).not.toMatch(/predicted_mwh|ghi_wm2|output_index|nx=|\d{8}/);

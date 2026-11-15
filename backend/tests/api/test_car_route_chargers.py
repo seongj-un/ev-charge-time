@@ -45,7 +45,7 @@ def stations(db_session):
         35.09,
         126.8 + KM_EAST,
         chargers=[charger(kw=100.0)],
-        address="전라남도 나주시 빛가람로 1 주차장 B1",
+        address="대전광역시 서구 둔산로 1 주차장 B1",
     )
     # 30km 지점, 서쪽 2km: 50kW 빈 충전기 2대 + 7kW 빈 충전기
     station(
@@ -161,7 +161,7 @@ def test_need_charge_speech_recommends_the_first_reachable_charger(client, stati
             "name": "A 충전소",
             "lat": 35.09,
             "lng": 126.8 + KM_EAST,
-            "address": "전라남도 나주시 빛가람로 1 주차장 B1",
+            "address": "대전광역시 서구 둔산로 1 주차장 B1",
         }
     ]
     # 목록의 주소와 경유지 동작의 주소가 같다. 주소가 없는 충전소는 null(BE-13)
@@ -694,7 +694,7 @@ def test_empty_for_other_reasons_keeps_the_old_note(client, db_session, fixed_no
 
 def test_address_is_flattened_capped_and_null_when_blank(client, db_session):
     """공공 API 주소는 줄바꿈을 펴고 200자로 자른다. 비었거나 공백뿐이면 null(BE-13)."""
-    station(db_session, "LINES", 35.05, address="전라남도 나주시\n빛가람로   1\t상가동")
+    station(db_session, "LINES", 35.05, address="대전광역시 서구\n둔산로   1\t상가동")
     station(db_session, "BLANK", 35.06, address="  \n ")
     station(db_session, "LONG", 35.07, address="가" * 250)
 
@@ -702,7 +702,7 @@ def test_address_is_flattened_capped_and_null_when_blank(client, db_session):
 
     by_id = {c["station_id"]: c["address"] for c in body["chargers"]}
     assert by_id == {
-        "LINES": "전라남도 나주시 빛가람로 1 상가동",
+        "LINES": "대전광역시 서구 둔산로 1 상가동",
         "BLANK": None,
         "LONG": "가" * 200,
     }

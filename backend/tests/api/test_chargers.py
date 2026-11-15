@@ -24,7 +24,7 @@ from evcharge.infra.models import ChargerCache, FavoriteStation, User
 from evcharge.infra.models import Session as SessionModel
 from evcharge.infra.security import hash_password, hash_token, new_session_token
 
-# 나주 빛가람동. 대회 지역 좌표로 검증한다.
+# 나주 근처의 임의 지점. 좌표 계산 검증용이라 지역은 상관없다.
 HERE = (35.0175, 126.7905)
 
 # 위도 0.009도 ≈ 1,001m, 0.027도 ≈ 3,002m
@@ -57,7 +57,7 @@ def _cache(db_session, station_id, coords, *, name="충전소", chargers=None, *
     lat, lng = coords
     data = {
         "name": name,
-        "address": "전남광주통합특별시 나주시 빛가람로 1",
+        "address": "대전광역시 서구 둔산로 1",
         "lat": lat,
         "lng": lng,
         "operator": "기후에너지환경부",
@@ -126,14 +126,14 @@ def test_absurd_radius_is_422(client):
 
 
 def test_returns_cached_stations_within_the_radius(client, db_session):
-    _cache(db_session, "ST-HERE", HERE, name="빛가람 충전소")
+    _cache(db_session, "ST-HERE", HERE, name="유성구 충전소")
 
     response = _get(client)
 
     assert response.status_code == 200
     (station,) = response.json()
     assert station["station_id"] == "ST-HERE"
-    assert station["name"] == "빛가람 충전소"
+    assert station["name"] == "유성구 충전소"
     assert station["operator"] == "기후에너지환경부"
     assert station["available_hours"] == "24시간 이용가능"
     assert station["distance_m"] == 0
@@ -567,13 +567,13 @@ def test_names_and_addresses_lose_control_and_format_chars(client, db_session):
         db_session,
         "ST-CTRL",
         HERE,
-        name="\u202e빛가람\x07 충전소 \u26a1",
+        name="\u202e유성구\x07 충전소 \u26a1",
         address="서울 강남구\n테헤란로\u200b 1",
         operator="기후\u2066에너지환경부",
     )
 
     (station,) = _get(client).json()
 
-    assert station["name"] == "빛가람 충전소 \u26a1"
+    assert station["name"] == "유성구 충전소 \u26a1"
     assert station["address"] == "서울 강남구 테헤란로 1"
     assert station["operator"] == "기후에너지환경부"
