@@ -34,7 +34,7 @@ def test_spec_example_reproduces(client):
         == body["baseline_now"]["cost_won"] - body["best"]["cost_won"]
     )
     assert len(body["assumptions"]) >= 3
-    assert "public_fast.base_price_per_kwh" in body["unverified_tariff_items"]
+    assert body["unverified_tariff_items"] == ["weekend_discount_sunset"]
 
 
 def test_naive_input_is_read_as_kst(client):
