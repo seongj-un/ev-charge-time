@@ -86,9 +86,7 @@ def test_a_day_with_the_car_app(client, clock, fake):
     # 평소 출발 기록이 없으니 기본 가정(다음 08:00)이고, 꽂는 시각은 18:00으로 가정한다.
     assert tonight["depart_basis"] == "default"
     assert tonight["depart_at"] == "2026-11-18T08:00:00+09:00"
-    same = plan(
-        client, soc_now=32, plug_in_at="2026-11-17T18:00", depart_at="2026-11-18T08:00"
-    )
+    same = plan(client, soc_now=32, plug_in_at="2026-11-17T18:00", depart_at="2026-11-18T08:00")
     assert tonight["reservation"] == same["reservation"]
     assert tonight["savings_won"] == same["savings_won"] > 0
     assert f"약 {same['savings_won']:,}원 아껴요" in brief["speech"]
@@ -130,9 +128,7 @@ def test_a_day_with_the_car_app(client, clock, fake):
         headers=headers,
     ).json()
     # 꽂는 시각은 도착 예정 18:40, 시작 잔량은 도착 예상 25%, 출발은 그 뒤 처음 오는 07:30
-    expected = plan(
-        client, soc_now=25, plug_in_at="2026-11-17T18:40", depart_at="2026-11-18T07:30"
-    )
+    expected = plan(client, soc_now=25, plug_in_at="2026-11-17T18:40", depart_at="2026-11-18T07:30")
     reservation = expected["reservation"]
     assert voice["actions"] == [
         {
@@ -209,9 +205,7 @@ def test_a_day_with_the_car_app(client, clock, fake):
     tonight = brief["tonight"]
     assert tonight["depart_basis"] == "usual"
     assert tonight["depart_at"] == "2026-11-19T07:30:00+09:00"
-    same = plan(
-        client, soc_now=32, plug_in_at="2026-11-18T18:00", depart_at="2026-11-19T07:30"
-    )
+    same = plan(client, soc_now=32, plug_in_at="2026-11-18T18:00", depart_at="2026-11-19T07:30")
     assert tonight["reservation"] == same["reservation"]
     assert tonight["savings_won"] == same["savings_won"]
     assert brief["savings"]["month_won"] == plan_savings  # 브리핑의 이번 달 절약 = 합계
@@ -245,9 +239,7 @@ def test_a_day_with_the_car_app(client, clock, fake):
         },
         headers=headers,
     ).json()
-    expected = plan(
-        client, soc_now=25, plug_in_at="2026-11-18T18:40", depart_at="2026-11-19T07:30"
-    )
+    expected = plan(client, soc_now=25, plug_in_at="2026-11-18T18:40", depart_at="2026-11-19T07:30")
     assert voice["actions"] == [
         {
             "type": "set_reservation",
