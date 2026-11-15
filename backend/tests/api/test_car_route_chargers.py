@@ -663,6 +663,7 @@ def test_empty_only_because_of_old_status_says_so(client, db_session, fixed_now)
 
     assert body["chargers"] == []
     assert body["coverage_note"] == STATUS_UNKNOWN_NOTE
+    assert body["speech"] == f"이대로면 도착할 때 배터리가 8%예요. {STATUS_UNKNOWN_NOTE}"
     assert body["actions"] == []
 
 
@@ -674,3 +675,4 @@ def test_empty_for_other_reasons_keeps_the_old_note(client, db_session, fixed_no
     assert body["coverage_note"] == (
         "경로 근처 충전소 1곳 중 지금 비어 있는 50kW 이상 충전기가 없어요."
     )
+    assert body["speech"].endswith("경로 근처에 지금 비어 있는 급속충전기를 찾지 못했어요.")

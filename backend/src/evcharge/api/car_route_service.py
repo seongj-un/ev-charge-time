@@ -237,7 +237,13 @@ def find_along_route(
         need_charge=need_charge,
         chargers=chargers,
         speech=_speech(
-            payload, arrival, arrival_estimated, arrival_runs_out, need_charge, recommended
+            payload,
+            arrival,
+            arrival_estimated,
+            arrival_runs_out,
+            need_charge,
+            recommended,
+            status_unknown=hidden_by_age,
         ),
         actions=actions,
         assumptions=assumptions,
@@ -291,6 +297,8 @@ def _speech(
     arrival_runs_out: bool,
     need_charge: bool | None,
     recommended: RouteChargerOut | None,
+    *,
+    status_unknown: bool = False,
 ) -> str:
     """도착 잔량을 전비로 추정했으면 "전비로 추정하면"으로 시작한다(내비 값이 아님을 밝힌다).
 
@@ -314,6 +322,9 @@ def _speech(
     else:
         lead = f"이대로면 도착할 때 배터리가 {arrival}예요. "
     if recommended is None:
+        if status_unknown:
+            # 오래된 상태 때문에 비었다: "찾지 못했어요"(없다)가 아니라 "확인할 수 없다"다.
+            return f"{lead}{STATUS_UNKNOWN_NOTE}"
         return f"{lead}경로 근처에 지금 비어 있는 {kind}를 찾지 못했어요."
 
     where = f"{spoken_distance(recommended.distance_m)} 앞"
