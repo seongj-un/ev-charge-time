@@ -1,0 +1,360 @@
+"""와트잇 BE-8 출발 기록·삭제·제안 API (``/api/car/departures``)."""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timedelta
+
+import pytest
+from sqlalchemy import func, select, text
+
+from evcharge.api.car_departures import DAILY_MAX, record_stated
+from evcharge.api.routes import car
+from evcharge.domain.pricing import KST
+from evcharge.infra.models import CarDeparture, CarDevice
+from evcharge.infra.security import hash_token
+
+# 2026-11-19(목) 21:00. 제안 기본 날짜는 내일 11-20(금).
+NOW = datetime(2026, 11, 19, 21, 0, tzinfo=KST)
+URL = "/api/car/departures"
+
+
+@pytest.fixture(autouse=True)
+def _fixed_now(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(car, "now_kst", lambda: NOW)
+
+
+def register(client) -> dict[str, str]:
+    body = client.post("/api/car/devices").json()
+    return {"Authorization": f"Bearer {body['device_token']}"}
+
+
+def kst(*args) -> datetime:
+    return datetime(*args, tzinfo=KST)
+
+
+def depart(client, headers, moment: datetime):
+    return client.post(URL, json={"departed_at": moment.isoformat()}, headers=headers)
+
+
+def rows(db_session) -> list[CarDeparture]:
+    return list(db_session.scalars(select(CarDeparture).order_by(CarDeparture.departed_at)))
+
+
+def device_of(db_session, headers) -> CarDevice:
+    token = headers["Authorization"].split()[1]
+    return db_session.scalar(select(CarDevice).where(CarDevice.token_hash == hash_token(token)))
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("post", URL), ("delete", URL), ("get", f"{URL}/suggest")],
+)
+def test_token_is_required(client, method, path):
+    kwargs = {"json": {"departed_at": "2026-11-19T07:30"}} if method == "post" else {}
+
+    response = getattr(client, method)(path, **kwargs)
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_records_an_observed_departure(client, db_session):
+    headers = register(client)
+
+    response = depart(client, headers, kst(2026, 11, 19, 7, 31))
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["departed_at"] == "2026-11-19T07:31:00+09:00"
+    assert (body["source"], body["merged"]) == ("observed", False)
+    assert [(r.departed_at, r.source, r.recorded_at) for r in rows(db_session)] == [
+        (kst(2026, 11, 19, 7, 31), "observed", NOW)
+    ]
+
+
+def test_offsetless_time_is_read_as_kst(client, db_session):
+    headers = register(client)
+
+    depart_body = client.post(URL, json={"departed_at": "2026-11-19T07:31"}, headers=headers)
+
+    assert depart_body.json()["departed_at"] == "2026-11-19T07:31:00+09:00"
+
+
+def test_observed_within_30_minutes_merge_and_keep_the_earlier(client, db_session):
+    headers = register(client)
+    depart(client, headers, kst(2026, 11, 19, 7, 40))
+
+    merged = depart(client, headers, kst(2026, 11, 19, 7, 15))
+    later = depart(client, headers, kst(2026, 11, 19, 7, 45))
+    separate = depart(client, headers, kst(2026, 11, 19, 8, 16))
+
+    assert (merged.status_code, merged.json()["merged"]) == (200, True)
+    assert merged.json()["departed_at"] == "2026-11-19T07:15:00+09:00"
+    assert (later.status_code, later.json()["departed_at"]) == (
+        200,
+        "2026-11-19T07:15:00+09:00",
+    )
+    assert separate.status_code == 201
+    assert [r.departed_at for r in rows(db_session)] == [
+        kst(2026, 11, 19, 7, 15),
+        kst(2026, 11, 19, 8, 16),
+    ]
+
+
+def test_observed_replaces_a_stated_time_nearby(client, db_session):
+    headers = register(client)
+    device = device_of(db_session, headers)
+    record_stated(db_session, device, kst(2026, 11, 19, 7, 30), NOW)
+
+    response = depart(client, headers, kst(2026, 11, 19, 7, 42))
+
+    assert response.json()["merged"] is True
+    assert [(r.departed_at, r.source) for r in rows(db_session)] == [
+        (kst(2026, 11, 19, 7, 42), "observed")
+    ]
+
+
+def test_stated_does_not_replace_an_observed_time(client, db_session):
+    headers = register(client)
+    device = device_of(db_session, headers)
+    depart(client, headers, kst(2026, 11, 19, 7, 42))
+
+    record_stated(db_session, device, kst(2026, 11, 19, 7, 30), NOW)
+
+    assert [(r.departed_at, r.source) for r in rows(db_session)] == [
+        (kst(2026, 11, 19, 7, 42), "observed")
+    ]
+
+
+def test_a_later_statement_replaces_an_earlier_one(client, db_session):
+    headers = register(client)
+    device = device_of(db_session, headers)
+    record_stated(db_session, device, kst(2026, 11, 20, 7, 30), NOW)
+
+    record_stated(db_session, device, kst(2026, 11, 20, 7, 50), NOW)
+
+    assert [(r.departed_at, r.source) for r in rows(db_session)] == [
+        (kst(2026, 11, 20, 7, 50), "stated")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("moment", "message"),
+    [
+        (NOW + timedelta(minutes=6), "departed_at은 지금보다 늦을 수 없습니다."),
+        (NOW - timedelta(days=91), "departed_at은 90일 안이어야 합니다."),
+    ],
+)
+def test_future_and_too_old_times_are_422(client, db_session, moment, message):
+    headers = register(client)
+
+    response = depart(client, headers, moment)
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["msg"] == message
+    assert response.json()["detail"][0]["loc"] == ["body", "departed_at"]
+    assert rows(db_session) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"departed_at": "9999-12-31T23:59:00+00:00"},
+        {"departed_at": "2026-11-19T07:30", "source": "stated"},
+        {},
+    ],
+)
+def test_bad_bodies_are_422(client, body):
+    response = client.post(URL, json=body, headers=register(client))
+
+    assert response.status_code == 422
+
+
+def test_daily_limit_counts_new_records_only(client, db_session, monkeypatch):
+    headers = register(client)
+    for day in range(DAILY_MAX):
+        assert depart(client, headers, kst(2026, 11, 9 + day, 7, 30)).status_code == 201
+    merged = depart(client, headers, kst(2026, 11, 18, 7, 35))
+
+    over = depart(client, headers, kst(2026, 11, 19, 7, 30))
+
+    assert merged.status_code == 200
+    assert over.status_code == 429
+    assert over.headers["Retry-After"] == str(3 * 3600)  # 다음 날 0시까지
+    assert len(rows(db_session)) == DAILY_MAX
+
+    monkeypatch.setattr(car, "now_kst", lambda: NOW + timedelta(hours=3))
+    assert depart(client, headers, kst(2026, 11, 19, 7, 30)).status_code == 201
+
+
+def test_stated_over_the_daily_limit_is_skipped_silently(client, db_session):
+    headers = register(client)
+    device = device_of(db_session, headers)
+    for day in range(DAILY_MAX):
+        depart(client, headers, kst(2026, 11, 9 + day, 7, 30))
+
+    assert record_stated(db_session, device, kst(2026, 11, 20, 7, 30), NOW) is False
+    assert len(rows(db_session)) == DAILY_MAX
+
+
+def test_records_older_than_90_days_are_removed_on_write(client, db_session):
+    other = register(client)
+    depart(client, other, kst(2026, 11, 19, 7, 0))
+    db_session.execute(
+        text(
+            "INSERT INTO car_departures (id, device_id, departed_at, source, recorded_at) "
+            "VALUES (:id, :device, :at, 'observed', :at)"
+        ),
+        {
+            "id": str(uuid.uuid4()),
+            "device": device_of(db_session, other).id,
+            "at": NOW - timedelta(days=90, minutes=1),
+        },
+    )
+
+    depart(client, register(client), kst(2026, 11, 19, 8, 0))
+
+    assert len(rows(db_session)) == 2
+    assert min(r.departed_at for r in rows(db_session)) == kst(2026, 11, 19, 7, 0)
+
+
+def test_delete_removes_only_this_devices_records(client, db_session):
+    mine, other = register(client), register(client)
+    depart(client, mine, kst(2026, 11, 18, 7, 30))
+    depart(client, mine, kst(2026, 11, 19, 7, 30))
+    depart(client, other, kst(2026, 11, 19, 7, 30))
+
+    response = client.delete(URL, headers=mine)
+    again = client.delete(URL, headers=mine)
+
+    assert response.json() == {"deleted": 2}
+    assert again.json() == {"deleted": 0}
+    assert [r.device_id for r in rows(db_session)] == [device_of(db_session, other).id]
+
+
+# ── 제안 ─────────────────────────────────────────────────────────────────
+
+WEEKDAYS = [kst(2026, 11, d, 7, 0) for d in (12, 13, 16, 17, 18)]  # 목금월화수
+
+
+def seed(client, headers, minutes: list[int], days=WEEKDAYS):
+    for day, minute in zip(days, minutes, strict=False):
+        assert depart(client, headers, day + timedelta(minutes=minute)).status_code == 201
+
+
+def suggest(client, headers, **params):
+    return client.get(f"{URL}/suggest", params=params, headers=headers)
+
+
+def test_high_confidence_suggestion_for_tomorrow(client):
+    headers = register(client)
+    seed(client, headers, [28, 31, 33, 40, 22])
+
+    body = suggest(client, headers).json()
+
+    assert body == {
+        "date": "2026-11-20",
+        "suggested_depart_at": "2026-11-20T07:30:00+09:00",
+        "confidence": "high",
+        "basis_count": 5,
+        "day_type": "weekday",
+        "speech": "내일도 오전 7시 30분에 출발하세요?",
+    }
+
+
+def test_low_confidence_suggestion(client):
+    headers = register(client)
+    seed(client, headers, [28, 31, 33])
+
+    body = suggest(client, headers).json()
+
+    assert (body["confidence"], body["basis_count"]) == ("low", 3)
+    assert body["speech"] == "내일 오전 7시 30분쯤 출발하세요?"
+
+
+def test_no_suggestion_and_other_devices_do_not_count(client):
+    mine, other = register(client), register(client)
+    seed(client, other, [28, 31, 33, 40, 22])
+    seed(client, mine, [30, 30])
+
+    body = suggest(client, mine).json()
+
+    assert body["suggested_depart_at"] is None
+    assert (body["confidence"], body["basis_count"]) == (None, 2)
+    assert body["speech"] == "내일 몇 시에 출발하세요?"
+
+
+def test_weekend_date_uses_weekend_records(client):
+    headers = register(client)
+    seed(client, headers, [28, 31, 33, 40, 22])
+    weekend = [kst(2026, 11, d, 10, 0) for d in (7, 8, 14, 15)]
+    seed(client, headers, [0, 5, 10, 0], days=weekend)
+
+    body = suggest(client, headers, date="2026-11-21").json()
+
+    assert body["day_type"] == "weekend_holiday"
+    assert (body["suggested_depart_at"], body["basis_count"]) == (
+        "2026-11-21T10:00:00+09:00",
+        4,
+    )
+    assert body["speech"] == "11월 21일 오전 10시쯤 출발하세요?"
+
+
+def test_christmas_counts_as_a_holiday(client):
+    headers = register(client)
+
+    body = suggest(client, headers, date="2026-12-25").json()  # 금요일 공휴일
+
+    assert body["day_type"] == "weekend_holiday"
+
+
+@pytest.mark.parametrize("value", ["2026-11-2", "2026-13-01", "tomorrow", "0001-01-01"])
+def test_bad_dates_are_422(client, value):
+    response = suggest(client, register(client), date=value)
+
+    assert response.status_code == 422
+
+
+def test_dates_without_holiday_data_are_422(client):
+    response = suggest(client, register(client), date="2030-01-07")
+
+    assert response.status_code == 422
+    assert "2030년 공휴일 정보가 아직 없어서" in response.json()["detail"]
+
+
+def test_parallel_records_of_one_departure_make_one_row(concurrent, monkeypatch):
+    token = f"race-{uuid.uuid4()}"
+    device_id = str(uuid.uuid4())
+    setup = concurrent.session()
+    try:
+        setup.add(CarDevice(id=device_id, token_hash=hash_token(token)))
+        setup.commit()
+    finally:
+        setup.close()
+
+    def send(client) -> int:
+        return client.post(
+            URL,
+            json={"departed_at": "2026-11-19T07:30:00+09:00"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).status_code
+
+    try:
+        codes = concurrent.run(send, count=6)
+        check = concurrent.session()
+        try:
+            count = check.scalar(
+                select(func.count()).where(CarDeparture.device_id == device_id)
+            )
+        finally:
+            check.close()
+        assert sorted(codes) == [200, 200, 200, 200, 200, 201]
+        assert count == 1
+    finally:
+        cleanup = concurrent.session()
+        try:
+            cleanup.execute(text("DELETE FROM car_devices WHERE id = :id"), {"id": device_id})
+            cleanup.commit()
+        finally:
+            cleanup.close()
