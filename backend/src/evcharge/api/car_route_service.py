@@ -41,6 +41,10 @@ ASSUME_ESTIMATE = (
     "충전소 도착 잔량은 내비의 남은 거리와 도착 예상 잔량으로 거리에 비례해 추정했어요."
 )
 ASSUME_EFFICIENCY = "충전소 도착 잔량은 최근 전비와 배터리 용량으로 거리에 비례해 추정했어요."
+# 내비 남은 거리가 없을 때 직선거리를 도로 거리로 바꾸는 계수. 직선거리 그대로 쓰면 도착
+# 잔량이 실제보다 높게(낙관적으로) 나온다.
+ROAD_FACTOR = 1.25
+ASSUME_ROAD_FACTOR = "내비 남은 거리가 없어 도로 거리를 직선거리의 1.25배(도로 계수)로 잡았어요."
 NO_COVERAGE = "이 구간은 충전소 정보가 없을 수 있어요(수집 지역 밖)."
 TRUNCATED = "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요."
 # 정리된 꺾은선에 이보다 긴 선분이 있으면 직선 근사의 한계를 알린다. 경유지 없는 장거리는
@@ -117,9 +121,9 @@ def find_along_route(
 
     estimate = _estimate(payload)
     # 꺾은선은 도로보다 짧다. 내비 남은 거리가 있으면 그 비율로 늘려 도로 거리로 맞춘다
-    # (목적지에서 추정이 내비 도착 예상 잔량과 같아진다).
+    # (목적지에서 추정이 내비 도착 예상 잔량과 같아진다). 없으면 도로 계수를 곱한다.
     remain = payload.remain_distance_m
-    scale = remain / route_m if remain is not None and route_m > 0 else 1.0
+    scale = ROAD_FACTOR if remain is None else (remain / route_m if route_m > 0 else 1.0)
     chargers = []
     for along, offset, row, count in matching:
         _available, top_kw = charger_summary(row)
@@ -144,13 +148,21 @@ def find_along_route(
             )
         )
 
-    need_charge = None if payload.arrival_soc is None else payload.arrival_soc < payload.reserve_soc
+    # 도착 잔량: 내비 값이 있으면 그대로, 없고 전비로 추정하면 목적지까지 도로 거리로 추정
+    arrival: float | None = payload.arrival_soc
+    arrival_estimated = False
+    if arrival is None and estimate is not None and estimate.assumption == ASSUME_EFFICIENCY:
+        arrival = estimate.soc_at(route_m * scale)
+        arrival_estimated = True
+    need_charge = None if arrival is None else arrival < payload.reserve_soc
     recommended = next((c for c in chargers if c.reachable is not False), None) or (
         chargers[0] if chargers else None
     )
     assumptions = [ASSUME_ROUTE, ASSUME_STATUS]
     if max(route.lengths) > LONG_SEGMENT_M:
         assumptions.append(ASSUME_LONG_SEGMENT)
+    if remain is None:
+        assumptions.append(ASSUME_ROAD_FACTOR)
     if estimate is not None:
         assumptions.append(estimate.assumption)
     if not near:
@@ -180,7 +192,7 @@ def find_along_route(
     return CarRouteChargersResponse(
         need_charge=need_charge,
         chargers=chargers,
-        speech=_speech(payload, need_charge, recommended),
+        speech=_speech(payload, arrival, arrival_estimated, need_charge, recommended),
         actions=actions,
         assumptions=assumptions,
         coverage_note=coverage_note,
@@ -208,16 +220,26 @@ def _estimate(payload: CarRouteChargersRequest) -> _Estimate | None:
 
 def _speech(
     payload: CarRouteChargersRequest,
+    arrival_soc: float | None,
+    arrival_estimated: bool,
     need_charge: bool | None,
     recommended: RouteChargerOut | None,
 ) -> str:
+    """도착 잔량을 전비로 추정했으면 "전비로 추정하면"으로 시작한다(내비 값이 아님을 밝힌다)."""
     kind = "급속충전기" if payload.min_kw >= FAST_KW else "충전기"
-    arrival = spoken_percent(payload.arrival_soc) if payload.arrival_soc is not None else None
+    arrival = spoken_percent(arrival_soc) if arrival_soc is not None else None
 
     if need_charge is False:
+        if arrival_estimated:
+            return f"전비로 추정하면 도착할 때 배터리가 {arrival} 남아요. 충전 없이 가셔도 돼요."
         return f"도착할 때 배터리가 {arrival} 남아요. 충전 없이 가셔도 돼요."
 
-    lead = f"이대로면 도착할 때 배터리가 {arrival}예요. " if need_charge else ""
+    if not need_charge:
+        lead = ""
+    elif arrival_estimated:
+        lead = f"전비로 추정하면 도착할 때 배터리가 {arrival}예요. "
+    else:
+        lead = f"이대로면 도착할 때 배터리가 {arrival}예요. "
     if recommended is None:
         return f"{lead}경로 근처에 지금 비어 있는 {kind}를 찾지 못했어요."
 

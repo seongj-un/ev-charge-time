@@ -177,17 +177,21 @@ def test_without_all_three_values_nothing_is_estimated(client, stations, missing
     body = post(client, **missing).json()
 
     assert all(c["est_soc"] is None and c["reachable"] is None for c in body["chargers"])
-    assert len(body["assumptions"]) == 2
+    assert not any("추정했어요" in a for a in body["assumptions"])
+    assert body["need_charge"] is (None if "arrival_soc" not in missing else True)
 
 
 def test_without_arrival_soc_the_speech_only_offers_the_charger(client, stations):
     body = post(client).json()
 
-    # 남은 거리가 없으면 꺾은선 거리 그대로: 10km 앞 + 1km 옆
-    assert body["chargers"][0]["distance_m"] == pytest.approx(11_000, rel=0.01)
+    # 남은 거리가 없으면 도로 계수 1.25: 10km 앞 × 1.25 + 1km 옆
+    assert body["chargers"][0]["distance_m"] == pytest.approx(13_500, rel=0.01)
     assert body["speech"] == (
-        "약 11킬로미터 앞, 경로에서 약 1킬로미터 벗어난 A 충전소에 비어 있는 급속충전기가 "
+        "약 13.5킬로미터 앞, 경로에서 약 1킬로미터 벗어난 A 충전소에 비어 있는 급속충전기가 "
         "1대 있어요. 경유지로 넣을까요?"
+    )
+    assert body["assumptions"][-1] == (
+        "내비 남은 거리가 없어 도로 거리를 직선거리의 1.25배(도로 계수)로 잡았어요."
     )
 
 
@@ -397,7 +401,7 @@ def test_station_next_to_the_start_is_not_spoken_as_10m_ahead(client, db_session
 
     item = body["chargers"][0]
     assert item["along_m"] < 100
-    assert item["distance_m"] == pytest.approx(item["along_m"] + item["offset_m"], abs=1)
+    assert item["distance_m"] == pytest.approx(item["along_m"] * 1.25 + item["offset_m"], abs=1)
     assert item["offset_m"] == pytest.approx(2_500, rel=0.01)
     assert body["speech"].startswith(
         f"{spoken_distance(item['distance_m'])} 앞, 경로에서 약 2.5킬로미터 벗어난 SIDE 충전소에"
@@ -424,8 +428,9 @@ def test_station_close_to_the_route_does_not_mention_the_offset(client, db_sessi
 
     body = post(client).json()
 
+    item = body["chargers"][0]
     assert "벗어난" not in body["speech"]
-    assert body["speech"].startswith("약 22.6킬로미터 앞 ON 충전소에")
+    assert body["speech"].startswith(f"{spoken_distance(item['distance_m'])} 앞 ON 충전소에")
 
 
 EFFICIENCY = {"efficiency_km_per_kwh": 5.0, "battery_capacity_wh": 77_400}
@@ -436,12 +441,42 @@ def test_estimates_from_efficiency_when_navigation_values_are_missing(client, st
 
     rate = 100 / (5.0 * 77_400)  # %/m
     for item in body["chargers"]:
+        assert item["distance_m"] == pytest.approx(
+            item["along_m"] * 1.25 + item["offset_m"], abs=1
+        )
         assert item["est_soc"] == pytest.approx(60 - rate * item["distance_m"], abs=0.1)
         assert item["reachable"] is True
-    assert body["need_charge"] is None
-    assert body["assumptions"][-1] == (
-        "충전소 도착 잔량은 최근 전비와 배터리 용량으로 거리에 비례해 추정했어요."
+    assert body["assumptions"][-2:] == [
+        "내비 남은 거리가 없어 도로 거리를 직선거리의 1.25배(도로 계수)로 잡았어요.",
+        "충전소 도착 잔량은 최근 전비와 배터리 용량으로 거리에 비례해 추정했어요.",
+    ]
+    # 목적지 도착 잔량도 전비로 추정한다: 꺾은선 × 1.25
+    arrival = round(60 - rate * body["route_m"] * 1.25, 1)
+    assert body["need_charge"] is False
+    assert body["speech"] == (
+        f"전비로 추정하면 도착할 때 배터리가 {arrival:g}% 남아요. 충전 없이 가셔도 돼요."
     )
+    assert body["actions"] == []
+
+
+def test_efficiency_estimate_can_say_a_charge_is_needed(client, stations):
+    body = post(client, **EFFICIENCY, soc_now=25).json()
+
+    rate = 100 / (5.0 * 77_400)
+    arrival = round(25 - rate * body["route_m"] * 1.25, 1)
+    assert arrival < 15
+    assert body["need_charge"] is True
+    assert body["speech"].startswith(f"전비로 추정하면 도착할 때 배터리가 {arrival:g}%예요. ")
+    assert body["speech"].endswith("경유지로 넣을까요?")
+    assert body["actions"][0]["station_id"] == "A"
+
+
+def test_navigation_arrival_is_not_called_an_efficiency_estimate(client, stations):
+    body = post(client, **EFFICIENCY, arrival_soc=8).json()
+
+    # 남은 거리가 없어 소모율은 전비로 구하지만, 도착 잔량은 내비 값 그대로
+    assert body["need_charge"] is True
+    assert body["speech"].startswith("이대로면 도착할 때 배터리가 8%예요. ")
 
 
 def test_navigation_estimate_wins_over_efficiency(client, stations):
@@ -473,7 +508,8 @@ def test_efficiency_needs_capacity_too(client, stations, partial):
     body = post(client, **partial).json()
 
     assert all(c["est_soc"] is None for c in body["chargers"])
-    assert len(body["assumptions"]) == 2
+    assert body["need_charge"] is None
+    assert not any("추정했어요" in a for a in body["assumptions"])
 
 
 @pytest.mark.parametrize(
