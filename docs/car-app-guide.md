@@ -125,6 +125,29 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 
 시각: 요청 시각은 오프셋이 있으면 그대로, 없으면 KST로 읽는다. 응답 시각은 항상 `+09:00`이다.
 
+### 권한 정리
+
+normal 권한은 설치 때 부여된다. dangerous 권한은 앱 시작 때 한꺼번에 묻지 않고, **그 권한이 필요한
+기능을 운전자가 처음 쓸 때** 요청한다. 거부되면 그 기능만 끄고 나머지는 그대로 쓴다.
+
+| 권한 | 보호 수준 | 쓰는 기능 | 필수 여부 | 거부·없을 때 |
+| --- | --- | --- | --- | --- |
+| `android.permission.INTERNET` | normal | 모든 서버 호출 | 필수 | |
+| `pleos.car.permission.CAR_ENERGY` | normal(Pleos 소스) | 잔량(`soc_now`), 전비 | 필수 | |
+| `android.car.permission.CAR_INFO` | normal | 배터리 용량(`INFO_EV_BATTERY_CAPACITY`) | 필수 | |
+| `android.car.permission.CAR_POWERTRAIN` | normal | 기어(`GEAR_SELECTION`) → 출발 기록 | 선택 | 출발 기록을 보내지 않는다. 출발 시각 학습은 운전자가 말한 시각으로만 돈다 |
+| `pleos.car.permission.NAVI_ROUTE` | normal(Pleos 소스) | 도착 예정 시각·잔량, 남은 거리, 경로 지점, 현재 위치 | 선택 | 경로 위 충전소(`origin`·`destination`이 필요)를 끈다. 귀가 브리핑과 음성은 `arrival_at`·`arrival_soc` 없이 보낸다(서버가 "지금 배터리가 N%예요"로 말한다) |
+| `pleos.car.permission.NAVI_ROUTE_SEARCH` | normal(Pleos 소스) | `navigate`·`add_waypoint` 실행 | 선택 | 충전소 이름과 거리만 말로 알리고 내비 동작은 하지 않는다 |
+| `android.permission.RECORD_AUDIO` | dangerous | 음성 인식([`SpeechRecognizer`](https://developer.android.com/reference/android/speech/SpeechRecognizer)) | 음성 기능에 필수 | 처음 음성 버튼을 누를 때 요청. 거부되면 음성 버튼을 숨긴다(브리핑 TTS는 그대로) |
+| `pleos.car.permission.FUSED_LOCATION` | dangerous(Pleos 소스) | 내비 경로가 없을 때 위치(주변 빈 충전기) | 선택 | 처음 "주변 충전기"를 쓸 때 요청. 거부되면 내비 현재 위치(`NAVI_ROUTE`)만 쓰고, 그것도 없으면 그 기능을 숨긴다 |
+| `android.car.permission.CAR_ENERGY` | dangerous | 실제 충전 상태(`EV_CHARGE_STATE`) → 음성 `context.charging` | 선택 | `charging`을 보내지 않는다 |
+
+- Android `CAR_ENERGY`는 선택 필드 `charging` 하나에만 쓰인다. 첫 버전에서는 **이 권한을 빼고
+  시작하기를 권한다.** 서버와 음성은 `charging` 없이 동작한다.
+- 권한 이름과 보호 수준은 Pleos 소스 주석과 Android 공식 문서([`Car`](https://developer.android.com/reference/android/car/Car))에서
+  가져왔다. Pleos 권한(`pleos.car.permission.*`)과 Android Car 권한(`android.car.permission.*`)은 이름이
+  같아도 다른 권한이다(`CAR_ENERGY`가 그렇다).
+
 ## 3. actions 처리
 
 | `type` | 오는 곳 | 필드 | 앱이 할 일 |
