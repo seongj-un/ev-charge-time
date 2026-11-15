@@ -545,6 +545,23 @@ class CarSavingsSummary(BaseModel):
 # 와트잇 음성 대화 (BE-3) — 계약: docs/car-api.md
 # ---------------------------------------------------------------------------
 
+class LatLng(BaseModel):
+    # 극 근처에서는 경도 1도의 길이가 0에 가까워 평면 근사가 무너진다. 국내 서비스라
+    # 위도 ±85도 밖은 받지 않는다.
+    lat: float = Field(ge=-85, le=85, allow_inf_nan=False)
+    lng: float = Field(ge=-180, le=180, allow_inf_nan=False)
+
+
+class AddWaypointAction(BaseModel):
+    """내비 경유지로 넣을 충전소 (BE-7, 음성 대화의 동작으로도 쓴다)."""
+
+    type: Literal["add_waypoint"] = "add_waypoint"
+    station_id: str
+    name: str
+    lat: float
+    lng: float
+
+
 VOICE_TEXT_MAX = 500
 VOICE_HISTORY_MAX = 6
 
@@ -566,6 +583,10 @@ class CarVoiceContext(BaseModel):
     charger_kw: float = Field(default=7.0, gt=0, le=MAX_CHARGER_KW, allow_inf_nan=False)
     charging: bool | None = None
     place: Literal["home", "public"] | None = None
+    # 내비 목적지와 남은 거리(BE-7 경로 위 충전소 찾기 도구). 목적지가 없으면 그 도구는
+    # 오류 결과를 준다. 남은 거리가 있어야 충전소별 잔량을 추정한다.
+    destination: LatLng | None = None
+    remain_distance_m: float | None = Field(default=None, gt=0, le=3_000_000, allow_inf_nan=False)
 
     @field_validator("arrival_at")
     @classmethod
@@ -630,7 +651,8 @@ class AskAction(BaseModel):
 
 
 CarVoiceAction = Annotated[
-    SetReservationAction | NavigateAction | AskAction, Field(discriminator="type")
+    SetReservationAction | NavigateAction | AskAction | AddWaypointAction,
+    Field(discriminator="type"),
 ]
 
 
@@ -651,13 +673,6 @@ ROUTE_POINTS_MAX = 50
 # 경로 근사(꺾은선)의 최대 길이. 국내 장거리(약 500km)를 넉넉히 덮으면서, 아주 긴
 # 경로로 DB 후보를 한꺼번에 끌어오는 계산을 막는다.
 MAX_ROUTE_M = 1_000_000
-
-
-class LatLng(BaseModel):
-    # 극 근처에서는 경도 1도의 길이가 0에 가까워 평면 근사가 무너진다. 국내 서비스라
-    # 위도 ±85도 밖은 받지 않는다.
-    lat: float = Field(ge=-85, le=85, allow_inf_nan=False)
-    lng: float = Field(ge=-180, le=180, allow_inf_nan=False)
 
 
 class CarRouteChargersRequest(BaseModel):
@@ -708,14 +723,6 @@ class RouteChargerOut(BaseModel):
     # 잔량 추정 (soc_now, arrival_soc, remain_distance_m가 다 있을 때만)
     est_soc: float | None = None
     reachable: bool | None = None
-
-
-class AddWaypointAction(BaseModel):
-    type: Literal["add_waypoint"] = "add_waypoint"
-    station_id: str
-    name: str
-    lat: float
-    lng: float
 
 
 class CarRouteChargersResponse(BaseModel):

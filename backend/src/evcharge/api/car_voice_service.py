@@ -46,18 +46,22 @@ from .car_plan_service import (
     spoken_distance,
     spoken_percent,
 )
+from .car_route_service import find_along_route
 from .car_savings import record_pending, summarize
 from .deps import get_public_prices
 from .months import month_bounds, month_of
 from .routes.chargers import MAX_RADIUS_M, cache_is_empty, charger_summary, find_nearby
 from .schemas import (
+    AddWaypointAction,
     AskAction,
     CarLeakCheckRequest,
     CarPlanRequest,
+    CarRouteChargersRequest,
     CarVoiceContext,
     CarVoiceRequest,
     CarVoiceResponse,
     CarVoiceTurn,
+    LatLng,
     NavigateAction,
     SetReservationAction,
 )
@@ -99,6 +103,8 @@ SYSTEM_PROMPT = """너는 전기차 충전 도우미 '와트잇'이다. 운전 �
 - 주변 충전기, 빈 충전기, 급속 충전기는 find_chargers.
 - 지금 충전하면 비싼지, 돈이 새는지는 leak_check.
 - 아낀 금액, 절약 리포트는 savings_summary.
+- 장거리 이동 중 가는 길에 충전할 곳, 목적지까지 배터리가 버티는지는
+  find_chargers_along_route. 목적지는 서버가 채운다.
 - 배터리 잔량, 배터리 용량, 위치는 서버가 채우므로 운전자에게 묻지 않는다.
 - 앞에서 말한 시각이나 금액을 다시 말할 때도 도구를 다시 불러 그 결과로 말한다.
 
@@ -184,6 +190,31 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "find_chargers_along_route",
+        "description": (
+            "현재 위치에서 목적지까지 가는 길 근처의 지금 비어 있는 충전소를 경로 순서대로 "
+            "최대 5곳 찾고, 도착 잔량이 모자라면 경유지로 넣을 곳을 고른다. 위치, 목적지, "
+            "잔량은 서버가 채운다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "min_kw": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 400,
+                    "description": "최소 출력 kW. 기본 50(급속).",
+                },
+                "corridor_m": {
+                    "type": "integer",
+                    "minimum": 500,
+                    "maximum": 10000,
+                    "description": "경로에서 벗어나도 되는 거리(m). 기본 3000.",
+                },
+            },
+        },
+    },
+    {
         "name": "savings_summary",
         "description": "와트잇 추천을 따라 이 차가 아낀 금액(이번 달, 올해, 전체)을 알려 준다.",
         "input_schema": {
@@ -224,6 +255,11 @@ class _LeakInput(BaseModel):
     depart_time: str | None = Field(default=None, pattern=_HHMM)
 
 
+class _RouteInput(BaseModel):
+    min_kw: float = Field(default=50, gt=0, le=400, allow_inf_nan=False)
+    corridor_m: int = Field(default=3000, ge=500, le=10_000)
+
+
 class _SummaryInput(BaseModel):
     month: str | None = Field(default=None, max_length=7)
 
@@ -235,7 +271,7 @@ class ToolOutcome:
     content: dict[str, Any]
     is_error: bool = False
     speech: str | None = None
-    action: SetReservationAction | NavigateAction | None = None
+    action: SetReservationAction | NavigateAction | AddWaypointAction | None = None
     saving_id: str | None = None
 
 
@@ -272,6 +308,7 @@ class VoiceTools:
             "find_chargers": self._find,
             "leak_check": self._leak,
             "savings_summary": self._summary,
+            "find_chargers_along_route": self._along_route,
         }
         if name not in handler:
             return ToolOutcome({"error": "없는 도구입니다."}, is_error=True)
@@ -464,6 +501,29 @@ class VoiceTools:
             saving_id = self._record(result.cause, result.leak_won, result.energy_kwh, "leak_check")
         return ToolOutcome(content, speech=result.speech, action=action, saving_id=saving_id)
 
+    def _along_route(self, raw: dict[str, Any]) -> ToolOutcome:
+        args = _RouteInput.model_validate(raw)
+        ctx = self.context
+        if ctx.lat is None or ctx.lng is None:
+            return ToolOutcome({"error": "차량 위치 정보가 없습니다."}, is_error=True)
+        if ctx.destination is None:
+            return ToolOutcome({"error": "내비 목적지가 없습니다."}, is_error=True)
+        result = find_along_route(
+            self.session,
+            CarRouteChargersRequest(
+                origin=LatLng(lat=ctx.lat, lng=ctx.lng),
+                destination=ctx.destination,
+                soc_now=ctx.soc_now,
+                arrival_soc=ctx.arrival_soc,
+                remain_distance_m=ctx.remain_distance_m,
+                min_kw=args.min_kw,
+                corridor_m=args.corridor_m,
+            ),
+        )
+        content = result.model_dump(mode="json", exclude={"actions"})
+        action = result.actions[0] if result.actions else None
+        return ToolOutcome(content, speech=result.speech, action=action)
+
     def _summary(self, raw: dict[str, Any]) -> ToolOutcome:
         args = _SummaryInput.model_validate(raw)
         month = args.month or month_of(self.now)
@@ -654,7 +714,8 @@ class NumberSources:
             self.add_number(value)
             if key.endswith("_won") and key not in _MONEY_EXCLUDED_KEYS:
                 self.money.add(int(value))
-            if key.startswith("soc"):
+            # soc_now, soc_target, est_soc, arrival_soc, reserve_soc …
+            if "soc" in key:
                 self.add_percent(value)
         elif isinstance(value, str):
             if key in ("speech", "error"):
@@ -911,7 +972,7 @@ def _respond(
     payload: CarVoiceRequest,
     outcomes: list[ToolOutcome],
 ) -> CarVoiceResponse:
-    actions: dict[str, SetReservationAction | NavigateAction | AskAction] = {}
+    actions: dict[str, SetReservationAction | NavigateAction | AskAction | AddWaypointAction] = {}
     saving_id = None
     tool_speech = None
     for outcome in outcomes:
