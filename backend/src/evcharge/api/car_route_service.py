@@ -153,7 +153,9 @@ def find_along_route(
         coverage_note = f"{coverage_note} {TRUNCATED}" if coverage_note else TRUNCATED
 
     actions = []
-    if recommended is not None:
+    # 충전이 필요 없다고 말할 때는 경유지 버튼을 주지 않는다(말과 화면이 어긋난다).
+    # 충전소 목록은 그대로 준다.
+    if recommended is not None and need_charge is not False:
         actions.append(
             AddWaypointAction(
                 station_id=recommended.station_id,

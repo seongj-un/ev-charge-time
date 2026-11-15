@@ -169,6 +169,7 @@ def test_no_need_to_charge_still_returns_chargers(client, stations):
     assert body["need_charge"] is False
     assert body["speech"] == "도착할 때 배터리가 35% 남아요. 충전 없이 가셔도 돼요."
     assert [c["station_id"] for c in body["chargers"]] == ["A", "B"]
+    assert body["actions"] == []
 
 
 @pytest.mark.parametrize("missing", [{"arrival_soc": 8}, {"remain_distance_m": 60_000}, {}])

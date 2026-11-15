@@ -993,3 +993,15 @@ def test_find_chargers_distances_are_distance_sources(client, fake, db_session):
     assert voice.unsupported_numbers(f"{km:g}킬로미터 거리예요.", sources) == []
     assert voice.unsupported_numbers("3킬로미터 안에 있어요.", sources) == []
     assert voice.unsupported_numbers("50킬로미터 거리예요.", sources) == ["50킬로미터"]
+
+
+def test_along_route_tool_gives_no_waypoint_when_no_charge_is_needed(client, fake, db_session):
+    _station(db_session, "R1", 35.09, name="빛가람 휴게소", kw=100.0)
+    fake.replies = [use("find_chargers_along_route"), say("충전 없이 가셔도 돼요.")]
+
+    body = ask(
+        client, register(client), "버틸까?", context={**ROUTE_CONTEXT, "arrival_soc": 35}
+    ).json()
+
+    assert tool_results(fake, 1)[0]["content"]["need_charge"] is False
+    assert body["actions"] == []
