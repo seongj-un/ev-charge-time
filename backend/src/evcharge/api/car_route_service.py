@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
@@ -18,7 +19,15 @@ from sqlalchemy.orm import Session as DbSession
 from ..domain.route import Route, clean_route, query_boxes
 from ..infra.models import ChargerCache
 from .car_plan_service import spoken_distance, spoken_percent
-from .routes.chargers import cache_is_empty, charger_summary, matching_count, rows_in_boxes
+from .routes.chargers import (
+    STATUS_UNKNOWN_NOTE,
+    FreshnessLimits,
+    cache_is_empty,
+    charger_summary,
+    matching_count,
+    rows_in_boxes,
+    status_age,
+)
 from .schemas import (
     AddWaypointAction,
     AskAction,
@@ -88,7 +97,7 @@ class _Estimate:
 
 
 def find_along_route(
-    session: DbSession, payload: CarRouteChargersRequest
+    session: DbSession, payload: CarRouteChargersRequest, now: datetime
 ) -> CarRouteChargersResponse:
     """경로 근처의 충전대기·``min_kw`` 이상 충전소를 경로 순서대로 최대 5곳.
 
@@ -120,11 +129,26 @@ def find_along_route(
     if not near and cache_is_empty(session):
         raise HTTPException(status_code=503, detail=NOT_COLLECTED)
 
+    limits = FreshnessLimits.current(session)
+    ages = {row.station_id: status_age(row, now, limits) for _, _, row in near}
     matching = [
         (along, offset, row, count)
         for along, offset, row in near
-        if (count := matching_count(row, available_only=True, min_kw=payload.min_kw)) > 0
+        if (
+            count := matching_count(
+                row,
+                available_only=True,
+                min_kw=payload.min_kw,
+                status_known=ages[row.station_id].known,
+            )
+        )
+        > 0
     ]
+    # 상태가 새것이었다면 남았을 충전소: 비었을 때 "없다"와 "확인할 수 없다"를 가른다.
+    hidden_by_age = not matching and any(
+        matching_count(row, available_only=True, min_kw=payload.min_kw, status_known=True) > 0
+        for _, _, row in near
+    )
     matching.sort(key=lambda item: (item[0], item[1]))
     matching = matching[:MAX_RESULTS]
 
@@ -156,6 +180,9 @@ def find_along_route(
                 est_soc=est_soc,
                 reachable=reachable,
                 runs_out=runs_out,
+                synced_at=ages[row.station_id].synced_at,
+                status_age_min=ages[row.station_id].age_min,
+                stale=ages[row.station_id].stale,
             )
         )
 
@@ -177,6 +204,8 @@ def find_along_route(
         assumptions.append(estimate.assumption)
     if not near:
         coverage_note = NO_COVERAGE
+    elif hidden_by_age:
+        coverage_note = STATUS_UNKNOWN_NOTE
     elif not matching:
         coverage_note = (
             f"경로 근처 충전소 {len(near)}곳 중 지금 비어 있는 {payload.min_kw:g}kW 이상 "
@@ -208,13 +237,23 @@ def find_along_route(
         need_charge=need_charge,
         chargers=chargers,
         speech=_speech(
-            payload, arrival, arrival_estimated, arrival_runs_out, need_charge, recommended
+            payload,
+            arrival,
+            arrival_estimated,
+            arrival_runs_out,
+            need_charge,
+            recommended,
+            status_unknown=hidden_by_age,
         ),
         actions=actions,
         assumptions=assumptions,
         coverage_note=coverage_note,
         route_m=round(route_m),
     )
+
+
+def stale_sentence(age_min: int) -> str:
+    return f"충전기 상태는 {age_min}분 전 정보예요."
 
 
 def _recommend(chargers: list[RouteChargerOut]) -> RouteChargerOut | None:
@@ -258,6 +297,8 @@ def _speech(
     arrival_runs_out: bool,
     need_charge: bool | None,
     recommended: RouteChargerOut | None,
+    *,
+    status_unknown: bool = False,
 ) -> str:
     """도착 잔량을 전비로 추정했으면 "전비로 추정하면"으로 시작한다(내비 값이 아님을 밝힌다).
 
@@ -281,6 +322,9 @@ def _speech(
     else:
         lead = f"이대로면 도착할 때 배터리가 {arrival}예요. "
     if recommended is None:
+        if status_unknown:
+            # 오래된 상태 때문에 비었다: "찾지 못했어요"(없다)가 아니라 "확인할 수 없다"다.
+            return f"{lead}{STATUS_UNKNOWN_NOTE}"
         return f"{lead}경로 근처에 지금 비어 있는 {kind}를 찾지 못했어요."
 
     where = f"{spoken_distance(recommended.distance_m)} 앞"
@@ -290,6 +334,9 @@ def _speech(
         f"{lead}{where} {recommended.name or '이름 없는 충전소'}에 "
         f"비어 있는 {kind}가 {recommended.available_count}대 있어요."
     )
+    if recommended.stale:
+        # "비어 있어요"가 몇 분 전 값인지 밝힌다(BE-10). 질문(경유지로 넣을까요?) 앞에 둔다.
+        sentence += f" {stale_sentence(recommended.status_age_min)}"
     if recommended.runs_out:
         return f"{sentence} 이 충전소까지 가기 전에 배터리가 바닥날 수 있어요. {RUNS_OUT_QUESTION}"
     if recommended.reachable is False and recommended.est_soc is not None:

@@ -48,11 +48,19 @@ from .car_plan_service import (
     spoken_distance,
     spoken_percent,
 )
-from .car_route_service import find_along_route
+from .car_route_service import find_along_route, stale_sentence
 from .car_savings import record_pending, summarize
 from .deps import get_public_prices
 from .months import month_bounds, month_of
-from .routes.chargers import MAX_RADIUS_M, cache_is_empty, charger_summary, find_nearby
+from .routes.chargers import (
+    MAX_RADIUS_M,
+    STATUS_UNKNOWN_NOTE,
+    FreshnessLimits,
+    cache_is_empty,
+    charger_summary,
+    search_nearby,
+    status_age,
+)
 from .schemas import (
     AddWaypointAction,
     AskAction,
@@ -411,20 +419,25 @@ class VoiceTools:
         ctx = self.context
         if ctx.lat is None or ctx.lng is None:
             return ToolOutcome({"error": "차량 위치 정보가 없습니다."}, is_error=True)
-        found = find_nearby(
-            self.session,
-            lat=ctx.lat,
-            lng=ctx.lng,
-            radius_m=args.radius_m,
-            available_only=args.available_only,
-            min_kw=args.min_kw,
-        )[:MAX_STATIONS]
+        limits = FreshnessLimits.current(self.session)
+        query = {
+            "lat": ctx.lat,
+            "lng": ctx.lng,
+            "radius_m": args.radius_m,
+            "available_only": args.available_only,
+            "min_kw": args.min_kw,
+            "now": self.now,
+            "limits": limits,
+        }
+        result = search_nearby(self.session, **query)
+        found = result.found[:MAX_STATIONS]
         if not found and cache_is_empty(self.session):
             return ToolOutcome({"error": "충전소 정보를 아직 수집하지 않았습니다."}, is_error=True)
 
         stations = []
         for distance, row in found:
             available, top_kw = charger_summary(row)
+            age = status_age(row, self.now, limits)
             stations.append(
                 {
                     "station_id": row.station_id,
@@ -433,6 +446,10 @@ class VoiceTools:
                     "distance_km": round(distance / 1000, 1),
                     "available_chargers": available,
                     "max_kw": top_kw,
+                    # 상태 신선도 (BE-10). 시각은 오프셋 없이 KST로 준다.
+                    "synced_at": f"{age.synced_at:%Y-%m-%d %H:%M}",
+                    "status_age_min": age.age_min,
+                    "stale": age.stale,
                 }
             )
         content: dict[str, Any] = {
@@ -444,6 +461,9 @@ class VoiceTools:
         }
         if not found:
             speech = f"{spoken_distance(args.radius_m)} 안에 조건에 맞는 충전소가 없어요."
+            if result.empty_because_of_age:
+                # 오래된 상태 때문에 비었다: "없다"가 아니라 "확인할 수 없다"다.
+                speech = STATUS_UNKNOWN_NOTE
             content["speech"] = speech
             return ToolOutcome(content, speech=speech)
 
@@ -454,6 +474,9 @@ class VoiceTools:
             f"가장 가까운 {kind}충전소는 {first['name'] or '이름 없는 충전소'}, "
             f"{spoken_distance(distance)} 거리예요."
         )
+        if args.available_only and first["stale"]:
+            # "빈 충전기가 있는"이 몇 분 전 값인지 밝힌다(BE-10).
+            speech += f" {stale_sentence(first['status_age_min'])}"
         content["speech"] = speech
         action = NavigateAction(
             # 앱 화면용이라 원래 이름을 준다. Claude에는 잘린 이름만 간다.
@@ -529,8 +552,11 @@ class VoiceTools:
             min_kw=args.min_kw,
             corridor_m=args.corridor_m,
         )
-        result = find_along_route(self.session, request)
+        result = find_along_route(self.session, request, self.now)
         content = result.model_dump(mode="json", exclude={"actions"})
+        for charger, found in zip(content["chargers"], result.chargers, strict=True):
+            # 시각은 오프셋 없이 KST로 준다(+09:00의 숫자가 시각 근거에 섞이지 않게).
+            charger["synced_at"] = f"{found.synced_at.astimezone(KST):%Y-%m-%d %H:%M}"
         # "기준 잔량 15% 아래예요", "50킬로와트 이상"도 근거가 있게 기준을 함께 준다.
         content["reserve_soc"] = request.reserve_soc
         content["min_kw"] = request.min_kw
@@ -616,6 +642,8 @@ _DISTANCE_RE = re.compile(
 )
 # 출력. "킬로와트시"·"kWh"(에너지)는 출력이 아니라 그 밖의 숫자로 본다.
 _POWER_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(?:킬로와트(?!시)|kW(?!h))")
+# "35분 전": 충전기 상태가 몇 분 전 정보인지(BE-10). "7시 30분"은 시각 규칙이 먼저 가져간다.
+_AGO_RE = re.compile(r"(\d+)\s*분\s*전")
 _PERIOD_HOURS = {
     "새벽": set(range(7)),
     "오전": set(range(12)),
@@ -738,6 +766,8 @@ class NumberSources:
     # 미터. 반올림한 모양까지 넣어 둔다.
     distance: set[int] = field(default_factory=set)
     power: set[str] = field(default_factory=set)
+    # "N분 전"의 N. ``*_min`` 필드(status_age_min)와 서버 문장에서만 온다.
+    minutes_ago: set[int] = field(default_factory=set)
     plain: set[str] = field(default_factory=set)
 
     def add_distance(self, meters: float) -> None:
@@ -788,6 +818,8 @@ class NumberSources:
             meters = _distance_value(match)
             if meters is not None:
                 self.add_distance(meters)
+        for match in _AGO_RE.finditer(text):
+            self.minutes_ago.add(int(match.group(1)))
         for match in _POWER_RE.finditer(text):
             normalized = _normalize(match.group(1))
             if normalized is not None:
@@ -814,6 +846,8 @@ class NumberSources:
                 self.add_distance(value)
             elif key.endswith("_km"):
                 self.add_distance(value * 1000)
+            if key.endswith("_min") and isinstance(value, int):
+                self.minutes_ago.add(value)
             if key.endswith("_kw"):
                 self.add_power(value)
             if key.endswith("_won") and key not in _MONEY_EXCLUDED_KEYS:
@@ -905,6 +939,10 @@ def unsupported_numbers(speech: str, sources: NumberSources) -> list[str]:
         rest = _mask(rest, *match.span())
     for match in _PERCENT_RE.finditer(rest):
         if _normalize(match.group(1)) not in sources.percent:
+            problems.append(match.group(0))
+        rest = _mask(rest, *match.span())
+    for match in _AGO_RE.finditer(rest):
+        if int(match.group(1)) not in sources.minutes_ago:
             problems.append(match.group(0))
         rest = _mask(rest, *match.span())
     for match in _POWER_RE.finditer(rest):

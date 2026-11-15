@@ -219,12 +219,21 @@ def test_arrival_answer_plans_from_the_arrival_soc(client, fake):
     assert "집으로 가는 중" in fake.calls[0]["system"]
 
 
-def _station(db_session, station_id, lat, *, name, status="2", kw=7.0):
+def _station(db_session, station_id, lat, *, name, status="2", kw=7.0, updated_at=None):
     data = {
         "name": name,
         "chargers": [{"charger_id": "01", "type": "02", "capacity_kw": kw, "status": status}],
     }
-    db_session.add(ChargerCache(station_id=station_id, data=data, lat=lat, lng=HERE[1]))
+    db_session.add(
+        ChargerCache(
+            station_id=station_id,
+            data=data,
+            lat=lat,
+            lng=HERE[1],
+            # 시계를 MONDAY_EVENING으로 고정하므로 상태도 그때 수집한 것으로 둔다(BE-10).
+            updated_at=updated_at or MONDAY_EVENING,
+        )
+    )
     db_session.commit()
 
 
@@ -1281,3 +1290,109 @@ def test_times_the_driver_said_or_agreed_to_are_recorded(
     ask(client, headers, text, history=history)
 
     assert stated_rows(db_session) == [recorded]
+
+
+# ── 충전기 상태 신선도 (BE-10) ─────────────────────────────────────────────
+
+
+def _aged_station(db_session, station_id, lat, age_min, **kwargs):
+    _station(
+        db_session,
+        station_id,
+        lat,
+        updated_at=MONDAY_EVENING - timedelta(minutes=age_min),
+        **kwargs,
+    )
+
+
+def test_find_chargers_reports_status_age_and_says_when_it_is_stale(client, fake, db_session):
+    _aged_station(db_session, "S1", HERE[0] + 0.001, 35, name="빛가람 1 충전소")
+    fake.replies = [
+        use("find_chargers", {"available_only": True}),
+        say("빛가람 1 충전소에 빈 충전기가 있어요. 충전기 상태는 35분 전 정보예요."),
+    ]
+
+    body = ask(client, register(client), "근처 빈 충전기 있어?").json()
+
+    station = tool_results(fake, 1)[0]["content"]["stations"][0]
+    assert (station["synced_at"], station["status_age_min"], station["stale"]) == (
+        "2026-11-16 17:25",
+        35,
+        True,
+    )
+    assert tool_results(fake, 1)[0]["content"]["speech"].endswith(
+        "거리예요. 충전기 상태는 35분 전 정보예요."
+    )
+    assert body["fallback"] is False
+    assert body["speech"].endswith("35분 전 정보예요.")
+
+
+@pytest.mark.parametrize(
+    ("age", "said", "fallback"),
+    [
+        (15, 15, False),
+        (35, 15, True),
+        # 1은 빈 충전기 수라 일반 숫자로는 근거가 있다. "분 전"은 상태 나이와만 비교한다.
+        (35, 1, True),
+    ],
+)
+def test_minutes_ago_must_come_from_the_status_age(client, fake, db_session, age, said, fallback):
+    _aged_station(db_session, "S1", HERE[0] + 0.001, age, name="빛가람 1 충전소")
+    fake.replies = [
+        use("find_chargers", {"available_only": True}),
+        say(f"빛가람 1 충전소가 비어 있어요. 상태는 {said}분 전 정보예요."),
+    ]
+
+    body = ask(client, register(client), "근처 빈 충전기 있어?").json()
+
+    assert body["fallback"] is fallback
+
+
+@pytest.mark.parametrize(("age", "available_only"), [(20, True), (35, False)])
+def test_no_stale_sentence_when_fresh_or_status_does_not_matter(
+    client, fake, db_session, age, available_only
+):
+    _aged_station(db_session, "S1", HERE[0] + 0.001, age, name="빛가람 1 충전소")
+    fake.replies = [
+        use("find_chargers", {"available_only": available_only}),
+        say("빛가람 1 충전소가 가까워요."),
+    ]
+
+    ask(client, register(client), "근처 충전소 있어?")
+
+    assert "분 전 정보" not in tool_results(fake, 1)[0]["content"]["speech"]
+
+
+def test_find_chargers_says_old_status_cannot_be_trusted(client, fake, db_session, recorded_sql):
+    _aged_station(db_session, "S1", HERE[0] + 0.001, 61, name="빛가람 1 충전소")
+    fake.replies = [use("find_chargers", {"available_only": True}), say("확인할 수 없어요.")]
+    headers = register(client)
+
+    with recorded_sql() as statements:
+        ask(client, headers, "근처 빈 충전기 있어?")
+
+    content = tool_results(fake, 1)[0]["content"]
+    assert content["stations"] == []
+    assert content["speech"] == "충전기 상태 정보가 오래돼 비어 있는지 확인할 수 없어요."
+    # 반경 검색은 한 번(빈 결과의 이유를 알려고 캐시를 다시 읽지 않는다)
+    assert len([s for s in statements if "charger_cache.lat BETWEEN" in s]) == 1
+
+
+def test_along_route_tool_carries_status_age_without_an_offset(client, fake, db_session):
+    _aged_station(db_session, "R1", 35.09, 25, name="빛가람 휴게소", kw=100.0)
+    fake.replies = [
+        use("find_chargers_along_route", {"min_kw": 50}),
+        say("빛가람 휴게소가 비어 있어요. 충전기 상태는 25분 전 정보예요."),
+    ]
+
+    body = ask(client, register(client), "목적지까지 버틸까?", context=ROUTE_CONTEXT).json()
+
+    content = tool_results(fake, 1)[0]["content"]
+    charger = content["chargers"][0]
+    assert (charger["synced_at"], charger["status_age_min"], charger["stale"]) == (
+        "2026-11-16 17:35",
+        25,
+        True,
+    )
+    assert "충전기 상태는 25분 전 정보예요. 경유지로 넣을까요?" in content["speech"]
+    assert body["fallback"] is False

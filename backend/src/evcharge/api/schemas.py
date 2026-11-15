@@ -298,6 +298,19 @@ class StationOut(StationBase):
     operator: str
     available_hours: str
     chargers: list[ChargerOut] = Field(default_factory=list)
+    # 상태 신선도 (BE-10): 이 충전소 상태를 수집한 시각, 그로부터 지난 분(내림), 20분 초과 여부
+    synced_at: KstDatetime
+    status_age_min: int
+    stale: bool
+
+
+class ChargerFreshnessOut(BaseModel):
+    """``GET /api/chargers/freshness``. 운영 확인용 집계(수집된 충전소, 좌표 있는 행)."""
+
+    latest_synced_at: KstDatetime | None
+    oldest_synced_at: KstDatetime | None
+    station_count: int
+    stale_count: int
 
 
 class FavoriteStationOut(StationBase):
@@ -742,6 +755,10 @@ class RouteChargerOut(BaseModel):
     # 0으로 자르기 전 추정 잔량이 0 이하: 이 충전소까지 가기 전에 배터리가 바닥날 수 있다.
     # 추정하지 않았으면 null
     runs_out: bool | None = None
+    # 상태 신선도 (BE-10). GET /api/chargers와 같은 값. 60분 넘은 상태는 여기 오지 않는다.
+    synced_at: KstDatetime
+    status_age_min: int
+    stale: bool
 
 
 class CarRouteChargersResponse(BaseModel):

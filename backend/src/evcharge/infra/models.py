@@ -254,6 +254,43 @@ class ChargerCache(Base):
     __table_args__ = (Index("ix_charger_cache_lat_lng", "lat", "lng"),)
 
 
+class ChargerSyncState(Base):
+    """충전기 상태를 "모든 충전소에 대해 여기까지 확인했다"는 시각 (BE-10).
+
+    상태 수집(``--states --period 10``)은 최근 10분 안에 상태가 **바뀐** 충전소만 고친다.
+    상태가 그대로인 충전소는 ``charger_cache.updated_at``이 하루 한 번 전체 수집 시각에
+    머물러, 그 값만 보면 한 시간 넘게 비어 있는 충전기가 "상태 미확인"이 된다. 수집 창이
+    끊기지 않고 이어지는 동안은 바뀌지 않은 충전소도 그 수집 시각까지 확인된 것이다.
+    충전소별 상태 시각은 ``max(updated_at, confirmed_at)``이다.
+
+    행은 둘이다. ``kind='status'``는 위의 확인 시각, ``kind='stations'``는 마지막으로 성공한
+    전체 수집의 시작 시각이다. ``updated_at``이 그보다 이른 행은 그 전체 수집 응답에 없던
+    충전소(폐쇄, ID 변경, 수집 지역 제외)라서 확인 시각을 적용하지 않고 ``updated_at``만 쓴다.
+    """
+
+    __tablename__ = "charger_sync_state"
+
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ChargerFullSyncRun(Base):
+    """전체 수집을 시작한 기록 (BE-10). 하루 전체 수집 횟수 한도를 세는 데만 쓴다.
+
+    공공 API를 부르기 **전에** 따로 커밋한다. 실패한 수집도 호출을 썼으므로 센다.
+    이틀 넘은 행은 새 기록을 남길 때 지운다.
+    """
+
+    __tablename__ = "charger_full_sync_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # 상태 수집이 끊김을 보고 돌린 수집이면 true, 정기 수집이면 false
+    recovery: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
 # ── 와트잇 차량 앱 (BE-5 절약 리포트) ─────────────────────────────────────
 # 차량 앱은 로그인이 없다. 기기마다 토큰 하나를 발급하고 해시만 저장한다
 # (세션 토큰과 같은 방식, infra/security.py). 개인정보는 담지 않는다.

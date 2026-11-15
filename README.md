@@ -31,7 +31,8 @@ uv run uvicorn evcharge.main:app --reload
 | `GET /health` | F-08 요금 확인 상태 | 구현 |
 | `POST /api/recommend` | F-01·F-03·F-04 추천·절감액 | 구현 |
 | `GET /api/timeline` | F-05·F-06 하루 단가·시뮬레이션 | 구현 |
-| `GET /api/chargers` | F-07 주변 충전소 | 구현 |
+| `GET /api/chargers` | F-07 주변 충전소 (상태 신선도 `synced_at`·`status_age_min`·`stale`) | 구현 |
+| `GET /api/chargers/freshness` | 충전기 상태 수집 시각 범위·stale 수 (운영 확인용) | 구현 |
 | `/api/auth/*` | F-11 회원가입·로그인 | 구현 |
 | `/api/me/*` | F-12·F-13·F-14 사용자 데이터 | 구현 |
 | `GET /api/solar-forecast` | F-09 태양광 예측 | 구현 (키 필요) |
@@ -133,6 +134,14 @@ uv run python -m evcharge.sync --states --period 5   # 최근 5분 변경분만
   상태는 5분마다(최근 10분 변경분), 전체는 하루 한 번이라 하루 약 292건으로 한도
   안이다. 이게 없으면 상태가 마지막으로 손으로 받은 시각에 멈춘다 — 실제로 6일간
   멈춰 있었다(2026-09-22 → 09-28).
+- 상태 신선도: 상태 수집은 바뀐 충전소 행만 고치므로, 수집이 끊기지 않고 이어진 시각을
+  `charger_sync_state`에 남기고 충전소별 상태 시각을 `max(updated_at, 그 시각)`으로 본다
+  (마지막 전체 수집에 없던 충전소는 `updated_at`만). 60분 넘은 상태는 "빈 충전기"로 세지 않는다.
+  상태 수집이 끊겼거나 그 시각이 아직 없으면(배포 직후) 상태 수집이 그 자리에서 전체 수집을
+  돌려 되살린다. 하루 전체 수집은 정기 수집을 포함해 `CHARGER_FULL_SYNC_DAILY_MAX`(기본 4)회
+  까지라, 최악에도 하루 약 304건이다. 지금 상태는 `GET /api/chargers/freshness`로, 상태 반영
+  지연은 수집 로그의 "상태 반영 지연" 줄로 확인한다. 자세한 규칙은
+  [`docs/car-api.md`](docs/car-api.md)의 "충전기 상태 신선도".
 - 캐시가 비어 있으면 `GET /api/chargers`는 빈 목록이 아니라 **503**으로 답한다
   — "주변에 충전소가 없다"와 "아직 수집하지 않았다"는 다른 말이다.
 - 충전기 상태(`stat`)와 종류(`chgerType`)는 **원문 코드 그대로** 내보낸다.

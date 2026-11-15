@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import pytest
+from sqlalchemy import update
 
 from evcharge.api import car_route_service
 from evcharge.api.car_plan_service import spoken_distance
+from evcharge.api.routes import car
+from evcharge.domain.pricing import KST
 from evcharge.infra.models import ChargerCache
 
 URL = "/api/car/chargers/along-route"
@@ -592,3 +597,82 @@ def test_runs_out_is_null_without_an_estimate_and_false_when_fine(client, statio
 
     assert all(c["runs_out"] is None for c in without["chargers"])
     assert all(c["runs_out"] is False for c in navi["chargers"])
+
+
+# ── 상태 신선도 (BE-10) ───────────────────────────────────────────────────
+
+FRESH_NOW = datetime(2026, 11, 16, 18, 0, tzinfo=KST)
+NEED = {"arrival_soc": 8, "remain_distance_m": 60_000}
+
+
+def aged(db_session, station_id, lat, age_min, *, chargers=None):
+    station(db_session, station_id, lat, chargers=chargers)
+    db_session.execute(
+        update(ChargerCache)
+        .where(ChargerCache.station_id == station_id)
+        .values(updated_at=FRESH_NOW - timedelta(minutes=age_min))
+    )
+
+
+@pytest.fixture
+def fixed_now(monkeypatch):
+    monkeypatch.setattr(car, "now_kst", lambda: FRESH_NOW)
+
+
+def test_route_chargers_carry_status_age(client, db_session, fixed_now):
+    aged(db_session, "A", 35.09, 15)
+
+    found = post(client).json()["chargers"][0]
+
+    assert found["synced_at"] == "2026-11-16T17:45:00+09:00"
+    assert (found["status_age_min"], found["stale"]) == (15, False)
+
+
+@pytest.mark.parametrize(("age", "suffix"), [(20, False), (21, True), (60, True)])
+def test_stale_recommendation_says_how_old_the_status_is(
+    client, db_session, fixed_now, age, suffix
+):
+    aged(db_session, "A", 35.09, age)
+
+    speech = post(client, **NEED).json()["speech"]
+
+    sentence = f"충전기 상태는 {age}분 전 정보예요."
+    assert (sentence in speech) is suffix
+    assert speech.endswith("경유지로 넣을까요?")
+    if suffix:
+        assert f"대 있어요. {sentence} 경유지로 넣을까요?" in speech
+
+
+def test_status_older_than_an_hour_is_not_recommended(client, db_session, fixed_now):
+    aged(db_session, "OLD", 35.05, 61)
+    aged(db_session, "NEW", 35.2, 5)
+
+    body = post(client, **NEED).json()
+
+    assert [c["station_id"] for c in body["chargers"]] == ["NEW"]
+    assert body["coverage_note"] is None
+
+
+def test_empty_only_because_of_old_status_says_so(client, db_session, fixed_now):
+    from evcharge.api.routes.chargers import STATUS_UNKNOWN_NOTE
+
+    aged(db_session, "OLD", 35.05, 61)
+    aged(db_session, "BUSY", 35.06, 0, chargers=[charger(status="3")])
+
+    body = post(client, **NEED).json()
+
+    assert body["chargers"] == []
+    assert body["coverage_note"] == STATUS_UNKNOWN_NOTE
+    assert body["speech"] == f"이대로면 도착할 때 배터리가 8%예요. {STATUS_UNKNOWN_NOTE}"
+    assert body["actions"] == []
+
+
+def test_empty_for_other_reasons_keeps_the_old_note(client, db_session, fixed_now):
+    aged(db_session, "BUSY", 35.06, 90, chargers=[charger(status="3")])
+
+    body = post(client, **NEED).json()
+
+    assert body["coverage_note"] == (
+        "경로 근처 충전소 1곳 중 지금 비어 있는 50kW 이상 충전기가 없어요."
+    )
+    assert body["speech"].endswith("경로 근처에 지금 비어 있는 급속충전기를 찾지 못했어요.")

@@ -169,7 +169,7 @@ def chargers_along_route(
 
     경로는 origin → route_points → destination 꺾은선 근사다(도로 경로가 아님).
     """
-    return find_along_route(session, payload)
+    return find_along_route(session, payload, now_kst())
 
 
 @router.post("/devices", response_model=CarDeviceOut, status_code=201)
