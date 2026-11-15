@@ -359,7 +359,7 @@ IP가 다시 발급할 때 재사용되어 따로 정리하지 않는다.
 | `route_points` | `{lat, lng}[]` | | 내비 경유지(남은 것, 순서대로), 최대 50개. 없으면 현재 위치에서 목적지까지 직선 근사 |
 | `efficiency_km_per_kwh` | number | | Vehicle SDK 충전 후 평균 전비(km/kWh), 0.5 이상 20 이하. 도착 예상 잔량이나 남은 거리가 없을 때 경로 위 충전소 잔량 추정에 쓴다 |
 | `charger_kw` | number | | 충전기 출력, 기본 7.0 |
-| `charging` | bool | | 지금 충전 중인지 (Claude에게 상황으로만 알린다) |
+| `charging` | bool | | 지금 실제로 충전 중인지 (Claude에게 상황으로만 알린다). 충전 스위치 설정값이 아니라 실제 충전 상태(표준 Car API `EV_CHARGE_STATE`)를 넣고, 모르면 보내지 않는다. [car-app-guide.md](car-app-guide.md) 2절 |
 | `place` | string | | `"home"`·`"public"`. `leak_check`가 쓴다(없으면 home) |
 
 ### 응답 200

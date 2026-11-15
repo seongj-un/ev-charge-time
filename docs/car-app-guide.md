@@ -46,7 +46,8 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
   더해진다.
 - 확정 시점: 시동이 꺼진 동안 앱은 돌지 않으므로 예약 충전이 시작되는 순간은 볼 수 없다. 주차할 때
   잔량을 저장해 두고, 다음 시동 ON에 잔량이 그보다 올라 있으면(예약대로 충전됐다고 보고) 확정한다.
-  예약 시각까지 시동이 켜져 있으면 `getEvChargeSwitchState`(충전 중 여부)로 바로 확인해도 된다.
+  확정은 이 잔량 비교로만 한다. `getEvChargeSwitchState`로 확정하지 않는다(2절: 충전 스위치 설정값일
+  수 있어 예약 충전을 기다리는 동안에도 true일 수 있다).
   만든 지 72시간이 지난 기록은 확정할 수 없다(410).
 
 출발 기록 규칙
@@ -75,7 +76,7 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 | `EvBattery.getEvBatteryStateOfCharge` / `registerEvBatteryStateOfCharge` | % | `soc_now` | 권한 `pleos.car.permission.CAR_ENERGY` |
 | 표준 Car API `INFO_EV_BATTERY_CAPACITY` (아래) | Wh | `battery_capacity_wh` | Pleos `EvBattery.getEvBatteryCapacity`는 `@hide`·`@Deprecated`("use the Google INFO_EV_BATTERY_CAPACITY property")라 쓰지 않는다 |
 | `EvBattery.getSinceChargeEvEfficiency` / `registerSinceChargeEvEfficiency` | km/kWh | `efficiency_km_per_kwh` | 0.5~20만 받는다. 충전 직후 등 값이 이상하면 보내지 않는다(선택 필드) |
-| `EvBattery.getEvChargeSwitchState` | Boolean | voice `context.charging`, 확정 시점 판단 | 소스 설명은 "current EV battery charging state" |
+| 표준 Car API `EV_CHARGE_STATE` (아래) | `EvChargeState` | voice `context.charging` = `STATE_CHARGING`(1)일 때만 true | Pleos `EvBattery.getEvChargeSwitchState`는 소스 주석이 "current EV battery charging state"지만 구현이 `setEvChargeSwitch`와 같은 `EV_CHARGE_SWITCH` 속성을 읽는다. Android의 같은 이름 속성은 "The setting that the user wants"(설정값)라, 실제 충전 상태인지 **실차 확인 필요**. 확인 전에는 `charging`에 쓰지 않는다. 모르면 `charging`을 보내지 않는다(선택 필드). 확정 판단에는 쓰지 않는다 |
 | `RouteStateInfo.remainDestinationChargingInt` (`getRouteStateInfo` → `onRouteStateInfo`) | Int, 소스에 단위 없음("battery or fuel level") | `arrival_soc` | **% 인지 확인 필요.** 아래 `estimatedSocAtDest`가 %로 명시돼 있어 그쪽을 먼저 쓴다 |
 | `TripInfo.estimatedSocAtDest` (`requestTrip` → `onTripInfo`) | % | `arrival_soc` | 경로 주행 뒤 예상 잔량 |
 | `DestinationInfo.remainDistance` (`getDestinationInfo` → `onDestinationInfo`) | m | `remain_distance_m` | 소스 주석이 "starting point to the waypoint"로 적혀 있다(경유지 주석과 같은 문장). 목적지까지 남은 거리인지 실제 값으로 확인 필요 |
@@ -89,15 +90,18 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 ### 표준 Car API로 읽는 값 (`CarPropertyManager`)
 
 `Car.createCar(context)`로 연결한 뒤 `car.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager`를
-쓴다. 두 속성 모두 전역 속성이라 area ID는 `0`이다. 읽기 메서드는 몇 초 걸릴 수 있어 메인 스레드가
+쓴다. 아래 속성은 모두 전역 속성이라 area ID는 `0`이다(공식 문서: "global area ID (0)"). 읽기 메서드는 몇 초 걸릴 수 있어 메인 스레드가
 아닌 곳에서 부른다(공식 문서).
 
 | 속성 (`VehiclePropertyIds`) | 타입·단위 | 변경 방식 | 권한 | 쓰는 곳 |
 | --- | --- | --- | --- | --- |
 | [`INFO_EV_BATTERY_CAPACITY`](https://developer.android.com/reference/android/car/VehiclePropertyIds#INFO_EV_BATTERY_CAPACITY) | Float, Wh(`VehicleUnit.WATT_HOUR`), 새 차 기준 공칭 사용 가능 용량 | STATIC(한 번 읽으면 됨) | [`android.car.permission.CAR_INFO`](https://developer.android.com/reference/android/car/Car#PERMISSION_CAR_INFO) (normal) | `getFloatProperty(INFO_EV_BATTERY_CAPACITY, 0)`를 반올림한 정수 → `battery_capacity_wh` |
+| [`EV_CHARGE_STATE`](https://developer.android.com/reference/android/car/VehiclePropertyIds#EV_CHARGE_STATE) | Integer, [`EvChargeState`](https://developer.android.com/reference/android/car/hardware/property/EvChargeState) 값(`STATE_CHARGING` = 1, `STATE_FULLY_CHARGED` = 2, `STATE_NOT_CHARGING` = 3 등) | ONCHANGE | [`android.car.permission.CAR_ENERGY`](https://developer.android.com/reference/android/car/Car#PERMISSION_ENERGY) (**dangerous**, 런타임 요청 필요) | 음성 요청 때 `getIntProperty(EV_CHARGE_STATE, 0)`. `STATE_CHARGING`이면 `context.charging = true`, `STATE_NOT_CHARGING`·`STATE_FULLY_CHARGED`면 false, 그 밖(`STATE_UNKNOWN`, `STATE_ERROR`)이면 보내지 않는다 |
 | [`GEAR_SELECTION`](https://developer.android.com/reference/android/car/VehiclePropertyIds#GEAR_SELECTION) | Integer, [`VehicleGear`](https://developer.android.com/reference/android/car/VehicleGear) 값(`GEAR_PARK` = 4) | ONCHANGE | [`android.car.permission.CAR_POWERTRAIN`](https://developer.android.com/reference/android/car/Car#PERMISSION_POWERTRAIN) (normal) | [`subscribePropertyEvents`](https://developer.android.com/reference/android/car/hardware/property/CarPropertyManager)로 구독. 직전 값이 `GEAR_PARK`이고 새 값이 다른 기어이며 **그날 아직 보내지 않았을 때만** 그 시각을 `departed_at`으로 `POST /api/car/departures`(1절 "출발 기록 규칙") |
 
 - 단위·권한·상수 값은 위 링크의 Android 공식 문서에서 확인했다(2026-11-15).
+- `EV_CHARGE_STATE`는 목표 충전량이 100이 아니면 목표에 닿았을 때 `STATE_FULLY_CHARGED`를 돌려준다(공식
+  문서). 서버에 보낼 때는 "충전 중 아님"으로 본다.
 - `INFO_EV_BATTERY_CAPACITY`는 새 차 기준 공칭 용량이다(공식 문서). 노화와 온도를 반영한 실시간
   용량은 `EV_CURRENT_BATTERY_CAPACITY`로 따로 있다. 이 가이드는 `INFO_EV_BATTERY_CAPACITY`를 쓴다.
 - 공식 문서는 `registerCallback(callback, propertyId, updateRateHz)`를 deprecated로 두고
@@ -190,5 +194,8 @@ Android Automotive 표준 Car API(`CarPropertyManager`)로 읽는다(2절 아래
 - `remainDestinationChargingInt`의 단위(%인지), `DestinationInfo.remainDistance`·`remainTime`이
   목적지까지 남은 값인지.
 - 밤사이 충전 확인: 주차 때 잔량과 다음 시동 때 잔량 비교로 충분한지.
+- Pleos `getEvChargeSwitchState`가 충전 스위치 설정값인지 실제 충전 상태인지(`PleosPropertyIds.EV_CHARGE_SWITCH`의
+  값이 소스에 없어 Android `EV_CHARGE_SWITCH`와 같은지 확인하지 못했다). 그리고 `EV_CHARGE_STATE`가 이
+  차에서 지원되는지.
 - `requestRoute`·`addWaypoint`에 `address`·`poiSubId`를 빈 문자열로 넣어도 되는지(`address`는 BE-13에서
   동작에 추가 예정, `poiSubId`는 남는다).
