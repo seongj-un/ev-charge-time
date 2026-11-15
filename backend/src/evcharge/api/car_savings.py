@@ -45,6 +45,7 @@ def record_pending(
     energy_kwh: float,
     source: str,
     reuse_within: timedelta | None = None,
+    single: bool = False,
 ) -> str:
     """대기 기록 하나를 만들고, 그 기기의 대기 기록을 최근 20개로 줄인 뒤 커밋한다.
 
@@ -54,10 +55,16 @@ def record_pending(
     ``reuse_within``: 같은 기기·출처·원인·금액·전력량의 대기 기록이 이 시간 안에 있으면
     새로 만들지 않고 그 id를 돌려준다(시동 ON 브리핑처럼 짧은 간격으로 되풀이되는 호출).
     기기 행을 먼저 잠가 동시 호출이 둘 다 "없음"을 읽지 않게 한다.
+
+    ``single``: 이 출처의 대기 기록은 기기당 하나만 둔다(시동 ON 브리핑). 새로 만들 때 같은
+    출처의 이전 대기 기록을 지우고, "최근 20개" 정리는 하지 않는다. 그래야 잔량이 조금씩
+    달라지는 브리핑이 되풀이돼도 ``car/plan``·``car/leak-check``의 대기 기록을 밀어내지
+    않는다(대기 기록은 다른 출처 최대 20개 + 이 출처 1개).
     """
     savings_won = min(max(savings_won, 0), MAX_CAR_SAVING_WON)
-    if reuse_within is not None:
+    if reuse_within is not None or single:
         session.execute(select(CarDevice.id).where(CarDevice.id == device.id).with_for_update())
+    if reuse_within is not None:
         existing = session.scalar(
             select(CarSaving.id)
             .where(
@@ -75,6 +82,14 @@ def record_pending(
         if existing is not None:
             session.commit()
             return existing
+    if single:
+        session.execute(
+            delete(CarSaving).where(
+                CarSaving.device_id == device.id,
+                CarSaving.confirmed_at.is_(None),
+                CarSaving.source == source,
+            )
+        )
     saving = CarSaving(
         id=str(uuid.uuid4()),
         device_id=device.id,
@@ -86,6 +101,9 @@ def record_pending(
     )
     session.add(saving)
     session.flush()
+    if single:
+        session.commit()
+        return saving.id
 
     keep = (
         select(CarSaving.id)
@@ -112,6 +130,7 @@ def try_record(
     energy_kwh: float,
     source: str,
     reuse_within: timedelta | None = None,
+    single: bool = False,
 ) -> str | None:
     """계산 엔드포인트용. 토큰이 없거나 틀리거나 DB가 실패하면 None (계산은 그대로).
 
@@ -135,6 +154,7 @@ def try_record(
                     energy_kwh=energy_kwh,
                     source=source,
                     reuse_within=reuse_within,
+                    single=single,
                 )
             except SQLAlchemyError:
                 session.rollback()

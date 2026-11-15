@@ -103,7 +103,8 @@ def car_briefing(payload: CarBriefingRequest, request: Request) -> CarBriefingRe
     """시동 ON 한 줄 브리핑(최대 3문장): 지금 요금, 오늘 밤 충전, 이번 달 절약.
 
     기기 토큰은 선택이다. 없거나 틀리면 개인화 값(평소 출발 시각, 절약 합계)만 빠지고 계산은
-    같다. 아끼는 돈이 있으면 대기 절감 기록을 만들고, 10분 안 같은 계획이면 그 기록을 다시 준다.
+    같다. 아끼는 돈이 있으면 대기 절감 기록을 만들고(기기당 브리핑 대기 기록은 하나), 10분 안 같은
+    계획이면 그 기록을 다시 준다.
     """
     now = now_kst()
     personal = load_personal(request, now)
@@ -119,6 +120,7 @@ def car_briefing(payload: CarBriefingRequest, request: Request) -> CarBriefingRe
             energy_kwh=briefing.record_energy_kwh,
             source="briefing",
             reuse_within=REUSE_WINDOW,
+            single=True,
         )
         result = result.model_copy(update={"saving_id": saving_id})
     return result

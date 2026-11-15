@@ -249,7 +249,8 @@ def test_repeated_briefings_keep_one_record(client, db_session):
 
     assert len(ids) == 1
     assert other not in ids
-    assert len(savings(db_session)) == 2
+    # 다른 계획이면 새 기록이고, 브리핑 대기 기록은 기기당 하나라 이전 것은 지워진다
+    assert [s.id for s in savings(db_session)] == [other]
 
 
 def test_no_record_without_savings(client, db_session, monkeypatch):
@@ -411,3 +412,42 @@ def test_departure_records_are_not_written_by_a_briefing(client, db_session):
     brief(client, register(client))
 
     assert list(db_session.scalars(select(CarDeparture))) == []
+
+
+def test_briefings_keep_one_pending_record_and_never_push_out_a_plan(client, db_session):
+    headers = register(client)
+    plan = client.post(
+        "/api/car/plan",
+        json={**BODY, "plug_in_at": "2026-11-16T18:00", "depart_at": "2026-11-17T08:00"},
+        headers=headers,
+    ).json()
+    for leak in range(19):  # 다른 출처 대기 기록을 20개까지 채운다
+        client.post(
+            "/api/car/plan",
+            json={**BODY, "soc_now": 10 + leak, "depart_at": "2026-11-17T08:00"},
+            headers=headers,
+        )
+
+    last = None
+    for step in range(20):  # 잔량이 조금씩 다른 브리핑 20번
+        last = brief(client, headers, soc_now=20 + step * 0.5).json()["saving_id"]
+
+    pending = [s for s in savings(db_session) if s.confirmed_at is None]
+    assert [s.id for s in pending if s.source == "briefing"] == [last]
+    assert len([s for s in pending if s.source == "plan"]) == 20
+    confirmed = client.post(f"/api/car/savings/{plan['saving_id']}/confirm", headers=headers)
+    assert confirmed.status_code == 200
+
+
+def test_a_confirmed_briefing_record_is_kept(client, db_session):
+    headers = register(client)
+    first = brief(client, headers).json()["saving_id"]
+    assert client.post(f"/api/car/savings/{first}/confirm", headers=headers).status_code == 200
+
+    second = brief(client, headers, soc_now=20).json()["saving_id"]
+
+    assert second != first
+    assert {s.id: s.confirmed_at is not None for s in savings(db_session)} == {
+        first: True,
+        second: False,
+    }
