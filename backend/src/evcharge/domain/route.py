@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import pairwise
-from math import cos, radians, sqrt
+from math import ceil, cos, radians, sqrt
 
 from .geo import EARTH_RADIUS_M, bounding_box, haversine_m
 
@@ -37,6 +37,9 @@ MERGE_M = 50.0
 # 한계: 나중에 현재 위치 옆을 다시 지나는 경로는 좌표만으로 "지금 출발" 과 "돌아오는
 # 중"을 구분할 수 없다. 그 경로가 이 거리보다 더 가까이 지나면 돌아오는 중으로 본다.
 NEAREST_TIE_M = 100.0
+# DB 1차 필터 사각형을 만들 때 긴 선분을 이 길이로 나눈다. 대각선 선분 하나를 감싸는
+# 사각형은 선분 길이의 제곱만큼 넓어져, 경로와 먼 충전소까지 끌어온다.
+QUERY_CHUNK_M = 10_000.0
 
 
 @dataclass(frozen=True)
@@ -96,25 +99,34 @@ class Route:
     lengths: list[float]
     # 각 선분 시작점까지의 누적 거리
     starts: list[float]
+    # 선분별 corridor 사각형. 있으면 그 밖의 충전소는 그 선분에 투영하지 않는다.
+    boxes: list[Box] | None = None
 
     @classmethod
-    def of(cls, points: list[Point]) -> Route:
+    def of(cls, points: list[Point], corridor_m: float | None = None) -> Route:
         if len(points) < 2:
             raise ValueError("경로에는 점이 2개 이상 있어야 합니다.")
         lengths = [haversine_m(*a, *b) for a, b in pairwise(points)]
         starts = [0.0]
         for length in lengths[:-1]:
             starts.append(starts[-1] + length)
-        return cls(points=points, lengths=lengths, starts=starts)
+        boxes = corridor_boxes(points, corridor_m) if corridor_m is not None else None
+        return cls(points=points, lengths=lengths, starts=starts, boxes=boxes)
 
     @property
     def length_m(self) -> float:
         return self.starts[-1] + self.lengths[-1]
 
-    def project(self, target: Point) -> Projection:
-        """``target``을 꺾은선에 투영한다. 가장 가까운 선분을 고른다."""
+    def project(self, target: Point) -> Projection | None:
+        """``target``을 꺾은선에 투영한다. 가장 가까운 선분을 고른다.
+
+        선분별 corridor 사각형이 있으면 ``target``이 든 사각형의 선분만 본다(그 밖의
+        선분은 corridor보다 멀다). 어느 사각형에도 없으면 None이다.
+        """
         best: Projection | None = None
         for index, (start, end) in enumerate(pairwise(self.points)):
+            if self.boxes is not None and not _inside(self.boxes[index], target):
+                continue
             t = _segment_parameter(start, end, target)
             clamped = min(max(t, 0.0), 1.0)
             candidate = Projection(
@@ -126,28 +138,54 @@ class Route:
             )
             if best is None or candidate.offset_m < best.offset_m:
                 best = candidate
-        if best is None:
-            raise ValueError("경로에는 점이 2개 이상 있어야 합니다.")
         return best
 
 
 def project(points: list[Point], target: Point) -> Projection:
     """``target``을 꺾은선 ``points``(2개 이상)에 투영한다."""
-    return Route.of(points).project(target)
+    projection = Route.of(points).project(target)
+    if projection is None:  # 사각형 없이 투영하면 생기지 않는다
+        raise ValueError("투영할 선분이 없습니다.")
+    return projection
 
 
 def corridor_boxes(points: list[Point], corridor_m: float) -> list[Box]:
-    """선분마다 corridor만큼 넓힌 사각형. DB 1차 필터용.
+    """선분마다 corridor만큼 넓힌 사각형 하나. 투영할 선분을 고를 때 쓴다."""
+    return [_box(start, end, corridor_m) for start, end in pairwise(points)]
 
-    꺾은선 전체를 감싸는 사각형 하나 대신 선분마다 따로 둔다. 대각선으로 긴 경로에서
-    전체 사각형은 경로와 먼 충전소까지 잔뜩 끌어온다.
+
+def query_boxes(points: list[Point], corridor_m: float) -> list[Box]:
+    """DB 1차 필터용 사각형. 긴 선분은 ``QUERY_CHUNK_M`` 조각으로 나눠 경로 순서대로 둔다.
+
+    순서가 경로 순서라, 행 수 상한에 걸리면 앞쪽 구간의 충전소부터 남길 수 있다.
+    선분 하나는 100km 이하라(요청 검증) 위경도 직선 보간으로 나눠도 된다.
     """
     boxes = []
-    for start, end in pairwise(points):
-        a = bounding_box(start[0], start[1], corridor_m)
-        b = bounding_box(end[0], end[1], corridor_m)
-        boxes.append((min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])))
+    for (start, end), length in zip(pairwise(points), map(_length, pairwise(points)), strict=True):
+        pieces = max(1, ceil(length / QUERY_CHUNK_M))
+        for piece in range(pieces):
+            a = _lerp(start, end, piece / pieces)
+            b = _lerp(start, end, (piece + 1) / pieces)
+            boxes.append(_box(a, b, corridor_m))
     return boxes
+
+
+def _length(pair: tuple[Point, Point]) -> float:
+    return haversine_m(*pair[0], *pair[1])
+
+
+def _lerp(start: Point, end: Point, f: float) -> Point:
+    return (start[0] + (end[0] - start[0]) * f, start[1] + (end[1] - start[1]) * f)
+
+
+def _box(start: Point, end: Point, corridor_m: float) -> Box:
+    a = bounding_box(start[0], start[1], corridor_m)
+    b = bounding_box(end[0], end[1], corridor_m)
+    return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+
+
+def _inside(box: Box, point: Point) -> bool:
+    return box[0] <= point[0] <= box[2] and box[1] <= point[1] <= box[3]
 
 
 def _xy(origin: Point, point: Point, cos_lat: float) -> tuple[float, float]:

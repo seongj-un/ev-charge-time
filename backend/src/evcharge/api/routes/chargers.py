@@ -18,7 +18,7 @@ import math
 from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from ...domain.geo import bounding_box, haversine_m
@@ -182,11 +182,13 @@ def matching_count(row: ChargerCache, *, available_only: bool, min_kw: float | N
 
 
 def rows_in_boxes(
-    session: DbSession, boxes: list[tuple[float, float, float, float]]
+    session: DbSession, boxes: list[tuple[float, float, float, float]], *, limit: int | None = None
 ) -> list[ChargerCache]:
     """사각형들 ``(min_lat, min_lng, max_lat, max_lng)`` 중 하나라도 안에 있는 캐시 행.
 
-    인덱스를 타는 범위 비교의 OR이다. 좌표가 없는 행은 빠진다.
+    인덱스를 타는 범위 비교의 OR이다. 좌표가 없는 행은 빠진다. ``limit``이 있으면 행이
+    들어 있는 첫 사각형의 순서대로 그 수만큼만 읽는다(사각형을 경로 순서로 주면 앞쪽
+    구간부터).
     """
     if not boxes:
         return []
@@ -197,7 +199,11 @@ def rows_in_boxes(
         )
         for min_lat, min_lng, max_lat, max_lng in boxes
     ]
-    return list(session.scalars(select(ChargerCache).where(or_(*conditions))).all())
+    query = select(ChargerCache).where(or_(*conditions))
+    if limit is not None:
+        first_box = case(*[(c, i) for i, c in enumerate(conditions)], else_=len(conditions))
+        query = query.order_by(first_box, ChargerCache.station_id).limit(limit)
+    return list(session.scalars(query).all())
 
 
 @dataclass(frozen=True)

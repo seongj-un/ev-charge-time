@@ -5,7 +5,14 @@ from __future__ import annotations
 import pytest
 
 from evcharge.domain.geo import haversine_m
-from evcharge.domain.route import Route, clean_route, corridor_boxes, project, route_length_m
+from evcharge.domain.route import (
+    Route,
+    clean_route,
+    corridor_boxes,
+    project,
+    query_boxes,
+    route_length_m,
+)
 
 # 나주 빛가람동에서 북쪽으로 약 11km (위도 0.1도 ≈ 11.1km)
 START = (35.0, 126.8)
@@ -125,3 +132,27 @@ def test_clean_route_with_destination_next_to_origin_has_no_behind():
 
     assert len(route.points) == 2
     assert route.project((34.99, 126.8)).behind_start is False
+
+
+def test_segment_boxes_skip_only_segments_farther_than_the_corridor():
+    rng = __import__("random").Random(3)
+    points = [ORIGIN, (35.2, 126.9), (35.3, 126.7), DEST]
+    plain = Route.of(points)
+    boxed = Route.of(points, corridor_m=3000)
+
+    for _ in range(500):
+        target = (rng.uniform(34.95, 35.55), rng.uniform(126.6, 127.0))
+        full = plain.project(target)
+        fast = boxed.project(target)
+        if full.offset_m <= 3000:
+            assert fast == full
+        else:
+            assert fast is None or fast.offset_m > 3000
+
+
+def test_query_boxes_split_long_segments_in_route_order():
+    boxes = query_boxes([ORIGIN, DEST], 1000)  # 약 55.6km → 10km 조각 6개
+
+    assert len(boxes) == 6
+    assert [round(b[0], 2) for b in boxes] == sorted(round(b[0], 2) for b in boxes)
+    assert boxes[0][0] < 35.0 and boxes[-1][2] > 35.5

@@ -903,3 +903,23 @@ def test_along_route_tool_with_empty_cache_is_a_tool_error_not_503(client, fake)
 
     assert response.status_code == 200
     assert tool_results(fake, 1)[0]["is_error"] is True
+
+
+def test_along_route_tool_passes_route_points_from_context(client, fake, db_session):
+    _station(db_session, "R1", 35.5, name="중간 휴게소", kw=100.0)
+    far = {**ROUTE_CONTEXT, "destination": {"lat": 36.2, "lng": 126.8}}
+    fake.replies = [use("find_chargers_along_route"), say("확인했어요.")]
+    ask(client, register(client), "충전할 곳", context=far)
+    fake.replies = [use("find_chargers_along_route"), say("확인했어요.")]
+    ask(
+        client,
+        register(client),
+        "충전할 곳",
+        context={**far, "route_points": [{"lat": 35.6, "lng": 126.8}]},
+    )
+
+    without_points = tool_results(fake, 1)[0]
+    with_points = tool_results(fake, 3)[0]
+    assert without_points["is_error"] is True
+    assert "경로 지점을 더 보내 주세요" in without_points["content"]["error"]
+    assert [c["station_id"] for c in with_points["content"]["chargers"]] == ["R1"]

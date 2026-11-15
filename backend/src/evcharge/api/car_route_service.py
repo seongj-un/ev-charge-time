@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
 
-from ..domain.route import Route, clean_route, corridor_boxes
+from ..domain.route import Route, clean_route, query_boxes
 from ..infra.models import ChargerCache
 from .car_plan_service import spoken_distance, spoken_percent
 from .routes.chargers import cache_is_empty, charger_summary, matching_count, rows_in_boxes
@@ -27,6 +27,10 @@ from .schemas import (
 )
 
 MAX_RESULTS = 5
+# DB에서 읽는 후보 행 수 상한. 경로 순서로 앞쪽 구간부터 읽는다(``query_boxes``).
+# 전남·광주 크기 캐시(약 8천 곳)를 corridor 10km 지그재그 경로로 훑어도 계산이 0.3초
+# 안에 끝나게 하는 크기다(측정값은 PR 본문).
+MAX_CANDIDATE_ROWS = 3000
 # 공공 API에서 온 충전소 이름을 응답과 Claude에 실을 때의 최대 길이
 MAX_NAME = 40
 FAST_KW = 50
@@ -37,6 +41,7 @@ ASSUME_ESTIMATE = (
     "충전소 도착 잔량은 내비의 남은 거리와 도착 예상 잔량으로 거리에 비례해 추정했어요."
 )
 NO_COVERAGE = "이 구간은 충전소 정보가 없을 수 있어요(수집 지역 밖)."
+TRUNCATED = "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요."
 NOT_COLLECTED = "충전소 정보를 아직 수집하지 않았습니다. 잠시 후 다시 시도해 주세요."
 
 
@@ -70,16 +75,21 @@ def find_along_route(
             (payload.origin.lat, payload.origin.lng),
             [(point.lat, point.lng) for point in payload.route_points],
             (payload.destination.lat, payload.destination.lng),
-        )
+        ),
+        corridor_m=payload.corridor_m,
     )
     route_m = route.length_m
     corridor = payload.corridor_m
 
+    rows = rows_in_boxes(
+        session, query_boxes(route.points, corridor), limit=MAX_CANDIDATE_ROWS + 1
+    )
+    truncated = len(rows) > MAX_CANDIDATE_ROWS
     near: list[tuple[float, float, ChargerCache]] = []  # (along, offset, row)
-    for row in rows_in_boxes(session, corridor_boxes(route.points, corridor)):
+    for row in rows[:MAX_CANDIDATE_ROWS]:
         projection = route.project((row.lat, row.lng))
         # 현재 위치보다 뒤에 있는 충전소는 되돌아가야 해서 뺀다.
-        if projection.behind_start or projection.offset_m > corridor:
+        if projection is None or projection.behind_start or projection.offset_m > corridor:
             continue
         near.append((projection.along_m, projection.offset_m, row))
     if not near and cache_is_empty(session):
@@ -131,6 +141,8 @@ def find_along_route(
         )
     else:
         coverage_note = None
+    if truncated:
+        coverage_note = f"{coverage_note} {TRUNCATED}" if coverage_note else TRUNCATED
 
     actions = []
     if recommended is not None:

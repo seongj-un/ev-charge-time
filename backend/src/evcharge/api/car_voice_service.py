@@ -513,6 +513,7 @@ class VoiceTools:
             CarRouteChargersRequest(
                 origin=LatLng(lat=ctx.lat, lng=ctx.lng),
                 destination=ctx.destination,
+                route_points=ctx.route_points,
                 soc_now=ctx.soc_now,
                 arrival_soc=ctx.arrival_soc,
                 remain_distance_m=ctx.remain_distance_m,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from evcharge.api import car_route_service
 from evcharge.api.car_plan_service import spoken_distance
 from evcharge.infra.models import ChargerCache
 
@@ -300,3 +301,40 @@ def test_passed_points_before_a_bend_are_dropped_but_the_bend_stays(client, db_s
 
     assert with_passed == without
     assert [c["station_id"] for c in with_passed["chargers"]] == ["EAST"]
+
+
+def test_segments_over_100km_ask_for_more_route_points(client, stations):
+    body = {"origin": ORIGIN, "destination": {"lat": 36.0, "lng": 126.8}, "soc_now": 60}
+
+    direct = client.post(URL, json=body)
+    with_points = client.post(
+        URL, json={**body, "route_points": [{"lat": 35.5, "lng": 126.8}]}
+    )
+
+    assert direct.status_code == 422
+    assert "경로 지점을 더 보내 주세요" in direct.json()["detail"][0]["msg"]
+    assert with_points.status_code == 200
+
+
+def test_candidate_rows_are_capped_in_route_order(client, db_session, monkeypatch):
+    for index in range(4):
+        station(db_session, f"S{index}", 35.4 - index * 0.1)  # S3가 가장 앞
+    monkeypatch.setattr(car_route_service, "MAX_CANDIDATE_ROWS", 3)
+
+    body = post(client).json()
+
+    assert [c["station_id"] for c in body["chargers"]] == ["S3", "S2", "S1"]
+    assert body["coverage_note"] == "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요."
+
+
+def test_candidate_cap_note_is_added_to_the_no_match_note(client, db_session, monkeypatch):
+    for index in range(3):
+        station(db_session, f"BUSY{index}", 35.1 + index * 0.1, chargers=[charger(status="3")])
+    monkeypatch.setattr(car_route_service, "MAX_CANDIDATE_ROWS", 2)
+
+    body = post(client).json()
+
+    assert body["coverage_note"] == (
+        "경로 근처 충전소 2곳 중 지금 비어 있는 50kW 이상 충전기가 없어요. "
+        "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요."
+    )
