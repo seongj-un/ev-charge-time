@@ -229,7 +229,7 @@ home에서는 `payment`·`charger_speed`를, public에서는 `depart_at`·`mode`
 흐름
 
 1. 앱 설치 때 `POST /api/car/devices`로 기기 토큰을 한 번 받는다. 개인정보는 받지 않는다.
-2. `car/plan`·`car/leak-check`를 `Authorization: Bearer <device_token>`과 함께 부르면, 아끼는
+2. `car/plan`·`car/leak-check`·`car/briefing`을 `Authorization: Bearer <device_token>`과 함께 부르면, 아끼는
    돈이 있을 때(`savings_won > 0` / `leaking=true`) 서버가 **대기** 기록을 만들고 응답에
    `saving_id`를 붙인다.
    - 토큰이 없으면 지금과 같은 응답이다(`saving_id: null`). DB를 열지 않는다.
@@ -275,7 +275,7 @@ IP가 다시 발급할 때 재사용되어 따로 정리하지 않는다.
 | `cause` | string | `time`, `payment` |
 | `savings_won` | int | 서버 계산값(원) |
 | `energy_kwh` | number | |
-| `source` | string | `plan`, `leak_check` |
+| `source` | string | `plan`, `leak_check`, `briefing` |
 | `created_at` | datetime | 대기 기록을 만든 시각 |
 | `confirmed_at` | datetime | 처음 확정한 시각. 다시 불러도 바뀌지 않는다(멱등) |
 
@@ -582,6 +582,90 @@ IP 한도 문장: "이 네트워크에서 오늘 음성 대화를 많이 써서 
 - leak-check는 `high`일 때만 오전 8시 대신 쓴다. 가정이라는 점과 PR #15 규칙(가정한 출발까지 못
   채우면 멈추라 하지 않음)은 같다.
 - 음성은 `high`와 `low` 모두 쓴다(질문과 `usual_departure`).
+
+## `POST /api/car/briefing` 시동 ON 한 줄 브리핑
+
+앱이 시동 ON(또는 앱 시작) 때 한 번 부르고 `speech`를 TTS로 읽는다. 운전을 시작하는 때라 최대
+3문장(약 120자)이다. 새 계산은 없다. 단가는 `/api/timeline`, 예약과 금액은 `car/plan`, 평소 출발
+시각은 "출발 시각 학습", 합계는 `savings/summary`와 같은 함수에서 온다.
+
+기기 토큰(`Authorization: Bearer <device_token>`)은 선택이다. 없거나 틀리면 개인화 항목(평소 출발
+시각, 절약 합계)만 빠지고 나머지는 같다. 토큰이 없으면 DB를 열지 않는다.
+
+요청
+
+| 필드 | 타입 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- | --- |
+| `soc_now` | number | O | | 0~100 |
+| `battery_capacity_wh` | number | O | | car/plan과 같은 범위 |
+| `charger_kw` | number | | 7.0 | 집 충전기 출력 |
+| `mode` | string | | `self_low` | `self_low`, `self_high`만 받는다. "오늘 밤 예약"은 집 충전이고, `public_fast`는 단가 없이는 계산할 수 없어(422) 시동 브리핑을 막는다 |
+| `place` | string | | null | `home`, `public`. 받아 두기만 하고 지금 계산에 쓰지 않는다 |
+
+응답 200
+
+- `price`
+  - `band`(`light`/`middle`/`peak`), `band_label`(`경부하`/`중간부하`/`최대부하`), `price_per_kwh`: 지금
+  - `discounted`: 지금이 주말·공휴일 할인 시간(봄·가을 토·일·공휴일 11~14시)인지
+  - `next_cheaper_at`, `next_cheaper_price_per_kwh`: 오늘 안에서 지금보다 kWh당 단가가 싸지는 첫
+    정각. 없으면 null
+  - `discount_window`: 오늘 할인 구간 `{start_at, end_at}`. 없으면 null
+- `tonight`
+  - `needs_charging`: `soc_now < CAR_BRIEFING_LOW_SOC`(기본 50). `soc_now`, `low_soc`
+  - 충전 권장일 때만: `depart_at`, `depart_basis`(`usual`: 이 기기의 평소 출발 시각 high 제안,
+    `default`: 오전 8시 가정), `reservation`(car/plan과 같은 모양, null 가능), `savings_won`,
+    `energy_kwh`
+- `savings`: 토큰이 있고 이번 달 확정 절감이 0보다 클 때 `{month, month_won, year, year_won}`,
+  아니면 null
+- `speech`, `actions`(충전 권장이고 예약이 있으면 `[{"type": "set_reservation", start_hhmm,
+  end_hhmm}]`), `saving_id`, `assumptions`, `unverified_tariff_items`
+
+오늘 밤 계획
+
+- 출발 날짜: 시동을 04시 전에 켰으면 오늘(지금 지나는 밤), 그 뒤면 내일(다가오는 밤).
+- 출발 시각: 그 날짜의 평소 출발 시각 제안이 high이고 아직 오지 않았으면 그 시각, 아니면 오전 8시.
+  가정이라는 점을 문장("평소처럼 내일 오전 7시 출발 기준으로", "내일 오전 8시 출발 기준으로")과
+  `assumptions`에 밝힌다.
+- 꽂는 시각: 시동을 04시~18시에 켰으면 오늘 18:00, 아니면 지금. 지금 차는 움직이고 있으므로
+  "오늘 밤" 예약이 낮 구간(봄·가을 주말 할인)을 고르지 않게 하고, 아끼는 금액을 "꽂자마자
+  충전"과 비교한다. 이때 `assumptions`에 "충전기는 오늘 저녁 6시 이후에 꽂는다고 가정".
+- 출발까지 다 채울 시간이 없으면(새벽에 켬) 예약 없이 "출발 전까지 채우려면 도착하자마자 충전해
+  주세요."
+
+`speech` (고르는 순서 tonight > price > savings, 읽는 순서 price → tonight → savings, 최대 3문장)
+
+- price: "지금은 요금이 비싼 시간이고, 저녁 7시부터 싸져요." / "지금은 요금이 싼 시간이에요." /
+  "지금은 주말 할인 시간이라 요금이 싸요." (평일 공휴일이면 "공휴일 할인")
+- tonight(충전 권장, 2문장): "배터리가 32%라 오늘 밤 충전하세요." + "내일 오전 8시 출발 기준으로
+  오늘 밤 10시부터 내일 새벽 3시 19분까지 예약하면 약 1,995원 아껴요." (아끼는 금액이 없으면
+  "… 예약하세요.")
+- tonight(충분): "배터리가 72%라 오늘 밤은 충전 안 해도 돼요."
+- savings: "이번 달 와트잇으로 약 4,200원, 올해 약 4,200원 아꼈어요." 충전 권장이면 문장이 3개를
+  넘으므로 빠지고, 응답의 `savings` 항목만 남는다.
+
+예 (월 18:00, 잔량 32%, 토큰 없음)
+
+```json
+{"price": {"band": "peak", "band_label": "최대부하", "price_per_kwh": 260.9, "discounted": false,
+  "next_cheaper_at": "2026-11-16T19:00:00+09:00", "next_cheaper_price_per_kwh": 190.4,
+  "discount_window": null},
+ "tonight": {"needs_charging": true, "soc_now": 32.0, "low_soc": 50.0,
+  "depart_at": "2026-11-17T08:00:00+09:00", "depart_basis": "default",
+  "reservation": {"start_at": "2026-11-16T22:00:00+09:00", "end_at": "2026-11-17T03:19:00+09:00",
+   "start_hhmm": "22:00", "end_hhmm": "03:19"}, "savings_won": 1995, "energy_kwh": 37.152},
+ "savings": null,
+ "speech": "지금은 요금이 비싼 시간이고, 저녁 7시부터 싸져요. 배터리가 32%라 오늘 밤 충전하세요. 내일 오전 8시 출발 기준으로 오늘 밤 10시부터 내일 새벽 3시 19분까지 예약하면 약 1,995원 아껴요.",
+ "actions": [{"type": "set_reservation", "start_hhmm": "22:00", "end_hhmm": "03:19"}],
+ "saving_id": null, "assumptions": ["출발 시각 미입력: 11월 17일 오전 8시(KST) 출발로 가정", "..."],
+ "unverified_tariff_items": ["..."]}
+```
+
+대기 절감 기록: 토큰이 있고 `tonight.savings_won > 0`이면 `source: "briefing"` 대기 기록을 만들고
+`saving_id`를 준다. 같은 기기가 10분 안에 같은 계획(같은 금액·전력량)으로 다시 부르면 새로 만들지
+않고 그 `saving_id`를 다시 준다(기기 행 잠금, 동시 호출도 1건). 확정은 다른 기록과 같다.
+
+오류: 요청 검증 422, 그 해의 공휴일 정보가 없으면 422(공휴일 안내 문구). 그 밖의 개인화 실패(DB
+오류)는 개인화 없이 200.
 
 ## `POST /api/car/chargers/along-route` 경로 위 충전소 찾기 ("충전 실패 피하기")
 
