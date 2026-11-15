@@ -312,15 +312,57 @@ def test_passed_points_before_a_bend_are_dropped_but_the_bend_stays(client, db_s
     assert [c["station_id"] for c in with_passed["chargers"]] == ["EAST"]
 
 
-def test_segments_over_100km_ask_for_more_route_points(client, stations):
-    body = {"origin": ORIGIN, "destination": {"lat": 36.0, "lng": 126.8}, "soc_now": 60}
+def test_long_route_without_route_points_is_searched(client, db_session):
+    # 155km 북쪽, 경유지 없음(NaviHelper는 경로 모양 점을 주지 않는다)
+    station(db_session, "FAR", 36.2, 126.8 + KM_EAST)
+    body = client.post(
+        URL,
+        json={"origin": ORIGIN, "destination": {"lat": 36.4, "lng": 126.8}, "soc_now": 60},
+    )
 
-    direct = client.post(URL, json=body)
-    with_points = client.post(URL, json={**body, "route_points": [{"lat": 35.5, "lng": 126.8}]})
+    assert body.status_code == 200
+    result = body.json()
+    assert result["route_m"] == pytest.approx(155_673, rel=0.001)
+    assert [c["station_id"] for c in result["chargers"]] == ["FAR"]
+    assert result["chargers"][0]["offset_m"] == pytest.approx(1_000, rel=0.02)
+    assert "도로 옆 휴게소가 검색 범위 밖일 수 있어요" in result["assumptions"][2]
 
-    assert direct.status_code == 422
-    assert "경로 지점을 더 보내 주세요" in direct.json()["detail"][0]["msg"]
-    assert with_points.status_code == 200
+
+def test_short_segments_have_no_long_route_assumption(client, stations):
+    assumptions = post(client).json()["assumptions"]
+
+    assert not any("검색 범위 밖" in a for a in assumptions)
+
+
+def test_argus_input_is_bounded_by_query_boxes_and_row_cap(client, db_session, monkeypatch):
+    # 수집 지역 대각선 + 출발지와 같은 경로 점 50개, corridor 10km
+    origin = {"lat": 34.2, "lng": 126.0}
+    station(db_session, "MID", 34.8, 126.85)
+    seen = {}
+    real = car_route_service.rows_in_boxes
+
+    def spy(session, boxes, *, limit=None):
+        seen["boxes"], seen["limit"] = len(boxes), limit
+        return real(session, boxes, limit=limit)
+
+    monkeypatch.setattr(car_route_service, "rows_in_boxes", spy)
+    response = client.post(
+        URL,
+        json={
+            "origin": origin,
+            "destination": {"lat": 35.4, "lng": 127.7},
+            "route_points": [origin] * 50,
+            "soc_now": 60,
+            "corridor_m": 10_000,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    # 같은 점 50개는 합쳐져 선분 하나(약 205km)가 되고, 10km 조각 21개로 찾는다
+    assert body["route_m"] == pytest.approx(205_000, rel=0.01)
+    assert seen == {"boxes": 21, "limit": car_route_service.MAX_CANDIDATE_ROWS + 1}
+    assert [c["station_id"] for c in body["chargers"]] == ["MID"]
 
 
 def test_candidate_rows_are_capped_in_route_order(client, db_session, monkeypatch):

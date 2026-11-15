@@ -590,7 +590,7 @@ class CarVoiceContext(BaseModel):
     # 오류 결과를 준다. 남은 거리가 있어야 충전소별 잔량을 추정한다.
     destination: LatLng | None = None
     remain_distance_m: float | None = Field(default=None, gt=0, le=3_000_000, allow_inf_nan=False)
-    # 내비 경로 위 지점(순서대로). 경로 점 사이가 100km를 넘으면 그 도구는 오류 결과를 준다.
+    # 내비 경유지(남은 것, 순서대로). 없으면 현재 위치에서 목적지까지 직선 근사다.
     route_points: list[LatLng] = Field(default_factory=list, max_length=ROUTE_POINTS_MAX)
     # Vehicle SDK 충전 후 평균 전비(km/kWh). 경로 위 충전소 잔량 추정에 쓴다.
     efficiency_km_per_kwh: float | None = Field(default=None, gt=0, le=20, allow_inf_nan=False)
@@ -679,9 +679,6 @@ class CarVoiceResponse(BaseModel):
 # 경로 근사(꺾은선)의 최대 길이. 국내 장거리(약 500km)를 넉넉히 덮으면서, 아주 긴
 # 경로로 DB 후보를 한꺼번에 끌어오는 계산을 막는다.
 MAX_ROUTE_M = 1_000_000
-# 이웃한 두 경로 점 사이 상한. 직선 근사가 도로와 크게 어긋나지 않게 하고, 선분 하나가
-# 끌어오는 DB 후보를 줄인다. 더 먼 경로는 내비의 경로 지점을 더 보내면 된다.
-MAX_SEGMENT_M = 100_000
 
 
 class CarRouteChargersRequest(BaseModel):
@@ -718,11 +715,6 @@ class CarRouteChargersRequest(BaseModel):
         for a, b in pairwise(points):
             if abs(a[1] - b[1]) > 180:
                 raise ValueError("경로가 날짜변경선을 지나면 계산할 수 없습니다.")
-            if route_length_m([a, b]) > MAX_SEGMENT_M:
-                raise ValueError(
-                    f"경로 점 사이가 {MAX_SEGMENT_M // 1000}km를 넘습니다. "
-                    "경로 지점을 더 보내 주세요."
-                )
         if route_length_m(points) > MAX_ROUTE_M:
             raise ValueError(f"경로 길이는 {MAX_ROUTE_M // 1000:,}km를 넘을 수 없습니다.")
         return self

@@ -158,7 +158,8 @@ def query_boxes(points: list[Point], corridor_m: float) -> list[Box]:
     """DB 1차 필터용 사각형. 긴 선분은 ``QUERY_CHUNK_M`` 조각으로 나눠 경로 순서대로 둔다.
 
     순서가 경로 순서라, 행 수 상한에 걸리면 앞쪽 구간의 충전소부터 남길 수 있다.
-    선분 하나는 100km 이하라(요청 검증) 위경도 직선 보간으로 나눠도 된다.
+    위경도 직선 보간으로 나눈다. 투영도 선분을 위경도 평면의 직선으로 보므로(``_xy``) 같은
+    선을 따라간다.
     """
     boxes = []
     for (start, end), length in zip(pairwise(points), map(_length, pairwise(points)), strict=True):

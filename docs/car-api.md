@@ -349,7 +349,7 @@ IP가 다시 발급할 때 재사용되어 따로 정리하지 않는다.
 | `arrival_at` | datetime | | NaviHelper 목적지 도착 예정 시각(오프셋 없으면 KST). 충전 계획의 꽂는 시각으로 쓴다. 지금부터 24시간을 넘으면 422, 이미 지났으면 지금으로 본다 |
 | `destination` | `{lat, lng}` | | 내비 목적지. `find_chargers_along_route` 도구가 쓴다(없으면 그 도구는 오류 결과) |
 | `remain_distance_m` | number | | 내비 남은 거리 m. 있으면 경로 위 충전소별 잔량을 추정한다 |
-| `route_points` | `{lat, lng}[]` | | 내비 경로 위 지점(남은 것, 순서대로), 최대 50개. 경로 점 사이가 100km를 넘으면 `find_chargers_along_route`는 오류 결과 |
+| `route_points` | `{lat, lng}[]` | | 내비 경유지(남은 것, 순서대로), 최대 50개. 없으면 현재 위치에서 목적지까지 직선 근사 |
 | `efficiency_km_per_kwh` | number | | Vehicle SDK 충전 후 평균 전비(km/kWh), 0 초과 20 이하. 도착 예상 잔량이나 남은 거리가 없을 때 경로 위 충전소 잔량 추정에 쓴다 |
 | `charger_kw` | number | | 충전기 출력, 기본 7.0 |
 | `charging` | bool | | 지금 충전 중인지 (Claude에게 상황으로만 알린다) |
@@ -514,9 +514,15 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
 | `efficiency_km_per_kwh` | number | | Vehicle SDK 충전 후 평균 전비(`getSinceChargeEvEfficiency`), 0 초과 20 이하 |
 | `battery_capacity_wh` | number | | 배터리 용량 Wh, 1,000~1,000,000. 전비 추정에 쓴다 |
 
-경로 길이(꺾은선)는 1,000km 이하이고, 보낸 그대로의 이웃한 두 점 사이가 100km를 넘으면 422
-("경로 점 사이가 100km를 넘습니다. 경로 지점을 더 보내 주세요.")다. 이웃한 두 점의 경도 차가
-180도를 넘으면(날짜변경선) 422다.
+경로 길이(꺾은선)는 1,000km 이하이고, 이웃한 두 점의 경도 차가 180도를 넘으면(날짜변경선)
+422다. 이웃한 두 점 사이 거리에는 상한이 없다. NaviHelper가 주는 경로 지점(`TripSummary.routePoints`)은
+경유지와 목적지뿐이라, 경유지 없는 장거리가 이 기능의 기본 장면이다. 계산량은 점 합치기, 10km
+조각 사각형, 후보 3,000행 상한으로 묶는다(아래 "계산").
+
+**장거리 직선 근사의 한계.** 경유지 사이가 100km를 넘는 구간이 있으면 실제 도로가 직선에서 크게
+벗어날 수 있어, 도로 옆 휴게소가 corridor 밖이라 빠질 수 있다. 이때 `assumptions`에 "경유지 사이가
+먼 구간은 실제 도로가 직선에서 크게 벗어날 수 있어, 도로 옆 휴게소가 검색 범위 밖일 수 있어요."를
+넣는다. corridor를 넓히면(최대 10km) 덜 빠진다.
 
 ### 계산
 
@@ -557,7 +563,7 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
 | `chargers` | array | `{station_id, name, lat, lng, along_m, offset_m, distance_m, available_count, max_kw, est_soc, reachable}`. `distance_m`은 위 "잔량 추정"의 도로 기준 거리, `name`은 공공 API 이름을 줄바꿈을 펴고 40자로 자른 것, `available_count`는 지금 충전대기이면서 `min_kw` 이상인 충전기 수, `max_kw`는 그 충전소 충전기 중 최고 출력 |
 | `speech` | string | TTS 문장 |
 | `actions` | array | 추천이 있고 `need_charge`가 false가 아니면 `[{"type": "add_waypoint", station_id, name, lat, lng}]`. 충전이 필요 없다고 말할 때는 빈 배열 |
-| `assumptions` | string[] | 직선 근사, 상태는 최근 수집 기준, (추정했으면) 내비 또는 전비 기준 거리 비례 추정 |
+| `assumptions` | string[] | 직선 근사, 상태는 최근 수집 기준, (100km 넘는 구간이 있으면) 장거리 직선 근사 한계, (추정했으면) 내비 또는 전비 기준 거리 비례 추정 |
 | `coverage_note` | string \| null | 경로 근처에 충전소가 하나도 없으면 "이 구간은 충전소 정보가 없을 수 있어요(수집 지역 밖).", 있지만 조건에 맞는 곳이 없으면 "경로 근처 충전소 N곳 중 지금 비어 있는 50kW 이상 충전기가 없어요.", 후보 행 상한에 걸리면 뒤에 "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요." |
 | `route_m` | int | 정리된 남은 꺾은선 길이 m |
 
@@ -578,7 +584,7 @@ NaviHelper의 경로 위 지점(`RoutePointInfo`)이나 경유지 좌표를 `rou
 
 | 상태 | 언제 | 본문 |
 | --- | --- | --- |
-| 422 | 범위 밖 값, `NaN`·`Infinity`, `route_points` 51개 이상, corridor 범위 밖, 1,000km 초과, 이웃한 점 사이 100km 초과, 날짜변경선 | FastAPI 기본 `detail` 배열 |
+| 422 | 범위 밖 값, `NaN`·`Infinity`, `route_points` 51개 이상, corridor 범위 밖, 1,000km 초과, 날짜변경선 | FastAPI 기본 `detail` 배열 |
 | 503 | 충전소 캐시가 비어 있음(수집 전) | `{"detail": "충전소 정보를 아직 수집하지 않았습니다. 잠시 후 다시 시도해 주세요."}` |
 
 ## `GET /api/chargers` 빈 충전기만 찾기 ("충전 실패 피하기")

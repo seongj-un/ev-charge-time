@@ -43,6 +43,13 @@ ASSUME_ESTIMATE = (
 ASSUME_EFFICIENCY = "충전소 도착 잔량은 최근 전비와 배터리 용량으로 거리에 비례해 추정했어요."
 NO_COVERAGE = "이 구간은 충전소 정보가 없을 수 있어요(수집 지역 밖)."
 TRUNCATED = "경로 근처 충전소가 많아 앞쪽 구간의 충전소만 살펴봤어요."
+# 정리된 꺾은선에 이보다 긴 선분이 있으면 직선 근사의 한계를 알린다. 경유지 없는 장거리는
+# 내비가 경로 모양 점을 주지 않아 직선 하나로 계산한다.
+LONG_SEGMENT_M = 100_000
+ASSUME_LONG_SEGMENT = (
+    "경유지 사이가 먼 구간은 실제 도로가 직선에서 크게 벗어날 수 있어, 도로 옆 휴게소가 "
+    "검색 범위 밖일 수 있어요."
+)
 NOT_COLLECTED = "충전소 정보를 아직 수집하지 않았습니다. 잠시 후 다시 시도해 주세요."
 
 
@@ -141,7 +148,11 @@ def find_along_route(
     recommended = next((c for c in chargers if c.reachable is not False), None) or (
         chargers[0] if chargers else None
     )
-    assumptions = [ASSUME_ROUTE, ASSUME_STATUS] + ([estimate.assumption] if estimate else [])
+    assumptions = [ASSUME_ROUTE, ASSUME_STATUS]
+    if max(route.lengths) > LONG_SEGMENT_M:
+        assumptions.append(ASSUME_LONG_SEGMENT)
+    if estimate is not None:
+        assumptions.append(estimate.assumption)
     if not near:
         coverage_note = NO_COVERAGE
     elif not matching:
