@@ -41,7 +41,7 @@
 | `charger_kw` | number | | 7.0 | 0 초과 1000 이하 (kW) |
 | `plug_in_at` | datetime | | 서버 현재 시각 | 충전기를 꽂을 수 있는 시각 = 도착 예정 시각. 이미 지났으면 서버 현재 시각으로 당긴다 |
 | `depart_at` | datetime | 예 | | 다음 출발 시각 = 충전 완료 필요 시각. 서버 현재 시각과 `plug_in_at`보다 뒤, `plug_in_at`(당긴 뒤의 값)부터 72시간 이내 |
-| `mode` | string | | `self_low` | `self_low`, `self_high`, `public_fast` (`/api/recommend`와 같음) |
+| `mode` | string | | `self_low` | `self_low`, `self_high`, `public_fast` (`/api/recommend`와 같음). `public_fast`는 이름과 달리 공공 충전 전체(완속 포함)다: 단가를 기후에너지환경부 공공충전요금(2026-08-01, 출력별 5단계)에서 `charger_kw`로 고른다 — 30kW 미만 295.0 / 30~50kW 미만 307.2 / 50~100kW 미만 325.6 / 100~200kW 미만 348.4 / 200kW 이상 393.1원/kWh, 봄·가을 주말 낮 할인은 자가 충전과 같이 붙는다 |
 
 숫자 필드는 `NaN`, `Infinity`를 받지 않는다. 모르는 필드는 무시한다.
 
@@ -118,7 +118,7 @@ Reservation:
                   "start_hhmm": "22:00", "end_hhmm": "01:00"},
   "speech": "오늘 밤 10시부터 내일 새벽 1시까지 충전하면 가장 쌉니다. 도착하자마자 충전하는 것보다 약 395원 아낍니다. 도착하면 차량 예약 충전을 밤 10시 시작, 새벽 1시 종료로 설정해 주세요.",
   "assumptions": ["충전 출력 일정", "연속 충전", "기본요금 제외, kWh당 요금만 계산"],
-  "unverified_tariff_items": ["public_fast.base_price_per_kwh", "weekend_discount_sunset"]
+  "unverified_tariff_items": ["weekend_discount_sunset"]
 }
 ```
 
@@ -130,7 +130,6 @@ Reservation:
 | --- | --- | --- |
 | 422 | 필드 범위·타입 오류, `depart_at`이 서버 현재 시각이나 `plug_in_at` 이전, 두 시각 사이가 72시간 초과 | FastAPI 검증 오류 `{"detail": [{"type", "loc", "msg", "input"}]}`. 시각 오류의 `loc`은 `["body", "depart_at"]` |
 | 422 | 시간이 모자람 (충전 시간 > 가능한 시간) | `{"detail": "시간이 부족해요. …"}` (문자열) |
-| 422 | `mode=public_fast`인데 요금 설정에 공공 급속 기준단가가 없음 | `{"detail": "…"}` (문자열). 이 엔드포인트는 `public_base_price`를 받지 않는다 |
 
 시각 검사는 충전이 필요 없는 요청(`soc_target <= soc_now`)에도 한다.
 
@@ -149,7 +148,8 @@ Reservation:
   차이. 계산과 시각 검사는 `POST /api/car/plan`과 같다 (꽂는 시각 = 서버 현재 시각).
 - `place="public"` (공공 충전기): **결제 방식**. 로밍가·비회원가와 회원가의 차이.
   한국소비자원 2025-12-17 발표 20개 사업자 평균 단가(`backend/config/public_charging_prices.yaml`)로
-  추정한다. 시간대 계산은 하지 않는다 (공공 급속 기준단가 미확인).
+  추정한다. 시간대 계산은 하지 않는다. 민간 사업자 충전기의 결제 방식 비교라서 기후에너지환경부
+  공공충전요금(출력별 5단계, `car/plan`의 `mode=public_fast`)은 여기 쓰지 않는다.
 
 ### 요청 (JSON)
 
@@ -664,7 +664,7 @@ IP 한도 문장: "이 네트워크에서 오늘 음성 대화를 많이 써서 
 | `soc_now` | number | O | | 0~100 |
 | `battery_capacity_wh` | number | O | | car/plan과 같은 범위 |
 | `charger_kw` | number | | 7.0 | 집 충전기 출력 |
-| `mode` | string | | `self_low` | `self_low`, `self_high`만 받는다. "오늘 밤 예약"은 집 충전이고, `public_fast`는 단가 없이는 계산할 수 없어(422) 시동 브리핑을 막는다 |
+| `mode` | string | | `self_low` | `self_low`, `self_high`만 받는다(`public_fast`는 422). "오늘 밤 예약"은 집 충전기의 시간대 예약이다. 공공 충전 단가는 이제 출력별로 정해지지만(`car/plan` 참고), 공공 충전기에는 예약 충전을 걸 수 없어 브리핑 대상이 아니다 |
 | `place` | string | | null | `home`, `public`. 받아 두기만 하고 지금 계산에 쓰지 않는다 |
 
 응답 200

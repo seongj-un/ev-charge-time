@@ -1,3 +1,6 @@
+import pytest
+
+
 def test_spring_fall_saturday_has_a_discount_window(client):
     response = client.get("/api/timeline", params={"day": "2026-10-17"})
 
@@ -27,7 +30,7 @@ def test_day_is_required(client):
     assert client.get("/api/timeline").status_code == 422
 
 
-def test_public_fast_needs_a_base_price(client):
+def test_public_fast_needs_a_base_price_or_an_output(client):
     response = client.get(
         "/api/timeline", params={"day": "2026-10-17", "mode": "public_fast"}
     )
@@ -43,6 +46,26 @@ def test_public_fast_with_a_base_price(client):
     ).json()
 
     assert body["hours"][12]["price_per_kwh"] == 301.4
+
+
+def test_public_fast_with_a_charger_output_uses_the_tier(client):
+    """2026-10-17(토) 12시: 100kW 구간 348.4 − 토요일 낮 할인 48.6 = 299.8, 18시는 할인 없음."""
+    body = client.get(
+        "/api/timeline",
+        params={"day": "2026-10-17", "mode": "public_fast", "charger_kw": 100},
+    ).json()
+
+    assert body["hours"][12]["price_per_kwh"] == 299.8
+    assert body["hours"][18]["price_per_kwh"] == 348.4
+
+
+@pytest.mark.parametrize("charger_kw", ["0", "-7", "inf"])
+def test_an_invalid_charger_output_is_422(client, charger_kw):
+    response = client.get(
+        "/api/timeline",
+        params={"day": "2026-10-17", "mode": "public_fast", "charger_kw": charger_kw},
+    )
+    assert response.status_code == 422
 
 
 def test_non_finite_base_price_is_422(client):

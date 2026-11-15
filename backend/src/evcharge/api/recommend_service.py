@@ -66,7 +66,14 @@ def compute_recommendation(
     )
 
     def price_fn(moment):
-        return price_at(moment, payload.mode, tariff, holidays, payload.public_base_price)
+        return price_at(
+            moment,
+            payload.mode,
+            tariff,
+            holidays,
+            payload.public_base_price,
+            payload.charger_kw,
+        )
 
     result = plan_recommend(request, price_fn)
 

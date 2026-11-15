@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from ...domain.calendar import season_of
 from ...domain.pricing import hourly_prices
 from ..deps import get_holidays, get_tariff
-from ..schemas import MAX_PRICE_PER_KWH, HourPriceOut, Mode, TimelineResponse
+from ..schemas import MAX_CHARGER_KW, MAX_PRICE_PER_KWH, HourPriceOut, Mode, TimelineResponse
 
 router = APIRouter(prefix="/api", tags=["timeline"])
 
@@ -17,11 +17,20 @@ def timeline(
     public_base_price: float | None = Query(
         default=None, gt=0, le=MAX_PRICE_PER_KWH, allow_inf_nan=False
     ),
+    charger_kw: float | None = Query(
+        default=None,
+        gt=0,
+        le=MAX_CHARGER_KW,
+        allow_inf_nan=False,
+        description=(
+            "공공 충전(public_fast)의 충전기 출력(kW). 기후에너지환경부 출력별 단가를 고른다"
+        ),
+    ),
 ) -> TimelineResponse:
     tariff = get_tariff()
     holidays = get_holidays()
 
-    hours = hourly_prices(day, mode, tariff, holidays, public_base_price)
+    hours = hourly_prices(day, mode, tariff, holidays, public_base_price, charger_kw)
 
     return TimelineResponse(
         day=day,
