@@ -77,7 +77,9 @@ def compute_charge_target(
         f"{payload.battery_capacity_wh / 1000:g}kWh로 계산했어요. 도착 여유 {reserve}%p를 "
         "더했어요."
     )
-    if want > 100:
+    # 필요 잔량이 100이면 도착 추정이 0%다. 경로 위 충전소(runs_out: 추정 0 이하)와 같은
+    # 기준으로 "모자라다"로 본다. 여유가 0으로 설정돼도 같다.
+    if want > 100 or need >= 100:
         return _response(100, "insufficient", need, payload, assumptions, soc_when)
     target = max(daily, math.ceil(want / STEP) * STEP)
     if target <= daily:
@@ -107,7 +109,7 @@ def _response(
         speech = f"평소처럼 {target}%까지만 채우면 충분해요."
     elif reason == "long_trip":
         speech = f"{spoken_km(payload.next_trip_km)}를 가시려면 {target}%까지 채우세요."
-    elif need is not None and need > 100:
+    elif need is not None and need >= 100:
         # 여유가 아니라 이동 자체가 모자라다. "여유가 부족해요"는 닿는다고 들린다.
         speech = "100%로 채워도 도착하기 전에 배터리가 모자라요. 가는 길에 급속충전을 하세요."
     else:

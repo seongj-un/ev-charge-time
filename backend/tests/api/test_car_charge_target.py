@@ -184,3 +184,24 @@ def test_device_token_changes_nothing(client):
     ).json()
 
     assert plain == with_token
+
+
+def test_needing_exactly_100_percent_runs_out(client):
+    # 77.4kWh x 5km/kWh = 387km. 도착 추정 0%
+    out = client.post(
+        URL,
+        json={"battery_capacity_wh": 77_400, "efficiency_km_per_kwh": 5, "next_trip_km": 387},
+    ).json()
+
+    assert (out["soc_target"], out["reason"], out["needed_soc"]) == (100, "insufficient", 100.0)
+    assert out["speech"] == (
+        "100%로 채워도 도착하기 전에 배터리가 모자라요. 가는 길에 급속충전을 하세요."
+    )
+
+
+def test_needing_exactly_100_percent_runs_out_even_without_a_reserve(client, monkeypatch):
+    monkeypatch.setenv("CAR_TARGET_RESERVE", "0")
+
+    out = post(client, next_trip_km=200).json()  # 정확히 100%
+
+    assert (out["reason"], out["needs_charge_on_route"]) == ("insufficient", True)
