@@ -1073,3 +1073,20 @@ def test_along_route_tool_asks_instead_of_a_waypoint_it_cannot_reach(client, fak
     item = tool_results(fake, 1)[0]["content"]["chargers"][0]
     assert item["runs_out"] is True
     assert body["actions"] == [{"type": "ask", "question": "더 가까운 충전소를 찾아볼까요?"}]
+
+
+# ── 출발 시각 학습 (BE-8) ─────────────────────────────────────────────────
+
+
+def test_plan_charge_records_the_spoken_departure(client, fake, db_session):
+    from evcharge.infra.models import CarDeparture
+
+    fake.replies = [use("plan_charge", {"depart_time": "07:30"}), say("예약해 두었어요.")]
+    headers = register(client)
+
+    ask(client, headers, "7시 반에 나가")
+
+    rows = list(db_session.scalars(select(CarDeparture)))
+    assert [(r.departed_at, r.source, r.device_id) for r in rows] == [
+        (datetime(2026, 11, 17, 7, 30, tzinfo=KST), "stated", device_of(db_session, headers).id)
+    ]

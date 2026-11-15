@@ -23,6 +23,7 @@ from ..car_departures import (
     record_departure,
     suggestion_for,
     to_suggestion_out,
+    try_record_stated,
 )
 from ..car_devices import (
     client_ip,
@@ -73,7 +74,10 @@ def car_plan(payload: CarPlanRequest, request: Request) -> CarPlanResponse:
 
     기기 토큰이 있고 아끼는 돈이 있으면 대기 절감 기록을 만들고 ``saving_id``를 붙인다.
     """
-    result = compute_car_plan(payload, now_kst())
+    now = now_kst()
+    result = compute_car_plan(payload, now)
+    # 운전자가 정한 출발 시각을 출발 학습에 남긴다(토큰이 있을 때만, 응답은 그대로).
+    try_record_stated(request, payload.depart_at, now)
     if result.plan is not None and result.savings_won:
         saving_id = try_record(
             request,
@@ -92,12 +96,16 @@ def car_leak_check(payload: CarLeakCheckRequest, request: Request) -> CarLeakChe
 
     기기 토큰이 있고 ``leaking=true``면 대기 절감 기록을 만들고 ``saving_id``를 붙인다.
     """
+    now = now_kst()
     result = compute_leak_check(
         payload,
-        now_kst(),
+        now,
         min_won=get_settings().car_leak_min_won,
         load_prices=get_public_prices,
     )
+    if payload.place == "home" and payload.depart_at is not None:
+        # 받은 출발 시각만 남긴다. 서버가 가정한 시각은 남기지 않는다.
+        try_record_stated(request, payload.depart_at, now)
     if result.leaking and result.cause is not None:
         saving_id = try_record(
             request,

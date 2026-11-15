@@ -358,3 +358,76 @@ def test_parallel_records_of_one_departure_make_one_row(concurrent, monkeypatch)
             cleanup.commit()
         finally:
             cleanup.close()
+
+
+# ── stated: 계산 요청에 받은 출발 시각 ─────────────────────────────────────
+
+PLAN = {"soc_now": 20, "battery_capacity_wh": 77400, "depart_at": "2026-11-20T07:30"}
+HOME = {"place": "home", "soc_now": 20, "battery_capacity_wh": 77400}
+
+
+def test_plan_with_a_token_records_the_stated_time_and_answers_the_same(client, db_session):
+    plain = client.post("/api/car/plan", json=PLAN).json()
+    assert rows(db_session) == []
+
+    with_token = client.post("/api/car/plan", json=PLAN, headers=register(client)).json()
+
+    assert {**with_token, "saving_id": None} == plain
+    assert [(r.departed_at, r.source) for r in rows(db_session)] == [
+        (kst(2026, 11, 20, 7, 30), "stated")
+    ]
+
+
+def test_plan_with_a_wrong_token_records_nothing(client, db_session):
+    response = client.post(
+        "/api/car/plan", json=PLAN, headers={"Authorization": "Bearer not-a-real-token"}
+    )
+
+    assert response.status_code == 200
+    assert rows(db_session) == []
+
+
+def test_repeated_plans_for_one_morning_make_one_record(client, db_session):
+    headers = register(client)
+    for depart_at in ("2026-11-20T07:30", "2026-11-20T07:40", "2026-11-20T07:40"):
+        client.post("/api/car/plan", json={**PLAN, "depart_at": depart_at}, headers=headers)
+
+    assert [(r.departed_at, r.source) for r in rows(db_session)] == [
+        (kst(2026, 11, 20, 7, 40), "stated")
+    ]
+
+
+def test_leak_check_records_only_a_given_home_departure(client, db_session):
+    headers = register(client)
+    client.post("/api/car/leak-check", json=HOME, headers=headers)  # 가정한 08:00
+    client.post(
+        "/api/car/leak-check",
+        json={"place": "public", "soc_now": 30, "battery_capacity_wh": 70000},
+        headers=headers,
+    )
+    assert rows(db_session) == []
+
+    client.post(
+        "/api/car/leak-check", json={**HOME, "depart_at": "2026-11-20T06:50"}, headers=headers
+    )
+
+    assert [(r.departed_at, r.source) for r in rows(db_session)] == [
+        (kst(2026, 11, 20, 6, 50), "stated")
+    ]
+
+
+def test_a_failed_stated_record_does_not_change_the_plan(client, db_session, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    from evcharge.api import car_departures
+
+    def broken(*args, **kwargs):
+        raise OperationalError("INSERT", {}, Exception("db down"))
+
+    monkeypatch.setattr(car_departures, "record_stated", broken)
+    plain = client.post("/api/car/plan", json=PLAN).json()
+
+    response = client.post("/api/car/plan", json=PLAN, headers=register(client))
+
+    assert response.status_code == 200
+    assert {**response.json(), "saving_id": None} == plain

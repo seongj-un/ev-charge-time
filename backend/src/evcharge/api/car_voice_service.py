@@ -39,6 +39,7 @@ from ..domain.pricing import KST
 from ..infra.claude import ClaudeClient, ClaudeError, ClaudeReply, TextPart, ToolCall
 from ..infra.models import CarDevice
 from ..settings import get_settings
+from .car_departures import record_stated
 from .car_leak_service import compute_leak_check
 from .car_plan_service import (
     compose_no_charge_speech,
@@ -351,6 +352,8 @@ class VoiceTools:
         plug_in_at = self._plug_in_at()
         # 출발은 꽂은 뒤 처음 오는 그 시각이다(도착 23:00, "7시 반" → 다음 날 07:30).
         depart_at = resolve_clock_time(args.depart_time, plug_in_at)
+        # 운전자가 말한(또는 평소 시각 제안에 "응"이라고 한) 출발 시각을 출발 학습에 남긴다.
+        self._record_stated(depart_at)
         soc = self._plan_soc()
         if soc >= args.soc_target:
             # CarPlanRequest는 soc_now < 100만 받는다. 충전이 필요 없는 답은 같은 문장이다.
@@ -536,6 +539,14 @@ class VoiceTools:
         summary = summarize(self.session, self.device, month, self.now)
         content = summary.model_dump(mode="json")
         return ToolOutcome(content, speech=summary.speech)
+
+    def _record_stated(self, depart_at: datetime) -> None:
+        """실패해도 대화는 계속한다(계산 엔드포인트와 같은 규칙)."""
+        try:
+            record_stated(self.session, self.device, depart_at, self.now)
+        except SQLAlchemyError:
+            self.session.rollback()
+            logger.warning("음성 대화에서 출발 기록을 남기지 못했습니다")
 
     def _record(self, cause: str, won: int, energy_kwh: float, source: str) -> str | None:
         """대기 절감 기록. 실패해도 대화는 계속한다(계산 엔드포인트와 같은 규칙)."""
