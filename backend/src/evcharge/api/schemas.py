@@ -515,7 +515,7 @@ class CarSavingOut(BaseModel):
     cause: Literal["time", "payment"]
     savings_won: int
     energy_kwh: float
-    source: Literal["plan", "leak_check"]
+    source: Literal["plan", "leak_check", "briefing"]
     created_at: KstDatetime
     confirmed_at: KstDatetime | None = None
 
