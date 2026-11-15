@@ -153,15 +153,15 @@ normal 권한은 설치 때 부여된다. dangerous 권한은 앱 시작 때 한
 | `type` | 오는 곳 | 필드 | 앱이 할 일 |
 | --- | --- | --- | --- |
 | `set_reservation` | 브리핑, `car/plan`의 `reservation`, 음성 `plan_charge`·집 `leak_check` | `start_hhmm`, `end_hhmm` | 차량 기본 예약 충전 화면으로 안내하고 두 시각을 보여 준다. 앱이 예약을 직접 넣지 않는다. 주행 중이면 말로만 알리고 정차 뒤 화면을 띄운다 |
-| `navigate` | 음성 `find_chargers` | `station_id`, `name`, `lat`, `lng` | 운전자가 "응"이라고 하면 `navi.requestRoute(RouteInfo(latitude = lat, longitude = lng, poiName = name, poiId = station_id, address = …, poiSubId = ""))`. 이름 붙은 인자로 쓴다(생성자에서 `longitude` 뒤에 `displayLatitude`·`displayLongitude: Double? = null`이 있어 위치 인자로는 컴파일되지 않는다). 권한 `NAVI_ROUTE_SEARCH` |
-| `add_waypoint` | `car/chargers/along-route`, 음성 `find_chargers_along_route` | `station_id`, `name`, `lat`, `lng` | 운전자가 "응"이라고 하면 `navi.addWaypoint(RequestWaypointInfo(latitude = lat, longitude = lng, poiName = name, waypointIndex = WaypointIndex.FIRST, poiId = station_id, address = …, poiSubId = ""))`. 권한 `NAVI_ROUTE_SEARCH` |
+| `navigate` | 음성 `find_chargers` | `station_id`, `name`, `lat`, `lng`, `address`(null 가능) | 운전자가 "응"이라고 하면 `navi.requestRoute(RouteInfo(latitude = lat, longitude = lng, poiName = name, poiId = station_id, address = address ?: "", poiSubId = ""))`. 이름 붙은 인자로 쓴다(생성자에서 `longitude` 뒤에 `displayLatitude`·`displayLongitude: Double? = null`이 있어 위치 인자로는 컴파일되지 않는다). 권한 `NAVI_ROUTE_SEARCH` |
+| `add_waypoint` | `car/chargers/along-route`, 음성 `find_chargers_along_route` | `station_id`, `name`, `lat`, `lng`, `address`(null 가능) | 운전자가 "응"이라고 하면 `navi.addWaypoint(RequestWaypointInfo(latitude = lat, longitude = lng, poiName = name, waypointIndex = WaypointIndex.FIRST, poiId = station_id, address = address ?: "", poiSubId = ""))`. 권한 `NAVI_ROUTE_SEARCH` |
 | `ask` | 귀가 브리핑 첫 질문, `?`로 끝난 음성 답, 바닥날 수 있는 경유지 추천 | `question` | `speech`를 다 읽은 뒤 바로 마이크를 연다. 다음 요청의 `history`에 이 턴을 `{"role": "wattit", "text": <읽은 speech>}`로 넣는다 |
 
 - `RouteInfo`·`RequestWaypointInfo`의 `poiId`, `address`, `poiSubId`는 소스에서 null을 받지 않는
-  `String`이다. 응답에는 주소가 없으므로 `poiId`에 `station_id`, `address`는 `GET /api/chargers`에서
-  받은 주소나 빈 문자열, `poiSubId`는 빈 문자열을 넣는다. 실제 내비가 빈 값을 받는지 확인이 필요하다.
-  이것은 임시 방법이다. **BE-13에서 `navigate`·`add_waypoint` 동작에 `address`를 추가할 예정**이며,
-  그때 이 항목을 고친다.
+  `String`이다. `poiId`에는 `station_id`, `address`에는 동작의 `address`(충전소 주소, 공공데이터
+  `addr` + `addrDetail`)를 넣는다. `address`가 null이면(캐시에 주소가 없는 충전소) 빈 문자열을 넣고
+  좌표와 이름으로 시도한다. 내비가 받지 않으면 "내비에서 충전소 이름으로 검색해 주세요"로 안내한다.
+  `poiSubId`는 빈 문자열이다. 빈 값을 실제 내비가 받는지는 6절 확인 목록에 있다.
 - 음성 `history`: 최대 6턴. `wattit` 턴은 서버가 준 `speech`를 글자 그대로 넣는다. 평소 출발 시각
   질문에 "응"이라고 답한 것을 서버가 알아보려면 직전 `wattit` 턴이 그 질문으로 끝나야 한다.
 - 음성 응답의 `fallback: true`는 Claude 문장 대신 서버 문장을 읽는다는 뜻이다. 앱은 그대로 읽으면 된다.
@@ -262,5 +262,5 @@ normal 권한은 설치 때 부여된다. dangerous 권한은 앱 시작 때 한
 - Pleos `getEvChargeSwitchState`가 충전 스위치 설정값인지 실제 충전 상태인지(`PleosPropertyIds.EV_CHARGE_SWITCH`의
   값이 소스에 없어 Android `EV_CHARGE_SWITCH`와 같은지 확인하지 못했다). 그리고 `EV_CHARGE_STATE`가 이
   차에서 지원되는지.
-- `requestRoute`·`addWaypoint`에 `address`·`poiSubId`를 빈 문자열로 넣어도 되는지(`address`는 BE-13에서
-  동작에 추가 예정, `poiSubId`는 남는다).
+- `requestRoute`·`addWaypoint`에 `poiSubId`를 빈 문자열로 넣어도 되는지, 주소가 없는 충전소(`address`가
+  null)에서 `address`를 빈 문자열로 넣어도 되는지.
