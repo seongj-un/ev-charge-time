@@ -163,3 +163,30 @@ def test_records_from_years_without_holiday_data_use_weekdays_only():
 def test_target_without_holiday_data_raises():
     with pytest.raises(HolidayDataMissingError):
         suggest([], date(2028, 1, 3), HOLIDAYS)
+
+
+@pytest.mark.parametrize(
+    "times",
+    [
+        ["23:56"] * 5,  # 반올림하면 다음 날 00:00
+        ["22:00"] * 5,
+        ["21:55", "21:56", "21:57"],  # 반올림 22:00
+        ["23:50", "00:10", "23:55", "00:05", "23:58"],  # 자정을 넘나드는 출발
+    ],
+)
+def test_late_night_departures_give_no_suggestion(times):
+    days = weekdays_before(TARGET, len(times))
+    records = [at(day, t) for day, t in zip(days, times, strict=True)]
+
+    result = suggest(records, TARGET, HOLIDAYS)
+
+    assert (result.depart_at, result.confidence, result.basis_count) == (None, None, len(times))
+
+
+def test_the_latest_suggestion_stays_on_the_target_day():
+    records = [at(day, "21:54") for day in weekdays_before(TARGET, 5)]
+
+    result = suggest(records, TARGET, HOLIDAYS)
+
+    assert result.depart_at == datetime(2026, 11, 20, 21, 50, tzinfo=KST)
+    assert result.depart_at.date() == TARGET

@@ -604,3 +604,14 @@ def test_no_suggestion_on_the_default_day_keeps_8am(client, monkeypatch):
     body = client.post("/api/car/leak-check", json=HOME, headers=headers).json()
 
     assert body["assumptions"][-1] == "출발 시각 미입력: 11월 22일 오전 8시(KST) 출발로 가정"
+
+
+def test_late_night_departures_give_no_suggestion_and_no_date_mismatch(client):
+    headers = register(client)
+    seed(client, headers, [16 * 60 + 56] * 5)  # 평일 23:56 출발 5건
+
+    body = suggest(client, headers).json()
+
+    assert body["date"] == "2026-11-20"
+    assert (body["suggested_depart_at"], body["confidence"], body["basis_count"]) == (None, None, 5)
+    assert body["speech"] == "내일 몇 시에 출발하세요?"

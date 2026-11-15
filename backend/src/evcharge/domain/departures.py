@@ -39,6 +39,10 @@ MIN_BASIS = 3
 HIGH_MIN_BASIS = 5
 HIGH_MAX_SPREAD_MIN = 20
 ROUND_MIN = 10
+# 반올림한 중앙값이 이 시각(하루 분) 이후면 제안하지 않는다. 아침 출발용 기능이고, 하루 분의
+# 중앙값은 자정을 넘나드는 출발에서 틀리며(23:50과 00:10), 23:55 이후는 반올림하면 다음 날
+# 00:00이 되어 제안한 날과 시각의 날짜가 어긋난다.
+LATEST_SUGGESTION_MIN = 22 * 60
 
 
 @dataclass(frozen=True)
@@ -99,6 +103,8 @@ def suggest(
     middle = median(minutes)
     spread = median(abs(minute - middle) for minute in minutes)
     rounded = floor(middle / ROUND_MIN + 0.5) * ROUND_MIN
+    if rounded >= LATEST_SUGGESTION_MIN:
+        return DepartureSuggestion(target, day_type, None, None, len(basis))
     confidence: Confidence = (
         "high" if len(basis) >= HIGH_MIN_BASIS and spread <= HIGH_MAX_SPREAD_MIN else "low"
     )
